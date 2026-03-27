@@ -186,3 +186,43 @@
 
 **Status**: COMPLETE — Extension ready for marketplace submission
 
+## Learnings (2026-07-15 — WebView2 Airspace Research)
+
+### WebView2 Airspace Problem
+- WebView2 is HWND-based → always renders on top of WPF content (scrollbars, popups, tooltips, menus).
+- This is a known WPF limitation called the "airspace" issue, not specific to our extension.
+
+### WebView2CompositionControl (Recommended Solution)
+- Microsoft's official fix: `WebView2CompositionControl` in the same `Microsoft.Web.WebView2` NuGet package.
+- Drop-in replacement: same API surface as `WebView2`. Swap `new WebView2()` → `new WebView2CompositionControl()`.
+- Renders via Direct3D composition into the WPF visual tree instead of using an HWND.
+- Confirmed compatible with .NET Framework 4.8 (net48).
+- Available in stable releases (v1.0.3856.49+).
+- Minor trade-off: slightly lower framerate (irrelevant for static notebook output).
+
+### Alternatives Evaluated and Rejected
+- **CefSharp OffScreen**: Solves airspace but adds ~100MB Chromium binaries, in-process crash risk to devenv.exe, can only init once per process. Disqualified for VSIX.
+- **HtmlRenderer.WPF (TheArtOfDev)**: Pure managed, no airspace issues, but only HTML 4.01/CSS2, no JavaScript. Cannot render Plotly charts or modern kernel output. Insufficient.
+- **Hybrid WPF (Markdig.Wpf + DataGrid)**: Reduces WebView2 usage but doesn't solve airspace for text/html (the most impactful case). High code churn, multiple new dependencies.
+- **IVsWebBrowser**: Legacy IE-based, same airspace issue, worse rendering. Rejected.
+
+### Current WebView2 Usage Audit
+- WebView2 is used for: text/html, text/markdown (converted to HTML), text/csv (converted to HTML table), image/svg+xml.
+- Already native WPF: text/plain, application/json, image/png, image/jpeg, image/gif.
+- Decision written to `.squad/decisions/inbox/vince-webview2-alternatives.md`.
+
+---
+
+## 2026-03-27T22:29:00Z — WebView2 Research Complete (Session Spawn)
+
+**Status**: COMPLETE ✅ — Architecture recommendation documented
+
+**Key Recommendation**: WebView2CompositionControl for airspace fix
+- ~3-line implementation change
+- Drop-in replacement for WebView2
+- Deferred to maintenance release (non-blocking for current release)
+
+**Alternatives**: Evaluated CefSharp, HtmlRenderer.WPF, Hybrid WPF, IVsWebBrowser — all rejected
+
+**Related Decision**: Will be merged as Decision 16 (WebView2CompositionControl Architecture Recommendation)
+

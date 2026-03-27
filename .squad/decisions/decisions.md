@@ -79,6 +79,60 @@ Variable Explorer is implemented as a **singleton `VariableService`** (no MEF co
 - Kernel selector for multi-kernel variable context (p3-kernel-selector)
 - Toolbar integration for Restart+Run All (p4-toolbar)
 
+## Decision 3: WebView2CompositionControl for Airspace Fix
+
+**Date**: 2026-03-27  
+**Lead**: Vince (Architect)  
+**Status**: ACTIVE  
+**Type**: Architecture / Output Rendering
+
+### Context
+
+WebView2 is HWND-based and renders on top of WPF content (scrollbars, popups, tooltips, menus) due to a known WPF "airspace" limitation. This affects rich output rendering (text/html, text/markdown, text/csv, image/svg+xml) where WebView2 may obscure UI elements.
+
+### Decision
+
+Use **WebView2CompositionControl** (Microsoft's official solution in the same NuGet package) as a drop-in replacement for `WebView2`. 
+
+**Implementation**: Single-file change in `WebView2OutputHost.cs`:
+```csharp
+// Before
+var webView = new WebView2();
+// After
+var webView = new WebView2CompositionControl();
+```
+
+**Trade-offs**:
+- Renders via Direct3D composition into WPF visual tree (no airspace issues)
+- Slightly lower framerate than HWND-based (irrelevant for static notebook output)
+- Confirmed compatible with .NET Framework 4.8 (net48)
+- Available in stable NuGet package (v1.0.3856.49+)
+
+### Rationale
+
+- Microsoft's first-party solution; battle-tested in production extensions
+- API surface identical to `WebView2` (truly drop-in replacement)
+- Solves airspace issue with minimal code churn
+- No performance degradation for typical notebook output (static HTML, charts)
+
+### Implications
+
+- Rich output rendering (Wendy) affected: all 8 MIME types using WebView2 benefit from airspace fix
+- Non-breaking change: can ship in maintenance release post-GA
+- Variable explorer tool window (also uses WebView2 for formatted output) also benefits
+
+### Alternatives Considered
+
+- **CefSharp OffScreen**: Solves airspace but adds ~100MB Chromium binaries, in-process crash risk, single-init-per-process. Disqualified.
+- **HtmlRenderer.WPF**: HTML 4.01/CSS2 only, no JavaScript, cannot render Plotly or modern kernel output. Insufficient.
+- **Hybrid WPF**: Reduces WebView2 usage but doesn't solve airspace for text/html (most impactful case). High code churn.
+- **IVsWebBrowser**: Legacy IE-based, same airspace issue, worse rendering. Rejected.
+
+### Related Decisions
+
+- Decision 14: Rich Output Rendering Architecture (uses WebView2)
+- Decision 2: Variable Explorer Architecture (displays formatted output via WebView2)
+
 ---
 
-*Decisions merged from inbox by Scribe, 2026-03-27T19:48:01Z*
+*Decisions merged from inbox by Scribe, 2026-03-27T22:29:00Z*

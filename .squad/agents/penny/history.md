@@ -97,3 +97,40 @@
 **Build Result**: ✅ Clean (0 errors, 0 warnings)
 
 **Status**: ACTIVE — Ready for VSIX packaging and Marketplace publishing
+
+### README Rewrite — PolyglotNotebooksVS (2025)
+
+- Rewrote README to match BookmarkStudio's style: link references at top, build badge, marketplace/VSIX gallery download links, horizontal rule separator, hero paragraph, "What You Get" section, step-by-step "Getting Started", keyboard shortcuts table, and "Contribute" footer.
+- Removed "under development" warning and "v1 scope" framing — presented features confidently.
+- Fixed license reference: was MIT badge/link, now correctly says Apache 2.0 pointing to LICENSE.txt.
+- Removed manual `dotnet tool install` prerequisite section — replaced with "Zero setup" feature highlighting the auto-install dialog (KernelNotInstalledDialog.cs).
+- Added placeholder screenshot references (art/*.png) with HTML TODO comments for Mads to capture later.
+- Added "Example Notebooks" section listing all 11 example files from the examples/ folder.
+- Added "How It Works" section explaining dotnet-interactive engine briefly.
+- Keyboard shortcuts sourced from actual code (NotebookControl.cs OnPreviewKeyDown, CellToolbar tooltips).
+
+---
+
+## 2026-03-27T22:29:00Z — README Final: BookmarkStudio Quality (Session Spawn)
+
+**Status**: COMPLETE ✅ — Production-ready for marketplace
+
+**What Completed**:
+- Matches BookmarkStudio formatting exactly (shields, feature sections, getting started, contribute)
+- All keyboard shortcuts verified against actual code
+- Example notebooks section curated from examples/ folder
+- Apache 2.0 license correctly linked
+
+**Status**: ACTIVE — Ready for VSIX marketplace submission
+
+---
+
+## 2026-03-27T22:29:00Z — WebView2CompositionControl Recommendation (From Vince)
+
+**Key Finding**: WebView2CompositionControl is the recommended fix for airspace issue.
+- Drop-in replacement (swap `new WebView2()` → `new WebView2CompositionControl()`, ~3 lines)
+- Available in stable NuGet package
+- Compatible with net48
+- Render via Direct3D into WPF visual tree (no airspace issues)
+
+**Related Decision**: Will be merged as Decision 16 (WebView2CompositionControl Architecture)

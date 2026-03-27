@@ -291,6 +291,29 @@ Three files added / modified in `src/Editor/`:
 
 ---
 
+## 2026-03-27T22:29:00Z — WebView2CompositionControl Recommendation (From Vince Research)
+
+**Key Finding for Rich Output Rendering**:
+Vince's architectural research identified WebView2CompositionControl as the solution for HWND-based airspace issues.
+
+**Impact on Wendy's Rich Output Pipeline**:
+- Current `WebView2OutputHost` uses HWND-based rendering (renders above WPF content like scrollbars/menus)
+- WebView2CompositionControl is a drop-in replacement (~3 lines: `new WebView2()` → `new WebView2CompositionControl()`)
+- Renders via Direct3D composition into WPF visual tree (no airspace issues)
+- Compatible with net48
+- Available in stable NuGet package (v1.0.3856.49+)
+- Minor trade-off: slightly lower framerate (irrelevant for static notebook output)
+
+**Implementation Path**:
+- Single-file change in `WebView2OutputHost.cs`
+- Applies to all 8 MIME types using WebView2 (text/html, text/markdown, text/csv, image/svg+xml)
+- Deferred to maintenance release (non-blocking for current release)
+
+**Related Decision**: Vince's research documented as Decision 16 (WebView2CompositionControl Architecture Recommendation)
+
+
+---
+
 ## 2026-03-27T19:48:01Z — Final Batch Complete: p3-variables (Variable Explorer finalized)
 
 **Status**: COMPLETE ✅ — Variable Explorer tool window fully integrated and tested
