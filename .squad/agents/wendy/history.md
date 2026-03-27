@@ -339,3 +339,30 @@ Vince's architectural research identified WebView2CompositionControl as the solu
 - Decision 12: VizSurface Color Keys (ACTIVE)
 
 **Status**: COMPLETE — Production-ready for integration tests
+
+---
+
+## 2026 — WebView2CompositionControl Migration (airspace fix)
+
+**Status**: COMPLETE ✅
+
+**What Changed**: Replaced HWND-based `WebView2` with composition-based `WebView2CompositionControl` in `WebView2OutputHost.cs` to eliminate WPF airspace issues (overlap with scrollbars, popups, tooltips, context menus).
+
+**Files Modified**:
+
+| File | Change |
+|------|--------|
+| `src/Editor/WebView2OutputHost.cs` | `_webView` field type: `WebView2` → `WebView2CompositionControl`; constructor: `new WebView2` → `new WebView2CompositionControl`; updated doc comments |
+| `src/PolyglotNotebooks.csproj` | NuGet `Microsoft.Web.WebView2`: `1.0.3179.45` → `1.0.3856.49` (minimum version for `WebView2CompositionControl`) |
+
+**No other files needed changes** — `OutputControl.cs` and `ImageOutputControl.cs` only reference our `WebView2OutputHost` wrapper, not the `WebView2` type directly. No test files reference the `WebView2` type.
+
+**API Compatibility**: `WebView2CompositionControl` has the same API surface as `WebView2` — `CoreWebView2`, `NavigateToString()`, `EnsureCoreWebView2Async()`, `CoreWebView2InitializationCompleted`, `NavigationCompleted` all work identically. No code changes needed beyond the type swap.
+
+**How it works**: `WebView2CompositionControl` renders via Direct3D composition into the WPF visual tree (no HWND). This eliminates the classic "airspace" problem where HWND-based controls always render on top of WPF content.
+
+**Trade-offs**: Slightly lower framerate than HWND-based WebView2 — irrelevant for static notebook output (HTML tables, charts, SVG).
+
+**Build verification**: Type confirmed present via reflection in `Microsoft.Web.WebView2.Wpf.dll` at v1.0.3856.49 (net462 target). Full project build requires VS SDK tooling not available in CLI — baseline has identical resolution failures.
+
+**Related Decisions**: Decision 16 (Vince's WebView2CompositionControl Architecture Recommendation)

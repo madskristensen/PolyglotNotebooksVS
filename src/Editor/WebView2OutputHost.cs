@@ -10,13 +10,15 @@ using System.Windows.Media;
 namespace PolyglotNotebooks.Editor
 {
     /// <summary>
-    /// Hosts a WebView2 control for rich HTML output rendering.
+    /// Hosts a WebView2CompositionControl for rich HTML output rendering.
+    /// Uses composition-based rendering (Direct3D into WPF visual tree) to avoid
+    /// HWND airspace issues with scrollbars, popups, and context menus.
     /// Handles lazy initialization, VS theme injection, content auto-resize, and graceful
     /// fallback when the WebView2 runtime is not installed.
     /// </summary>
     internal sealed class WebView2OutputHost : Border, IDisposable
     {
-        private WebView2? _webView;
+        private WebView2CompositionControl? _webView;
 
         // Raw content to render — stored so it can be applied once init completes.
         private string? _pendingContent;
@@ -64,7 +66,7 @@ namespace PolyglotNotebooks.Editor
         {
             try
             {
-                _webView = new WebView2
+                _webView = new WebView2CompositionControl
                 {
                     HorizontalAlignment = HorizontalAlignment.Stretch,
                     VerticalAlignment = VerticalAlignment.Stretch,

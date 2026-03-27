@@ -146,6 +146,20 @@
 - `$(MSBuildSDKsPath)` = `.NET SDK\Sdks` directory — available in `dotnet msbuild` for importing SDK targets
 - `$(NuGetTargetMoniker)` = derived from `$(TargetFrameworkMoniker)` = `.NETFramework,Version=v4.8`
 
+### WebView2 Binding Redirects for VSIX
+
+**Problem**: VS ships an older `Microsoft.Web.WebView2.Core.dll` (1.0.3485.44) than our NuGet reference (1.0.3856.49). `WebView2CompositionControl` only exists in the newer version, so without binding redirects the extension fails at runtime when VS tries to load the older assembly.
+
+**Fix applied**: Added `[assembly: ProvideBindingRedirection]` attributes to `src/Properties/AssemblyInfo.cs` for:
+1. `Microsoft.Web.WebView2.Core` — redirect 0.0.0.0–1.0.3856.49 → 1.0.3856.49
+2. `Microsoft.Web.WebView2.Wpf` — redirect 0.0.0.0–1.0.3856.49 → 1.0.3856.49
+
+**Not redirected**: `Microsoft.Web.WebView2.WinForms` — exists in the NuGet package but we don't use it (no `using` references anywhere in src).
+
+**How it works**: `ProvideBindingRedirectionAttribute` (from `Microsoft.VisualStudio.Shell.15.0`, available via Community.VisualStudio.Toolkit) generates a `.bindingRedirects` file inside the VSIX package at build time. VS's extension host reads this at load time and applies the redirects, ensuring our bundled newer DLLs are used instead of VS's older ones.
+
+**Build note**: `dotnet msbuild` has pre-existing NuGet resolution failures (269 CS0246 errors, unrelated to this change). VS MSBuild (`MSBuild.exe`) builds successfully with 0 errors.
+
 ### csproj Fix — NuGet PackageReference Resolution (BookmarkStudio Pattern)
 
 **Problem**: After SDK-to-old-style conversion, NuGet PackageReference assemblies (System.Text.Json, VS SDK types, WebView2) weren't resolving at compile time. Build had many CS0246/CS0234 errors.
