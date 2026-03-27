@@ -257,6 +257,157 @@ The `UseVSTest=true` + `net48` combination in the test project may be restrictin
 - **Q3**: Evaluate new MEF composition models (if any)
 - **Q4**: Threading analyzer rule updates from Microsoft
 
+---
+
+## Decision 8: Cell UI Code-Only WPF Pattern
+
+**Date**: 2026-03-27
+**Lead**: Wendy (UI & Tool Window Specialist)
+**Status**: ACTIVE
+**Participants**: Wendy
+
+### Rationale
+
+Phase 2.2 built the cell-based notebook editor UI entirely in C# (no XAML). This was specified in the task brief due to net48 lacking XAML compilation setup, and it worked well. All controls are programmatically constructed with VS theming integrated via `DynamicResource` bindings.
+
+### Decision
+
+All UI code is in C#, using `new StackPanel()`, `new Grid()`, `new TextBox()` pattern. No XAML files required.
+
+**System.Xaml Reference Required**: When using `new Binding(...)` / `element.SetBinding(...)` in net48 code-only WPF (no .xaml files), `System.Xaml.dll` must be explicitly referenced. It is NOT pulled in by `PresentationFramework` alone in this SDK-style project. Added `<Reference Include="System.Xaml" />` to `PolyglotNotebooks.csproj`.
+
+### CellRunRequested Event Contract for Phase 2.3
+
+`NotebookControl` exposes `event EventHandler<CellRunEventArgs>? CellRunRequested` as the single integration seam for execution. Phase 2.3 (Ellie) should subscribe to this event on the `NotebookControl` instance (accessible via `NotebookEditorPane._control`) and dispatch execution against `CellRunEventArgs.Cell`.
+
+After execution, Ellie should:
+- Set `cell.ExecutionStatus = CellExecutionStatus.Running` before starting
+- Set `cell.ExecutionOrder = <N>` and append `CellOutput` items to `cell.Outputs`
+- Set `cell.ExecutionStatus = CellExecutionStatus.Succeeded` or `Failed` when done
+
+The UI will update automatically via its existing `PropertyChanged` and `CollectionChanged` subscriptions.
+
+### Full Rebuild on CollectionChanged (v1 Tradeoff)
+
+`NotebookControl.RebuildCells()` does a full `_cellStack.Children.Clear()` + rebuild on every `Cells.CollectionChanged` event. This is O(n) per change but simple and correct. For typical notebook sizes (<100 cells) this is imperceptible. A future optimization could do incremental insert/remove if needed.
+
+### Implications
+
+1. Any future WPF code using `Binding`, `DataTemplate`, or markup extensions programmatically must ensure `System.Xaml` is referenced.
+2. Integration point for Ellie (Phase 2.3) is `NotebookControl.CellRunRequested` event.
+3. UI updates are automatic (PropertyChanged/CollectionChanged subscriptions) — no manual re-rendering needed.
+
+---
+
+## Decision 9: ExtensionLogger JIT-Safety Pattern
+
+**Date**: 2026-03-27
+**Lead**: Theo (Threading & Reliability Engineer)
+**Status**: ACTIVE
+**Participants**: Theo
+
+### Context
+
+`ExtensionLogger` wraps `Microsoft.VisualStudio.Shell.ActivityLog` to provide centralized logging. Unit tests run in a process that does NOT have VS assemblies on the probing path. When a class under test calls `ExtensionLogger.LogInfo(...)`, the CLR attempts to JIT-compile that method. JIT compilation fails with `FileNotFoundException` because `Microsoft.VisualStudio.Shell.Framework` is not present.
+
+The naive fix — wrapping the call in `try { ActivityLog.Log...; } catch { }` — does NOT work because the exception occurs during JIT compilation of the method body, *before* the try block can execute.
+
+### Decision
+
+Any method that calls VS-only types (from assemblies not present in test runners) must be split into two layers:
+
+1. A **public wrapper** that calls the private helper inside `try { } catch { }`:
+   ```csharp
+   public static void LogInfo(string ctx, string msg)
+   {
+       try { DoLogInformation(Source, FormatMessage(ctx, msg)); }
+       catch { }
+   }
+   ```
+
+2. A **private `[MethodImpl(NoInlining)]` helper** that contains the actual VS call:
+   ```csharp
+   [MethodImpl(MethodImplOptions.NoInlining)]
+   private static void DoLogInformation(string source, string message)
+       => ActivityLog.LogInformation(source, message);
+   ```
+
+`NoInlining` is critical: it prevents the JIT from inlining `DoLogInformation` into `LogInfo`, which would bring the VS type reference into `LogInfo`'s own JIT scope and break the deferral.
+
+When `LogInfo` is JIT-compiled, it sees only a call-site to `DoLogInformation` — no VS types are referenced. When `DoLogInformation` is called at runtime and its JIT compilation fails, the exception bubbles up through `LogInfo`'s catch block and is silently swallowed.
+
+### Scope
+
+This pattern applies to any helper class in the `src/` project that:
+- Is called from test-exercisable code (e.g. `KernelProcessManager`, `KernelClient`)
+- Internally calls types from `Microsoft.VisualStudio.Shell.Framework`, `Microsoft.VisualStudio.Interop`, or other VS-only assemblies
+
+### Implications
+
+1. Apply this pattern to any new VS-facade helpers (InfoBar helpers, VS UI helpers, etc.)
+2. When adding new VS calls to `ExtensionLogger`, always add a corresponding `[NoInlining]` private method
+3. Do NOT add using-level direct calls to VS types in any method that tests can reach without VS
+
+### Related Decisions
+
+- Decision 4: MSTest v4 ThrowsException Pattern (similar testing constraint)
+
+---
+
+## Decision 10: Resource Folder Setup & License Configuration
+
+**Date**: 2026-03-27
+**Lead**: Penny (VSIX Packaging & Marketplace Publisher)
+**Status**: ACTIVE
+**Participants**: Penny
+
+### Summary
+
+Replaced linked/virtual folder approach with a real `src/Resources/` folder on disk. Moved `Icon.png` into Resources. Replaced MIT license with Apache 2.0. Updated csproj and vsixmanifest.
+
+### What Changed
+
+**1. Removed linked/virtual folder approach in csproj**
+
+The csproj previously used `<Link>` to pull files from outside `src/` into virtual paths:
+- `<Content Include="..\LICENSE" Link="Resources\LICENSE" />` — linked MIT license from repo root
+- `<Content Include="..\art\logo.png" Condition="...">` — conditionally linked from `art/` folder
+
+Both were removed.
+
+**2. Created real `src/Resources/` folder on disk**
+
+`src/Resources/` is now a genuine directory, not a virtual project folder.
+
+**3. Moved `Icon.png` into `src/Resources/`**
+
+`src/Icon.png` was sitting loose at the top of `src/`. Moved to `src/Resources/Icon.png` and referenced directly (no link needed — it lives inside the project tree).
+
+**4. Replaced MIT license with Apache 2.0**
+
+The root `LICENSE` file contained MIT. Per direction, this project uses **Apache 2.0**.
+- Created `LICENSE.txt` at repo root with full Apache License 2.0 text, copyright 2026 Mads Kristensen.
+- The old `LICENSE` (MIT) file was left in place (not deleted) — decision maker should decide whether to remove it.
+- The csproj now links `LICENSE.txt` into the project: `<Content Include="..\LICENSE.txt" Link="Resources\LICENSE.txt" />`
+
+**5. Updated `source.extension.vsixmanifest`**
+
+- `<License>` changed from `Resources\LICENSE` → `Resources\LICENSE.txt`
+- `<Icon>` changed from `Resources\logo.png` → `Resources\Icon.png`
+- `<PreviewImage>` changed from `Resources\logo.png` → `Resources\Icon.png`
+
+### Implications
+
+1. Real folder structure is industry standard (VSIX Cookbook pattern)
+2. License file linked from repo root (single source of truth)
+3. Old `LICENSE` (MIT) at root is stale and may confuse license scanning tools
+
+### Related Decisions
+
+- Decision 1: Community.VisualStudio.Toolkit Foundation (affects packaging)
+
+---
+
 ## Adding New Decisions
 
 When the Squad makes a new architectural decision:

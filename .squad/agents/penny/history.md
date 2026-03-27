@@ -74,3 +74,26 @@
 - `[ExpectedException]` was removed in MSTest SDK 4.x (used by this project). Pre-existing test errors in `KernelProcessManagerTests.cs` and others also use `Assert.ThrowsException<T>` which is unavailable with `UseVSTest=true` on net48 — these are pre-existing issues.
 - `NotebookEditorPane.cs` has pre-existing incomplete interface implementation (CS0535) — unrelated to this task.
 
+---
+
+## 2026-03-27 — Phase 3.2 Resource Folder & License Setup Complete (p5-resource)
+
+**Status**: COMPLETE ✅ — Build passes clean
+
+**What Changed**: 
+1. Removed linked/virtual Resource folder approach
+2. Created real `src/Resources/` folder on disk
+3. Moved `Icon.png` to `src/Resources/Icon.png`
+4. Replaced MIT license with Apache 2.0 (`LICENSE.txt` at repo root)
+5. Updated csproj and vsixmanifest paths
+
+**Why**: User directive — use real folders (not linked), Apache 2.0 license, proper icon and license references.
+
+**Affected Areas**:
+- Wendy: No UI impact; build still passes
+- Theo: Build still passes; no reliability changes
+- CI/CD: VSIX manifest now has correct License and Icon paths for Marketplace publishing
+
+**Build Result**: ✅ Clean (0 errors, 0 warnings)
+
+**Status**: ACTIVE — Ready for VSIX packaging and Marketplace publishing

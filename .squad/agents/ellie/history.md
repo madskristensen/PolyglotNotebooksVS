@@ -68,3 +68,29 @@
 - `ProtocolSerializerOptions.Default` is the single shared options instance with `WhenWritingNull` to keep wire compact
 - `Subject<T>` implemented without Rx.NET to avoid extra dependency on .NET Framework 4.8 target
 - Pre-existing `IsExternalInit.cs` polyfill in the project enables C# `init` setters on net48
+---
+
+## 2026-03-27 — Phase 3 Batch: CellRunRequested Hook Available (p2-cell-ui)
+
+**Status**: Phase 2.2 COMPLETE — Awaiting Phase 2.3 (Ellie) execution wiring
+
+**What Changed**: Wendy completed NotebookControl UI with CellRunRequested event as the execution integration point.
+
+**Why**: Phase 2.3 (Cell Execution) needs a clear entry point to wire kernel dispatch.
+
+**Integration Point for Ellie**:
+- **Hook**: `NotebookControl.CellRunRequested` — `EventHandler<CellRunEventArgs>` event
+- **Access**: Via `NotebookEditorPane._control` (NotebookControl instance)
+- **Payload**: `CellRunEventArgs.Cell` — the NotebookCell to execute
+- **After Execution**: Update cell state:
+  - `cell.ExecutionStatus = CellExecutionStatus.Running` (before starting)
+  - `cell.ExecutionOrder = <N>` (sequence number after execution)
+  - `cell.Outputs.Add(CellOutput item)` (append outputs as they arrive)
+  - `cell.ExecutionStatus = CellExecutionStatus.Succeeded` or `Failed` (when complete)
+  - UI auto-updates via PropertyChanged/CollectionChanged subscriptions
+
+**Related Decisions**:
+- Decision 8: Cell UI Code-Only WPF Pattern
+- Decision 5: Custom Editor Architecture (NotebookEditorPane is view + data)
+
+**Status**: READY — Integration point is stable; awaiting Ellie
