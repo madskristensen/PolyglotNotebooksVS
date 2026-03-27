@@ -70,6 +70,45 @@
 - Pre-existing `IsExternalInit.cs` polyfill in the project enables C# `init` setters on net48
 ---
 
+### Execution Engine Wiring (p2-basic-exec)
+
+**New files:**
+- `src/Execution/CellExecutionEngine.cs` — Cell execution lifecycle manager
+- `src/Execution/ExecutionCoordinator.cs` — UI event → kernel bridge
+
+**Actual model shape (differs from task description):**
+- `NotebookCell.Contents` (not `Source`), `NotebookCell.KernelName` (not `Language`)
+- `NotebookCell.ExecutionOrder` is `int?` (not `ExecutionCount`); set from `CommandSucceeded.ExecutionOrder` or auto-incremented
+- `CellOutput(CellOutputKind, List<FormattedOutput>, string? valueId)` — not a flat Text/MimeType model
+- `FormattedOutput(string mimeType, string value, bool suppressDisplay)`
+- `CellOutputKind`: ReturnValue, StandardOutput, StandardError, Display, Error
+- `CellRunEventArgs` (not `CellRunRequestedEventArgs`)
+- No `ErrorProduced` POCO class — extracted via `JsonElement.TryGetProperty("message")`
+
+**Threading pattern for output streaming:**
+- Subscribe to `KernelClient.Events` observable for intermediate events before sending command
+- Filter by `envelope.Token` via `e.Command?.Token`
+- Marshal UI updates via `ThreadHelper.JoinableTaskFactory.RunAsync` with `SwitchToMainThreadAsync`
+- Use `#pragma warning disable VSTHRD110, VSSDK007` for intentional fire-and-forget output handlers
+  (`.Forget()` extension not available in Community.VisualStudio.Toolkit.17 v17.0.549)
+
+**Kernel client lifecycle:**
+- `KernelClient` takes the raw `Process` object in its constructor
+- Must be created AFTER `KernelProcessManager.StartAsync` completes
+- `KernelClient.Start(lifetimeCts.Token)` starts the stdout reader; use a coordinator-lifetime token, NOT per-execution
+- `ExecutionCoordinator` owns `KernelClient` and `KernelProcessManager`; both disposed on `Close()`
+
+**Cancellation architecture:**
+- Per-execution `CancellationTokenSource` in `ExecutionCoordinator`; replaced (old one cancelled) on each new Run click
+- `CellExecutionEngine._executionGate` (SemaphoreSlim) serializes all executions
+- On cancellation: send `CancelCommand` to kernel (type string `"Cancel"`) then set cell to Idle
+- `_lifetimeCts` in coordinator drives the KernelClient reader loop; separate from execution CTSs
+
+**Kernel name mapping:**
+- Cell `KernelName` is stored as dotnet-interactive canonical name (e.g. "csharp", "fsharp")
+- `MapKernelName` normalizes display variants ("C#", "c#") → canonical wire names
+---
+
 ## 2026-03-27 — Phase 3 Batch: CellRunRequested Hook Available (p2-cell-ui)
 
 **Status**: Phase 2.2 COMPLETE — Awaiting Phase 2.3 (Ellie) execution wiring
@@ -94,3 +133,43 @@
 - Decision 5: Custom Editor Architecture (NotebookEditorPane is view + data)
 
 **Status**: READY — Integration point is stable; awaiting Ellie
+
+---
+
+## 2026-03-27 — Phase 3 Batch: Execution Engine Wiring Complete (p2-basic-exec)
+
+**Status**: Phase 2.3 COMPLETE ✅
+
+**What Changed**: Wired Run button to kernel execution via `CellExecutionEngine` and `ExecutionCoordinator`. Created 2 new files in `src/Execution/`.
+
+**Why**: Phase 2.3 required execution dispatch architecture and intermediate output streaming.
+
+**What Was Built**:
+- `CellExecutionEngine.cs` — Cell execution lifecycle manager
+- `ExecutionCoordinator.cs` — UI event → kernel bridge
+
+**Key Discoveries**:
+- Cell model uses `Contents`/`KernelName` (not `Source`/`Language` from spec)
+- Output structure: `CellOutput(CellOutputKind, List<FormattedOutput>, string? valueId)`
+- Intermediate events streamed live via `KernelClient.Events` subscription, filtered by token
+
+**Architecture Pattern** (Decision 11):
+- `KernelClient` created lazily after `KernelProcessManager.StartAsync()` completes
+- Coordinator lifetime token (`_lifetimeCts`) separate from per-execution token
+- Output marshalling via `ThreadHelper.JoinableTaskFactory.RunAsync` with pragma suppression
+- Fire-and-forget exception handling inside lambda
+
+**Ownership**:
+- `NotebookEditorPane` owns `KernelProcessManager` and `ExecutionCoordinator`
+- Both disposed in `Close()` and `Dispose(bool)`
+
+**Integration Complete**:
+- Subscribe to `NotebookEditorPane._control.CellRunRequested` event
+- Update `cell.ExecutionStatus`, `cell.ExecutionOrder`, `cell.Outputs`
+- UI auto-renders via PropertyChanged/CollectionChanged
+
+**Related Decisions**:
+- Decision 11: Execution Engine Architecture (ACTIVE)
+- Decision 2: Async-First, ThreadHelper-Based Threading Model
+
+**Status**: ACTIVE — Ready for Phase 2.4 testing

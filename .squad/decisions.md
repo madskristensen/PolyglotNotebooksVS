@@ -408,6 +408,98 @@ The root `LICENSE` file contained MIT. Per direction, this project uses **Apache
 
 ---
 
+---
+
+## Decision 11: Execution Engine Architecture
+
+**Date**: 2026-03-27
+**Lead**: Ellie (Editor Extension Specialist)
+**Status**: ACTIVE
+**Participants**: Ellie
+
+### Rationale
+
+When wiring the Run button to kernel execution, several architectural patterns emerged from integrating `CellExecutionEngine` and `ExecutionCoordinator` with the dotnet-interactive protocol client.
+
+### Decision
+
+**KernelClient Lifecycle**: `KernelClient` takes a `Process` in its constructor and must be created *after* `KernelProcessManager.StartAsync()` completes. `ExecutionCoordinator` owns both the process manager and client, creating the client lazily on first execution request.
+
+**Coordinator Lifetime Token**: `KernelClient.Start()` receives `_lifetimeCts.Token` (lives as long as the editor pane), separate from per-execution `CancellationTokenSource`. Mixing these causes the reader loop to die on first cancellation.
+
+**Output Streaming via Event Correlation**: Intermediate kernel events (ReturnValueProduced, etc.) are filtered by `e.Command?.Token == envelope.Token` directly on the `KernelClient.Events` observable subscription, avoiding polling and buffering.
+
+**Fire-and-Forget Pattern**: Output marshalling uses `ThreadHelper.JoinableTaskFactory.RunAsync(...)` with `#pragma warning disable VSTHRD110, VSSDK007` (`.Forget()` not available in Community.VisualStudio.Toolkit.17 v17.0.549). All exceptions are caught inside the lambda.
+
+**Ownership Hierarchy**: `NotebookEditorPane` owns `KernelProcessManager` and `ExecutionCoordinator`. Both are disposed in `Close()` and `Dispose(bool)`. The coordinator disposes `KernelClient` and `CellExecutionEngine`.
+
+### Implications
+
+1. Any component holding a `KernelClient` reference must obtain it from `ExecutionCoordinator`, never independently.
+2. Per-execution cancellation tokens must be distinct from the coordinator's lifetime token.
+3. Exception handling for output events is required; unobserved exceptions are caught at the lambda boundary.
+4. Fire-and-forget pattern is safe because exceptions are always handled internally; pragma suppression is acceptable.
+
+### Integration Points
+
+- **UI Hook**: `NotebookEditorPane._control.CellRunRequested` event
+- **Cell State**: Update `ExecutionStatus`, `ExecutionOrder`, `Outputs` collection
+- **Cancellation**: Send `CancelCommand` ("Cancel" type string) to kernel
+
+### Related Decisions
+
+- Decision 5: Custom Editor Architecture (NotebookEditorPane is view + data)
+- Decision 2: Async-First, ThreadHelper-Based Threading Model
+
+---
+
+## Decision 12: VizSurface Color Keys for Notebook Semantic Status Indicators
+
+**Date**: 2026-03-27
+**Lead**: Wendy (UI & Tool Window Specialist)
+**Status**: ACTIVE
+**Participants**: Wendy
+
+### Rationale
+
+The notebook cell status indicator needs to show Running / Succeeded / Failed states with meaningful colors that respond to VS theme changes (Light, Dark, Blue, High Contrast). VS `EnvironmentColors` lacks dedicated semantic color keys for general UI use, but the `VizSurface*` palette exists specifically for data-visualization status colors.
+
+### Decision
+
+Use `VsBrushes.VizSurface*MediumKey` for semantic status colors in the notebook UI. These keys are:
+- Registered in the VS color table and updated on every theme change
+- Correct to use via `SetResourceReference` (fully dynamic, no static brush instances)
+- Available for all VS themes including High Contrast
+
+**Mapping**:
+
+| Status | Old | New Key |
+|--------|-----|---------|
+| Running | `Colors.Orange` (hardcoded) | `VsBrushes.VizSurfaceGoldMediumKey` |
+| Succeeded | `#4EC94E` (hardcoded) | `VsBrushes.VizSurfaceGreenMediumKey` |
+| Failed | `#F44444` (hardcoded) | `VsBrushes.VizSurfaceRedMediumKey` |
+| Error output text | `#F44444` (hardcoded) | `VsBrushes.VizSurfaceRedMediumKey` |
+
+### Rule Established
+
+**Any future semantic color in the notebook UI (badges, indicators, charts) MUST use `SetResourceReference` with a `VsBrushes.*Key` constant.** Static `new SolidColorBrush(...)` assignments are forbidden for theme-sensitive properties.
+
+### High Contrast Compliance
+
+Status meaning is conveyed by both text labels AND color. Text labels ("Running", "✓", "✗") alone provide sufficient HC compliance (WCAG). Color is supplementary polish. All `SetResourceReference` calls are automatically HC-aware because VS maps `VsBrushes` keys to system colors in HC mode.
+
+### Implications
+
+1. All existing semantic-color assignments in `CellToolbar.cs` and `OutputControl.cs` replaced with `SetResourceReference` in this phase.
+2. New UI features must follow this pattern; violations cause theming regressions in dark/high-contrast modes.
+3. Available VizSurface colors: Green, Red, Gold, Brown, Plum, SteelBlue, StrongBlue, SoftBlue, DarkGold — each with Light/Medium/Dark variants.
+
+### Related Decisions
+
+- Decision 8: Cell UI Code-Only WPF Pattern (System.Xaml reference required for SetResourceReference)
+
+---
+
 ## Adding New Decisions
 
 When the Squad makes a new architectural decision:

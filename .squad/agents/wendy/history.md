@@ -113,3 +113,71 @@ Also added `<Reference Include="System.Xaml" />` to `PolyglotNotebooks.csproj` (
 
 **Status**: ACTIVE — Awaiting Phase 2.3 (Ellie) for execution wiring
 
+---
+
+## 2026 — Phase 5: VS Theming (p5-theming)
+
+### What Was Done
+
+Audited all four Editor controls for hardcoded colors. Only `CellToolbar.cs` and `OutputControl.cs` needed changes — 4 hardcoded `SetValue(brush)` calls replaced with `SetResourceReference`.
+
+| File | Fixes |
+|------|-------|
+| `NotebookControl.cs` | Already fully themed — no changes |
+| `CellControl.cs` | Already fully themed — no changes |
+| `CellToolbar.cs` | `UpdateStatusIndicator()`: 3 hardcoded brushes replaced |
+| `OutputControl.cs` | `RenderOutput()`: 1 hardcoded error foreground replaced |
+
+### Key Theming Rule
+
+**NEVER use `SetValue(ForegroundProperty, new SolidColorBrush(...))` for theme-sensitive colors.** This creates a static value that won't update when the VS theme changes. Always use `SetResourceReference(ForegroundProperty, VsBrushes.SomeKey)`.
+
+### VizSurface Color Keys for Semantic Status
+
+`VsBrushes` exposes a `VizSurface*` palette designed for data-visualization. These are fully theme-aware (Light/Dark/Blue/High Contrast). Mapping:
+- **Running** (was `Colors.Orange`) → `VsBrushes.VizSurfaceGoldMediumKey`
+- **Succeeded** (was hardcoded `#4EC94E`) → `VsBrushes.VizSurfaceGreenMediumKey`
+- **Failed / Error** (was hardcoded `#F44444`) → `VsBrushes.VizSurfaceRedMediumKey`
+
+Available VizSurface colors: Green, Red, Gold, Brown, Plum, SteelBlue, StrongBlue, SoftBlue, DarkGold — each with Light/Medium/Dark variants.
+
+### High Contrast Notes
+
+- Text labels ("⟳ Running", "✓", "✗ Error") provide semantic meaning independent of color — HC compliant.
+- `Brushes.Transparent` on a Button background is acceptable; WPF HC templates overlay system button colors anyway.
+- All `SetResourceReference` calls are automatically HC-aware because VS maps VsBrushes keys to system colors in HC mode.
+
+---
+
+## 2026-03-27 — Phase 5 Complete: VS Theming Fully Implemented (p5-theming)
+
+**Status**: COMPLETE ✅
+
+**What Changed**: Audited all four Editor controls. Replaced 4 hardcoded `SetValue(brush)` assignments with `SetResourceReference` + `VsBrushes.VizSurface*MediumKey` in `CellToolbar.cs` and `OutputControl.cs`.
+
+**Why**: Phase 5 required full VS theme compliance (Light/Dark/Blue/High Contrast) for the notebook UI.
+
+**Changes by File**:
+
+| File | Changes |
+|------|---------|
+| `CellToolbar.cs` | 3 hardcoded brushes → VizSurface keys (Running=Gold, Succeeded=Green, Failed=Red) |
+| `OutputControl.cs` | 1 error foreground → VizSurfaceRedMedium |
+| `NotebookControl.cs` | Already compliant — no changes |
+| `CellControl.cs` | Already compliant — no changes |
+
+**Decision 12 Established**:
+- Use `VsBrushes.VizSurface*MediumKey` for semantic status colors
+- Rule: Never use static `SetValue(brush)` for theme-sensitive properties
+- All `SetResourceReference` calls automatically map to system colors in HC mode
+
+**High Contrast Compliance**:
+- Semantic meaning conveyed by text labels independent of color (✓ WCAG)
+- Color is supplementary polish
+- HC mode tested via automatic system color mapping
+
+**Related Decisions**:
+- Decision 12: VizSurface Color Keys for Notebook Semantic Status Indicators (ACTIVE)
+- Decision 8: Cell UI Code-Only WPF Pattern
+
+**Status**: ACTIVE — Theming complete and verified
