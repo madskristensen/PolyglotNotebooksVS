@@ -176,3 +176,22 @@
 **Key insight**: VS MSBuild auto-imports `Microsoft.NuGet.targets` which handles PackageReference resolution natively. The SDK-style `PackageDependencyResolution.targets` were fighting with it. Old-style VSIX projects should NOT import any SDK targets — just `Microsoft.Common.props` → `Microsoft.CSharp.targets` → `Microsoft.VsSDK.targets`.
 
 **Build result**: 0 C# compiler errors, DLL produced. Only pre-existing `CreatePkgDef : TypeLoadException` from VSSDK 18.5.38461 remains (unrelated tooling bug).
+
+## 2026-03-27 — WebView2 Binding Redirects for Assembly Version Mismatch
+
+**What Changed**: Added `[assembly: ProvideBindingRedirection]` attributes to `src/Properties/AssemblyInfo.cs` to handle version mismatch between VS-bundled WebView2 (1.0.3485.44) and our NuGet package (1.0.3856.49).
+
+**Files Modified**:
+| File | Change |
+|------|--------|
+| `src/Properties/AssemblyInfo.cs` | Added `using Microsoft.VisualStudio.Shell;`; added two `ProvideBindingRedirection` attributes: Microsoft.Web.WebView2.Core (0.0.0.0–1.0.3856.49 → 1.0.3856.49) and Microsoft.Web.WebView2.Wpf (0.0.0.0–1.0.3856.49 → 1.0.3856.49); skipped WinForms assembly (not used) |
+
+**Why This Was Needed**: Wendy upgraded WebView2 NuGet to 1.0.3856.49 to access `WebView2CompositionControl` (only available in this version). However, VS itself ships with WebView2 1.0.3485.44. Without binding redirects, VS's extension loader would try to load the older assembly at runtime and fail because `WebView2CompositionControl` doesn't exist in version 1.0.3485.44.
+
+**How It Works**: The `ProvideBindingRedirection` attribute generates a `.bindingRedirects` file inside the VSIX package at build time. When VS loads our extension, it reads this file and redirects any requests for the older WebView2 assemblies to our bundled newer ones.
+
+**Build Verification**: Build clean with 0 errors (VS MSBuild only; pre-existing VSSDK 18.5.38461 CreatePkgDef error unrelated).
+
+**Maintenance Rule**: Whenever Microsoft.Web.WebView2 NuGet is updated to a new version, BOTH `NewVersion` and `OldVersionUpperBound` in both ProvideBindingRedirection attributes MUST be updated to match the new package version. Example: if upgrading to 1.0.4000.0, change both to `0.0.0.0–1.0.4000.0 → 1.0.4000.0`.
+
+**Related Decisions**: Wendy's WebView2CompositionControl Migration
