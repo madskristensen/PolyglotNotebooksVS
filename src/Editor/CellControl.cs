@@ -66,18 +66,23 @@ namespace PolyglotNotebooks.Editor
             Grid.SetRow(sep, 1);
             grid.Children.Add(sep);
 
-            // Code editor (TextBox)
+            // Code editor (TextBox) — height auto-sizes to content, capped at 20 lines
+            var fontFamily = new System.Windows.Media.FontFamily("Consolas, Courier New");
+            double fontSize = 13;
+            double lineHeight = fontFamily.LineSpacing * fontSize;
+            double editorVerticalPadding = 4 + 4; // Padding top + bottom
+
             var editor = new TextBox
             {
-                FontFamily = new System.Windows.Media.FontFamily("Consolas, Courier New"),
-                FontSize = 13,
+                FontFamily = fontFamily,
+                FontSize = fontSize,
                 AcceptsReturn = true,
                 AcceptsTab = true,
                 TextWrapping = TextWrapping.NoWrap,
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Hidden,
-                MinHeight = 60,
-                MaxHeight = 400,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                MinHeight = Math.Ceiling(lineHeight * 2 + editorVerticalPadding),
+                MaxHeight = Math.Ceiling(lineHeight * 20 + editorVerticalPadding),
                 BorderThickness = new Thickness(0),
                 Padding = new Thickness(4),
                 IsUndoEnabled = true
