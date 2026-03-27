@@ -1,0 +1,45 @@
+#!meta
+{"kernelInfo":{"defaultKernelName":"csharp","items":[{"name":"csharp"},{"name":"javascript"}]}}
+
+#!markdown
+# Variable Sharing Between Kernels
+
+This notebook demonstrates how values can be shared across kernel boundaries using `#!share`.
+
+---
+
+## Step 1 — Declare a variable in C#
+
+#!csharp
+var greeting = "Hello";
+var target = "Polyglot Notebooks";
+Console.WriteLine($"{greeting}, {target}!");
+
+#!markdown
+## Step 2 — Share the C# variable into JavaScript
+
+The `#!share` magic command copies the named variable from one kernel into another.
+
+#!javascript
+#!share --from csharp greeting
+#!share --from csharp target
+
+console.log(`${greeting}, ${target}! (from JavaScript)`);
+
+#!markdown
+## Step 3 — Share a JavaScript value back into C#
+
+#!javascript
+const jsMessage = "I was born in JavaScript";
+
+#!csharp
+#!share --from javascript jsMessage
+
+Console.WriteLine($"C# received: \"{jsMessage}\"");
+
+#!markdown
+## Notes
+
+- `#!share --from <kernelName> <variableName>` imports a variable from another kernel into the current one.
+- Shared values are serialized (typically as JSON), so complex types must be serializable.
+- This feature enables multi-language data pipelines within a single notebook.

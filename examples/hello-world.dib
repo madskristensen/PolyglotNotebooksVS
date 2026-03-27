@@ -1,0 +1,10 @@
+#!meta
+{"kernelInfo":{"defaultKernelName":"csharp","items":[{"name":"csharp"}]}}
+
+#!markdown
+# Hello World
+
+The simplest possible Polyglot Notebook. One C# cell that writes to the console.
+
+#!csharp
+Console.WriteLine("Hello from Polyglot Notebooks!");

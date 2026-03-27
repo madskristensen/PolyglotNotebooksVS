@@ -1,0 +1,75 @@
+#!meta
+{"kernelInfo":{"defaultKernelName":"csharp","items":[{"name":"csharp"}]}}
+
+#!markdown
+# Rich Output
+
+This notebook exercises the different output renderers: HTML, SVG, JSON, plain text, and error display.
+
+---
+
+## HTML Output
+
+#!csharp
+using Microsoft.DotNet.Interactive.Formatting;
+
+var html = """
+<div style="font-family: sans-serif; padding: 1em; background: #f0fff4; border: 1px solid #38a169; border-radius: 6px;">
+  <h3 style="color: #276749; margin: 0 0 .5em">✅ HTML from C#</h3>
+  <p style="margin: 0;">This HTML was produced by a C# cell using <code>display()</code>.</p>
+</div>
+""";
+
+display(html.AsHtml());
+
+#!markdown
+## SVG Output
+
+#!csharp
+var svg = """
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100">
+  <rect width="200" height="100" fill="#e2e8f0" rx="8"/>
+  <circle cx="50" cy="50" r="30" fill="#4299e1"/>
+  <rect x="110" y="20" width="60" height="60" fill="#ed8936" rx="4"/>
+  <text x="100" y="90" text-anchor="middle" font-size="10" fill="#2d3748">SVG from C#</text>
+</svg>
+""";
+
+display(svg.AsHtml());
+
+#!markdown
+## JSON Output
+
+#!csharp
+using System.Text.Json;
+
+var data = new
+{
+    name = "Polyglot Notebooks",
+    version = "1.0",
+    features = new[] { "C#", "JavaScript", "SQL", "HTML", "Python" },
+    active = true
+};
+
+var json = JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
+Console.WriteLine(json);
+
+#!markdown
+## Plain Console Output
+
+#!csharp
+for (int i = 1; i <= 5; i++)
+{
+    Console.WriteLine($"Line {i}: Hello from Console.WriteLine");
+}
+
+#!markdown
+## Error Display
+
+The cell below intentionally throws a `DivideByZeroException` to test how the extension renders runtime errors.
+
+#!csharp
+// This cell intentionally produces an error to test error display rendering.
+int zero = 0;
+int result = 42 / zero;
+Console.WriteLine(result);

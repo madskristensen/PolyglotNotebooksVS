@@ -1,0 +1,43 @@
+#!meta
+{"kernelInfo":{"defaultKernelName":"csharp","items":[{"name":"csharp"},{"name":"javascript"},{"name":"sql"},{"name":"html"},{"name":"markdown"}]}}
+
+#!markdown
+# Multi-Language Notebook
+
+This notebook demonstrates kernel switching between C#, JavaScript, SQL, HTML, and Markdown cells.
+
+---
+
+## C# Cell
+
+#!csharp
+var language = "C#";
+var version = 12;
+Console.WriteLine($"Running {language} {version}");
+
+#!markdown
+## JavaScript Cell
+
+#!javascript
+const language = "JavaScript";
+console.log(`Running ${language} in Polyglot Notebooks`);
+
+#!markdown
+## SQL Cell
+
+#!sql
+SELECT 'Hello from SQL' AS greeting, 42 AS answer;
+
+#!markdown
+## HTML Cell
+
+#!html
+<div style="padding: 1em; border-left: 4px solid #0078d4; background: #f3f9ff; font-family: sans-serif;">
+  <strong>HTML Output</strong>
+  <p>This cell renders raw HTML directly in the notebook output.</p>
+</div>
+
+#!markdown
+## Summary
+
+Each cell above runs in a different kernel. Notice how each kernel maintains its own state and variable scope, while the notebook document ties them all together in a single file.

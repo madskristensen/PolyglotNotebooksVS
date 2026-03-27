@@ -46,6 +46,27 @@ project.fragment.lock.json
 *.vsix
 *.vsixmanifest.bak
 
+# Visual Studio generated files
+Generated\ Files/
+*_wpftmp.csproj
+*.vspscc
+*.vssscc
+.builds
+*.pidb
+
+# Test results
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+TestResult.xml
+
+# MSBuild Binary Log
+*.binlog
+
+# ReSharper
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
 # Local history for Visual Studio
 .localhistory/
 

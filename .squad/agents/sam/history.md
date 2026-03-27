@@ -97,6 +97,68 @@
 
 **`KernelInfo` constructor**: `new KernelInfo(string name, string languageName, IReadOnlyCollection<string> aliases)`
 
-**Project format**: SDK-style (`<Project Sdk="Microsoft.NET.Sdk">`) — all `.cs` files auto-included; no manual `<Compile>` entries needed.
+**Project format**: Old-style (non-SDK) `.csproj` — explicit `<Compile Include="..."/>` for every .cs file; VSSDK targets imported via `<Import>`.
 
 **Pre-existing build error**: `CreatePkgDef : TypeLoadException` from VSSDK tooling 18.5.38461 — unrelated to document model code; zero C# compiler errors in our new files.
+
+### csproj SDK-to-Old-Style Conversion
+
+**What changed**: Converted `src/PolyglotNotebooks.csproj` from SDK-style (`<Project Sdk="Microsoft.NET.Sdk">`) to traditional/old-style non-SDK VSIX format.
+
+**Key conversion decisions**:
+1. **Project header**: `<Project ToolsVersion="Current" DefaultTargets="Build">` with XML namespace.
+2. **Imports**: `Microsoft.Common.props` at top; `Microsoft.CSharp.targets` + `Microsoft.VsSDK.targets` at bottom.
+3. **ProjectTypeGuids**: `{82b43b9b-a64c-4715-b499-d71e9ca2bd60}` (VSIX) + `{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}` (C#).
+4. **ProjectGuid**: Reused `{52D750BB-4C45-43D1-BC22-A9D5FE2CDF91}` from vsixmanifest Identity.
+5. **TargetFrameworkVersion**: `v4.8` (was `net48` TFM in SDK-style).
+6. **Explicit Compile includes**: 45 .cs files across 8 subdirectories enumerated manually.
+7. **Framework references**: Added `System`, `System.Core`, `System.Data`, `System.Drawing`, `System.Windows.Forms`, `System.Xml`, `Microsoft.CSharp` beyond what was already listed.
+8. **Removed**: `<ProjectCapability Include="CreateVsixContainer" />` — VSSDK targets handle this in old-style.
+9. **PackageReferences**: Preserved all 6 NuGet package references unchanged (they work in old-style too).
+10. **VSIX properties**: Added `IncludeAssemblyInVSIXContainer`, `DeployExtension`, `StartAction`/`StartProgram`/`StartArguments` for F5 debugging.
+
+**Build tool**: Old-style projects require `msbuild.exe` (not `dotnet build`). MSBuild found at `C:\Program Files\Microsoft Visual Studio\18\Preview\MSBuild\Current\Bin\MSBuild.exe`.
+
+**Build result**: 0 C# compiler errors, DLL produced. Only pre-existing `CreatePkgDef : TypeLoadException` from VSSDK 18.5.38461 remains.
+
+**When adding new .cs files**: Must manually add `<Compile Include="path\to\File.cs" />` to the csproj — no auto-globbing in old-style format.
+
+### PackageReference Resolution Fix for dotnet CLI Builds
+
+**Problem**: After converting to old-style csproj, `dotnet msbuild` failed with CS0246 errors for all NuGet package types (System.Text.Json, VS SDK, WebView2). VS MSBuild (`MSBuild.exe`) worked fine.
+
+**Root cause**: Old-style projects with `PackageReference` rely on NuGet's `ResolveNuGetPackageAssets` target to convert `PackageReference` items into assembly `Reference` items at compile time. VS MSBuild auto-imports `Microsoft.NuGet.targets` (from `$(MSBuildExtensionsPath)\Microsoft\NuGet\$(VisualStudioVersion)\`) via its `ImportBefore` mechanism. `dotnet msbuild` doesn't have this auto-import, so PackageReferences were never resolved into compile-time references.
+
+**Fix applied** (3 parts):
+1. **`<RuntimeIdentifiers>win;win-x86;win-x64;win-arm64</RuntimeIdentifiers>`** — Makes `dotnet restore` generate platform-specific targets in `project.assets.json`, matching what VS MSBuild restore generates. Without this, VS MSBuild's NuGet targets error with "doesn't list 'win' as RuntimeIdentifier".
+2. **SDK targets import** — Conditionally import `Microsoft.NET.Sdk.Common.targets` (sets up task assembly paths) and `Microsoft.PackageDependencyResolution.targets` (provides `ResolvePackageDependenciesForBuild` target) from the .NET SDK. Conditioned on `$(MSBuildRuntimeType) == 'Core'` so only `dotnet msbuild` uses them.
+3. **No-op target stubs** — 5 stub targets (`ProcessFrameworkReferences`, `_DefaultMicrosoftNETPlatformLibrary`, `_ComputePackageReferencePublish`, `ResolveRuntimePackAssets`, `CollectPackageReferences`) that the SDK's `PackageDependencyResolution.targets` depends on but that aren't needed for net48.
+4. **`_SetPackageResolutionProperties` target** — Sets `$(TargetFramework)=net48` and `$(_DotNetAppHostExecutableNameWithoutExtension)` at target execution time (not project-level), preventing restore contamination.
+
+**Build compatibility**:
+- `dotnet restore` → `dotnet msbuild` → 0 C# errors ✓
+- `dotnet restore` → VS MSBuild build → 0 C# errors ✓
+- VS MSBuild restore → VS MSBuild build → 0 C# errors ✓
+- VS MSBuild restore → `dotnet msbuild` → 0 C# errors ✓
+
+**Key MSBuild properties**:
+- `$(MSBuildRuntimeType)` = `Core` (dotnet msbuild) vs `Full` (VS MSBuild) — used as the gate for all conditional imports
+- `$(MSBuildSDKsPath)` = `.NET SDK\Sdks` directory — available in `dotnet msbuild` for importing SDK targets
+- `$(NuGetTargetMoniker)` = derived from `$(TargetFrameworkMoniker)` = `.NETFramework,Version=v4.8`
+
+### csproj Fix — NuGet PackageReference Resolution (BookmarkStudio Pattern)
+
+**Problem**: After SDK-to-old-style conversion, NuGet PackageReference assemblies (System.Text.Json, VS SDK types, WebView2) weren't resolving at compile time. Build had many CS0246/CS0234 errors.
+
+**Root cause**: The csproj had leftover SDK-style hacks (`Microsoft.NET.Sdk.Common.targets`, `Microsoft.PackageDependencyResolution.targets`, no-op stub targets) that conflicted with the native `Microsoft.NuGet.targets` auto-imported by VS MSBuild. Also missing `VSToolsPath` property before `Microsoft.Common.props` import.
+
+**Fix applied** (modeled after `BookmarkStudio.csproj`):
+1. **`VSToolsPath`** — Added PropertyGroup with `VSToolsPath`, `LangVersion`, `Nullable` BEFORE the `Microsoft.Common.props` import (matching BookmarkStudio exactly).
+2. **`ToolsVersion="15.0"`** — Changed from `"Current"` to match BookmarkStudio convention.
+3. **Removed `RuntimeIdentifiers`** — Was `win;win-x86;win-x64;win-arm64`; not needed and caused NuGet "RuntimeIdentifier not listed" errors.
+4. **Removed all SDK hack imports/targets** — Deleted `Microsoft.NET.Sdk.Common.targets` import, `Microsoft.PackageDependencyResolution.targets` import, `_SetPackageResolutionProperties` target, and 5 no-op stub targets (`ProcessFrameworkReferences`, `_DefaultMicrosoftNETPlatformLibrary`, etc.).
+5. **Clean import order** — `Microsoft.CSharp.targets` immediately followed by `Microsoft.VsSDK.targets` (no imports in between).
+
+**Key insight**: VS MSBuild auto-imports `Microsoft.NuGet.targets` which handles PackageReference resolution natively. The SDK-style `PackageDependencyResolution.targets` were fighting with it. Old-style VSIX projects should NOT import any SDK targets — just `Microsoft.Common.props` → `Microsoft.CSharp.targets` → `Microsoft.VsSDK.targets`.
+
+**Build result**: 0 C# compiler errors, DLL produced. Only pre-existing `CreatePkgDef : TypeLoadException` from VSSDK 18.5.38461 remains (unrelated tooling bug).

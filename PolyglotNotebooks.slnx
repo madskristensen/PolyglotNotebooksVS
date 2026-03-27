@@ -1,0 +1,12 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="arm64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="src/PolyglotNotebooks.csproj" Id="52d750bb-4c45-43d1-bc22-a9d5fe2cdf91">
+    <Platform Solution="*|arm64" Project="arm64" />
+    <Platform Solution="*|x86" Project="x86" />
+  </Project>
+  <Project Path="test/PolyglotNotebooks.Test/PolyglotNotebooks.Test.csproj" />
+</Solution>

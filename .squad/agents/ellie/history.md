@@ -260,3 +260,23 @@
 - Decision 13: IntelliSense Architecture (ACTIVE)
 
 **Status**: COMPLETE — Ready for marketplace preparation
+
+---
+
+## Learnings
+
+### Auto-install dialog pattern (KernelNotInstalledDialog)
+- `System.Windows.MessageBox` with `YesNoCancel` is the simplest way to offer 3 options in a VS extension dialog without pulling in TaskDialog or InfoBar infrastructure.
+- The `IVsStatusbar` via `ServiceProvider.GlobalProvider.GetService(typeof(SVsStatusbar))` is the correct way to show progress text in the VS status bar from a static context. Requires `SwitchToMainThreadAsync` before access.
+- Process execution pattern for `dotnet tool install`: use `ProcessStartInfo` with `RedirectStandardOutput/Error`, `CreateNoWindow = true`, `UseShellExecute = false`. Wire `EnableRaisingEvents + Exited` event to a `TaskCompletionSource<int>` for async awaiting.
+- `KernelInstallationDetector.InvalidateCache()` clears both `_cachedIsInstalled` and `_cachedVersion` so the next `IsInstalledAsync()` re-runs detection after installation.
+- The call site in `NotebookEditorPane.LoadDocData` already has the `detector` instance available — just pass it through to `ShowAsync(detector)`.
+- Build environment note: the VS SDK assemblies (`Microsoft.VisualStudio.*`) aren't resolvable outside the VS dev hive, so `dotnet msbuild` produces ~257 CS0234 errors as baseline. These are all namespace resolution failures, not logic errors. The project builds correctly inside VS.
+
+### Auto-start kernel after install (seamless post-install UX)
+- Changed `KernelNotInstalledDialog.ShowAsync` return type from `Task` to `Task<bool>` — returns `true` on successful install, `false` on cancel/failure/docs.
+- Removed the "please re-open" success MessageBox; kept status bar message and error/failure MessageBoxes.
+- `RunInstallAsync` also changed from `Task` to `Task<bool>` to propagate the install result.
+- In `NotebookEditorPane.LoadDocData`, the caller re-checks `detector.IsInstalledAsync()` after a successful install (cache already invalidated by the dialog) and proceeds down the normal "installed" path.
+- The kernel starts lazily on first cell run via `EnsureKernelStartedAsync`, so no special kernel-start call is needed in `LoadDocData` — simply confirming `isInstalled = true` is sufficient for the notebook to load in full-capability mode.
+- `ExecutionCoordinator` has no install check; it only manages kernel lifecycle after the tool is confirmed present.

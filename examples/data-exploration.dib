@@ -1,0 +1,80 @@
+#!meta
+{"kernelInfo":{"defaultKernelName":"csharp","items":[{"name":"csharp"}]}}
+
+#!markdown
+# Data Exploration
+
+A realistic scenario: create in-memory data, query it with LINQ, and display it as a formatted table.
+
+---
+
+## Step 1 — Define a model and create sample data
+
+#!csharp
+record Product(string Name, string Category, decimal Price, int Stock);
+
+var inventory = new List<Product>
+{
+    new("Widget A",    "Widgets",  9.99m,  120),
+    new("Widget B",    "Widgets",  14.49m,  85),
+    new("Gadget Pro",  "Gadgets",  49.95m,  30),
+    new("Gadget Lite", "Gadgets",  24.95m,  60),
+    new("Doohickey",   "Misc",      5.00m, 200),
+    new("Thingamajig", "Misc",     19.99m,  15),
+    new("Super Gizmo", "Gadgets", 129.00m,   8),
+};
+
+Console.WriteLine($"Loaded {inventory.Count} products.");
+
+#!markdown
+## Step 2 — Display the full list as a table
+
+#!csharp
+display(inventory);
+
+#!markdown
+## Step 3 — Filter: only items with low stock (≤ 20 units)
+
+#!csharp
+var lowStock = inventory
+    .Where(p => p.Stock <= 20)
+    .OrderBy(p => p.Stock);
+
+display(lowStock);
+
+#!markdown
+## Step 4 — Aggregate by category
+
+#!csharp
+var summary = inventory
+    .GroupBy(p => p.Category)
+    .Select(g => new
+    {
+        Category     = g.Key,
+        Count        = g.Count(),
+        TotalValue   = g.Sum(p => p.Price * p.Stock),
+        AveragePrice = Math.Round(g.Average(p => p.Price), 2)
+    })
+    .OrderByDescending(s => s.TotalValue);
+
+display(summary);
+
+#!markdown
+## Step 5 — Find the most expensive item per category
+
+#!csharp
+var topItems = inventory
+    .GroupBy(p => p.Category)
+    .Select(g => g.MaxBy(p => p.Price));
+
+foreach (var item in topItems)
+{
+    Console.WriteLine($"{item!.Category,-10} → {item.Name,-14} @ ${item.Price:F2}");
+}
+
+#!markdown
+## Notes
+
+- `display()` renders collections as interactive HTML tables in the notebook.
+- LINQ queries run fully in-process — no external database needed for this demo.
+- Replace the `inventory` list with a real data source (CSV, database, API) for production use.
