@@ -17,33 +17,16 @@
 
 ---
 
-## Phase 1 Learning: Kernel Process Manager Threading Model
+## Phase History Summary (P1–P4)
 
-**Process.Start off UI thread**: `StartAsync` uses `Task.Run(() => LaunchProcess(), ct)` to ensure `ProcessStartInfo` construction and `Process.Start()` never block the VS UI thread. Process object is assigned inside background work, then consumed via public `Process` property.
+**P1–P3 Foundations**: 135 tests (Phase 1), 69 new tests (Phase 2), IntelliSense coverage (Phase 3). Established MSTest patterns on net48, threading audit rules, ExtensionLogger JIT-safety for VS facades, disposal cascade patterns. Key learnings: `Assert.ThrowsException<T>()` unavailable on net48 (use try/catch); ProtocolSerializerOptions is internal (use TestSerializerOptions); JSON deserialization throws JsonException on malformed input.
 
-**Exited handler design**: `EnableRaisingEvents = true` causes `Exited` to fire on ThreadPool thread. Handler does lightweight work: read `ExitCode` (try/catch for races), snapshot stderr under lock, set status, raise event. No awaits, no blocking calls.
+**P4 Batch – Final Phase**: 105 new tests finalized (p3-tests + p4-tests). Tests added:
+- `IntelliSenseTests.cs` (57): Reflection tests for CompletionProvider, HoverProvider, DiagnosticsProvider, IntelliSenseManager
+- `RichOutputHelperTests.cs` (35): OutputControl static helpers (MarkdownToHtml, InlineMarkdown, CsvToHtmlTable, ParseCsvLine)
+- `ExecutionModeTests.cs` (13): Kernel selector, execution modes, cancellation, variable service
 
-**Restart serialization**: `SemaphoreSlim(1,1)` gates `RestartAsync` entry, queuing callers safely without deadlock on UI thread; honors `CancellationToken` throughout.
-
-**WaitForExitAsync on net48**: No native API. Implemented via `TaskCompletionSource<bool>` + `process.Exited` event subscription + `Task.Delay` timeout fallback. Guarded subscribe/HasExited check for race where process exits before subscription.
-
-**StdinPingTimer lock-free**: Uses `Interlocked.CompareExchange` on `int` field (not bool) for lock-free Start/Stop; timer callback reads field with `Volatile.Read`. Disposing done only by CAS winner.
-
-**Stderr ring-buffer**: 100-line cap under `_stderrLock` (dedicated object, not `this`). Diagnostics without unbounded memory growth.
-
-**Dispose pattern**: Sets `_intentionalStop = true` before killing (Exited handler is no-op during cleanup); unsubscribes event handlers before `Process.Dispose()` to prevent post-dispose callbacks.
-
----
-
-## Phase 1 Testing: Unit Test Patterns (135 tests)
-
-**MSTest.Sdk 4.0.1 limitation**: `Assert.ThrowsException<T>()` unavailable on net48. Replaced with try/catch + `Assert.IsTrue(threw, ...)` pattern. Now team standard (Decision 4).
-
-**ProtocolSerializerOptions is internal**: Tests define `TestSerializerOptions.Default` locally with identical settings (CamelCase + WhenWritingNull + CaseInsensitive).
-
-**JSON error handling**: `JsonSerializer.Deserialize<T>` throws `JsonException` on malformed input (never returns null). `KernelClient.DispatchLine` correctly catches and logs.
-
-**Build order**: Main project (`src/`) must build first since tests project-reference it. Both projects build clean: 0 errors, 0 warnings (after fixes).
+**Total**: 309 tests passing. All critical patterns validated across kernel threading, protocol serialization, UI marshaling, disposal, and execution lifecycle.
 
 ---
 

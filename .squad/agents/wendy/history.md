@@ -1,50 +1,37 @@
 # Wendy History
 
-## 2024-01-XX — Xtenders Founded
+## Core Context
 
-**Context**: Founded as specialized team for Visual Studio extension developers.
-
-**Wendy's Focus**:
-- Tool window design and implementation (BaseToolWindow<T>)
-- WPF UserControl development with VS theming
-- Dialog and modal window design
-- Status bar, info bar, and progress notifications
-- Custom editor implementation (IVsEditorFactory)
-- Icon management (KnownMonikers and custom icons)
-- Fonts & Colors category registration
-- Accessibility and theme compliance
+**Role**: UI Specialist for VS Extension team. Specializes in tool window design, WPF control architecture, VS theming, output rendering, and accessibility.
 
 **Authority Scope**:
-- Tool window architecture and UX patterns
-- WPF control theming ({DynamicResource} bindings, UseVsTheme)
-- Dialog creation and styling
-- Icon selection and custom icon registration
-- Status bar messaging and notifications
-- Accessibility validation
+- Tool window design and BaseToolWindow<T> patterns
+- WPF code-only control design (no XAML)
+- VS theming via VsBrushes and DynamicResource
+- Rich output rendering (MIME routing, WebView2, image handling)
+- DataGrid and collection binding patterns
+- Accessibility and high-contrast compliance
 
-**Knowledge Base**:
-- BaseToolWindow<T> lifecycle and patterns
-- WPF XAML, bindings, data templates
-- VS EnvironmentColors and theming
-- KnownMonikers library
-- Image manifest setup and registration
-- Accessibility standards (WCAG, VS conventions)
-
-**Key References**:
-- VS Tool Windows API (Microsoft Docs)
-- KnownImageIds Reference
-- Environment Colors Reference
-- Community.VisualStudio.Toolkit UI samples
-- Image Service and Catalog documentation
-
-**Active Integrations**:
-- Vince: Tool window scaffolding and package registration
-- Ellie: Editor UI components (completion, quick info popup styling)
-- Sam: Error List UI, custom tree node styling
+**Key Knowledge**:
+- Cell UI code-only WPF pattern (4 files: NotebookControl, CellControl, CellToolbar, OutputControl)
+- VS color keys: VsBrushes (ToolWindowBackground, ToolWindowText, VizSurface*Medium for status)
+- MIME type rendering (text/plain, text/html, text/markdown, text/csv, image/*, application/json)
+- WebView2 integration (user-data folder, theme injection, auto-resize, fallback)
+- Variable explorer architecture (singleton service, auto-refresh, protocol bridge)
 
 ---
 
-## 2026 — Phase 2.2: Cell-Based Notebook UI (p2-cell-ui)
+## Phase History Summary (P1–P4)
+
+**P1–P2 Foundations**: Cell UI (4 files) with code-only WPF, VS theming compliance (SetResourceReference for all colors), output routing basics. Established pattern: all controls inherit Border (not Grid), TwoWay binding for Contents, CollectionChanged rebuild for Cells.
+
+**P3 Batch – Rich Output & Variables**: Rich output rendering (8 MIME types via WebView2/ImageOutputControl), in-place updates via DisplayedValueUpdated (Replace action), variable explorer tool window (5 files), auto-refresh on SubmitCode events. Added VizSurface color mapping for status indicators (Running=Gold, Succeeded=Green, Failed=Red). All theme-aware (Light/Dark/Blue/HC).
+
+**P4 Batch – Final Integration**: All 8 MIME types live with Theo's test suite (35 tests for rich output), Ellie's execution wiring complete, Vince's toolbar status integrated. VariableService singleton properly lifecycle-managed via package initialization.
+
+**Total**: Full notebook UI with rich output, variable explorer, and complete theming. 309 tests passing.
+
+---
 
 ### What Was Built
 
