@@ -668,6 +668,45 @@ _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
 
 ---
 
+## Decision 10: View Code / View Designer Logical View Strategy
+
+**Date**: 2026-03-28
+**Lead**: Ellie
+**Status**: ACTIVE
+**Participants**: Ellie
+
+### Rationale
+
+We needed F7 (View Code) and Shift+F7 (View Designer) support for .dib/.ipynb files, matching the behavior of .vsixmanifest, .resx, and other VS file types with designer surfaces. Standard VS pattern: claim the views you handle, return `E_NOTIMPL` for views you don't. VS automatically falls back to the built-in text editor for unclaimed logical views.
+
+### Decision
+
+- Our editor factory claims `LOGVIEWID_Primary` and `LOGVIEWID_Designer` (returns `S_OK`)
+- Our editor factory does NOT claim `LOGVIEWID_Code` or `LOGVIEWID_TextView` (returns `E_NOTIMPL`)
+- `ProvideEditorLogicalView` attribute registered only for `Designer_string`
+- Default open (Primary) maps to our WPF notebook UI
+- F7 opens raw file content in the text editor without custom text editor implementation — VS does the work
+
+### Implications
+
+1. F7 hotkey now opens file in default text editor (VS built-in fallback)
+2. Shift+F7 returns to WPF designer view
+3. No need to implement a separate code/text editor UI
+4. Pattern aligns with VS conventions for multi-view file types
+5. Future designer enhancements (Formula Bar, Property Grid) can extend Designer logical view
+
+### Files Changed
+
+- `src/PolyglotNotebooksPackage.cs` — added `ProvideEditorLogicalView` attribute
+- `src/Editor/NotebookEditorFactory.cs` — updated `MapLogicalView` to claim Designer, decline Code/TextView
+
+### Related Decisions
+
+- Decision 1: Community.VisualStudio.Toolkit foundation (provides editor factory abstractions)
+- Decision 2: Async-first threading model (applies to keyboard event handling)
+
+---
+
 ## Adding New Decisions
 
 When the Squad makes a new architectural decision:

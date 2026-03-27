@@ -193,3 +193,15 @@
 - Decision 15: Notebook Toolbar Architecture (ACTIVE)
 
 **Status**: COMPLETE — Handoff to marketplace submission prep
+
+---
+
+## 2026-03-27 — Logical View Feature: Threading & Reliability Check
+
+**Context**: Ellie completed View Code / View Designer feature (Decision 10).
+
+**Threading Audit**: Logical view switching handled by VS event routing; no custom threading required. MapLogicalView returns S_OK/E_NOTIMPL synchronously (no async code). No new CancellationTokens or JoinableTaskFactory patterns needed.
+
+**Reliability**: Standard VS SDK pattern. No breaking changes to existing async patterns or disposal cascades.
+
+**Status**: APPROVED — No threading concerns. Feature ready for production.

@@ -226,3 +226,15 @@
 
 **Related Decision**: Will be merged as Decision 16 (WebView2CompositionControl Architecture Recommendation)
 
+
+---
+
+## 2026-03-27 — Decision 10: View Code / View Designer Logical View Strategy
+
+**Context**: Ellie completed F7/Shift+F7 logical view switching feature for .dib/.ipynb files.
+
+**Key Decision**: Claim Designer logical view (returns S_OK); decline Code/TextView (returns E_NOTIMPL). Allows VS text editor fallback for unclaimed views.
+
+**Architecture**: Standard VS multi-view file type pattern. Aligns with .vsixmanifest, .resx conventions.
+
+**Status**: ACTIVE — Logged as Decision 10. Integration points verified.

@@ -287,3 +287,19 @@
 - In `NotebookEditorPane.LoadDocData`, the caller re-checks `detector.IsInstalledAsync()` after a successful install (cache already invalidated by the dialog) and proceeds down the normal "installed" path.
 - The kernel starts lazily on first cell run via `EnsureKernelStartedAsync`, so no special kernel-start call is needed in `LoadDocData` — simply confirming `isInstalled = true` is sufficient for the notebook to load in full-capability mode.
 - `ExecutionCoordinator` has no install check; it only manages kernel lifecycle after the tool is confirmed present.
+---
+
+## 2026-03-27 — View Code / View Designer Logical View Support
+
+**What Changed**: Added F7/Shift+F7 logical view switching capability to editor factory. Now claims Designer logical view via ProvideEditorLogicalView attribute; returns E_NOTIMPL for Code/TextView, allowing VS text editor fallback.
+
+**Why**: Standard VS pattern for multi-view file types. Aligns with .vsixmanifest, .resx, and other designer files. Provides code viewing without custom text editor implementation.
+
+**Affected Areas**: 
+- NotebookEditorFactory (MapLogicalView method)
+- PolyglotNotebooksPackage (attribute registration)
+- Keyboard/UI: F7 now functional; hotkey routing tested
+
+**Status**: ACTIVE — Core capability for notebook file handling
+
+**Related Decision**: Decision 10 (decisions.md)
