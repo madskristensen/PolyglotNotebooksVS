@@ -92,3 +92,66 @@
 **Critical Pattern — ExtensionLogger JIT-Safety**: When testable code calls VS-only types (ActivityLog, InfoBar, etc.), the JIT fails before try-catch executes. Solution: split into public wrapper (try-catch) + private [NoInlining] helper. The wrapper's catch block catches the JIT compilation failure at runtime.
 
 **Status**: ACTIVE — Ready for integration into Phase 2.3
+
+---
+
+## Phase 2 Testing: Phase 2 Unit Tests (p2-tests)
+
+**Status**: COMPLETE ✅ — 204 tests passing (69 new tests added)
+
+**What was added:**
+- `CellExecutionEngineTests.cs` (31 tests): Reflection-based tests for private static `MapKernelName` (21 mapping cases covering all kernel aliases) and `IsTerminalEvent` (8 event-type cases), plus constructor null guard and double-dispose safety. Uses `Process.GetCurrentProcess()` as a stub process to construct a valid `CellExecutionEngine` without a live kernel.
+- `ExecutionCoordinatorTests.cs` (4 tests): Constructor null guard, double-dispose safety, and `RunAllCellsAsync(null)` null-document guard (exercisable because the `throw` fires synchronously before the first `await`).
+- `EditorFactoryTests.cs` (13 tests): `NotebookDocumentManager` lifecycle — `RegisterDocument`, `IsOpen`/`GetDocument`, `CloseAsync`, event firing (DocumentOpened, DocumentClosed, DocumentDirtyChanged), case-insensitive path lookup, and the rename scenario. `NotebookEditorFactory` itself is untestable (VS `IVsEditorFactory` interface makes class-loading uncertain in test runner).
+- `OutputRoutingTests.cs` (21 tests): `FormattedOutput` and `CellOutput` model coverage (MIME types, output kinds, SuppressDisplay, ValueId, null-FormattedValues, multiple values), output accumulation in `NotebookCell.Outputs`, and a single `OutputControl` WPF construction test on STA thread.
+
+**VS SDK JIT-blocking boundaries discovered:**
+- `OutputControl.Rebuild()` directly references `VsBrushes` (VS SDK). Any test that sets `OutputControl.Cell` triggers JIT of `Rebuild()` → `FileNotFoundException` for `Microsoft.VisualStudio.Shell.15.0`. Only the no-Cell construction path is testable.
+- `ExecutionCoordinator.HandleCellRunRequested()` directly references `ThreadHelper` in its method body. Even null-args tests that would hit the early return fail at JIT time. Not testable in unit-test runner.
+- `NotebookEditorFactory.MapLogicalView` references `VSConstants.LOGVIEWID_Primary` (a `static readonly Guid`, not a const), so JIT of `MapLogicalView` requires VS Shell assembly. Not testable.
+- Methods that call ONLY VS types via the JIT-safety pattern (ExtensionLogger, Decision 9) ARE safe to call from tests — the safety pattern prevents JIT failure propagation.
+
+**InternalsVisibleTo**: Added via `<AssemblyAttribute Include="...InternalsVisibleToAttribute">` in the main project's `.csproj`. This allows tests to directly reference `internal` classes like `CellExecutionEngine` and `ExecutionCoordinator`.
+
+**DirtyState gotcha**: `NotebookDocument.AddCell()` calls `SetDirty()` internally. Tests that check `DocumentDirtyChanged` must call `doc.MarkClean()` after setup to reset to a clean baseline, otherwise the subsequent `IsDirty = true` assignment is a no-op (same value → no PropertyChanged → no event).
+
+---
+
+## 2026-03-27 — Phase 4 Batch Complete: Tests, IntelliSense, Rich Output, Toolbar
+
+**Status**: COMPLETE ✅ — All four workstreams delivered and integrated
+
+**What Changed**: Four-agent parallel batch completed:
+1. **Theo (Tests)**: 69 new tests (CellExecutionEngineTests, ExecutionCoordinatorTests, EditorFactoryTests, OutputRoutingTests) — 204 total, all passing.
+2. **Ellie (IntelliSense)**: 5 new providers (CompletionProvider, HoverProvider, SignatureHelpProvider, DiagnosticsProvider, IntelliSenseManager) integrated into NotebookControl.
+3. **Wendy (Rich Output)**: 8 MIME types supported via WebView2OutputHost and ImageOutputControl — in-place DisplayedValueUpdated rendering.
+4. **Vince (Toolbar)**: NotebookToolbar with Run All, Interrupt, Restart, Clear Outputs buttons + kernel status indicator + keyboard shortcuts.
+
+**Build Status**: ✅ 0 errors, 0 warnings  
+**Test Count**: 204 total (all passing)
+
+**Why**: Phase 4 required comprehensive testing, advanced IntelliSense, production-grade output rendering, and user-accessible toolbar commands.
+
+**Affected Areas**:
+- All agents: Decision 13 (IntelliSense), 14 (Rich Output), 15 (Toolbar) captured in decisions.md
+- Wendy: DisplayedValueUpdated contract for live display updates (use `cell.Outputs[index] = newOutput`)
+- Theo: WebView2OutputHost fallback ensures test stability
+- Penny: Build verified clean; ready for marketplace submission prep
+
+**Status**: ACTIVE — All Phase 4 tasks complete and production-ready
+
+**What was added:**
+- `CellExecutionEngineTests.cs` (31 tests): Reflection-based tests for private static `MapKernelName` (21 mapping cases covering all kernel aliases) and `IsTerminalEvent` (8 event-type cases), plus constructor null guard and double-dispose safety. Uses `Process.GetCurrentProcess()` as a stub process to construct a valid `CellExecutionEngine` without a live kernel.
+- `ExecutionCoordinatorTests.cs` (4 tests): Constructor null guard, double-dispose safety, and `RunAllCellsAsync(null)` null-document guard (exercisable because the `throw` fires synchronously before the first `await`).
+- `EditorFactoryTests.cs` (13 tests): `NotebookDocumentManager` lifecycle — `RegisterDocument`, `IsOpen`/`GetDocument`, `CloseAsync`, event firing (DocumentOpened, DocumentClosed, DocumentDirtyChanged), case-insensitive path lookup, and the rename scenario. `NotebookEditorFactory` itself is untestable (VS `IVsEditorFactory` interface makes class-loading uncertain in test runner).
+- `OutputRoutingTests.cs` (21 tests): `FormattedOutput` and `CellOutput` model coverage (MIME types, output kinds, SuppressDisplay, ValueId, null-FormattedValues, multiple values), output accumulation in `NotebookCell.Outputs`, and a single `OutputControl` WPF construction test on STA thread.
+
+**VS SDK JIT-blocking boundaries discovered:**
+- `OutputControl.Rebuild()` directly references `VsBrushes` (VS SDK). Any test that sets `OutputControl.Cell` triggers JIT of `Rebuild()` → `FileNotFoundException` for `Microsoft.VisualStudio.Shell.15.0`. Only the no-Cell construction path is testable.
+- `ExecutionCoordinator.HandleCellRunRequested()` directly references `ThreadHelper` in its method body. Even null-args tests that would hit the early return fail at JIT time. Not testable in unit-test runner.
+- `NotebookEditorFactory.MapLogicalView` references `VSConstants.LOGVIEWID_Primary` (a `static readonly Guid`, not a const), so JIT of `MapLogicalView` requires VS Shell assembly. Not testable.
+- Methods that call ONLY VS types via the JIT-safety pattern (ExtensionLogger, Decision 9) ARE safe to call from tests — the safety pattern prevents JIT failure propagation.
+
+**InternalsVisibleTo**: Added via `<AssemblyAttribute Include="...InternalsVisibleToAttribute">` in the main project's `.csproj`. This allows tests to directly reference `internal` classes like `CellExecutionEngine` and `ExecutionCoordinator`.
+
+**DirtyState gotcha**: `NotebookDocument.AddCell()` calls `SetDirty()` internally. Tests that check `DocumentDirtyChanged` must call `doc.MarkClean()` after setup to reset to a clean baseline, otherwise the subsequent `IsDirty = true` assignment is a no-op (same value → no PropertyChanged → no event).

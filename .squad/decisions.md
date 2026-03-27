@@ -500,6 +500,174 @@ Status meaning is conveyed by both text labels AND color. Text labels ("Running"
 
 ---
 
+## Decision 13: IntelliSense Architecture for Custom TextBox Editor
+
+**Date**: 2026-03-27
+**Lead**: Ellie (Editor Extension Specialist)
+**Status**: ACTIVE
+**Task**: p3-intellisense
+
+### Context
+
+The notebook editor uses a plain WPF `TextBox` (code-only, net48). IntelliSense features (completions, hover, signature help, diagnostics) must be built on top of this without VS editor infrastructure (no ITextView, no MEF-based completion sessions).
+
+### Decisions
+
+#### 1. Provider-per-cell pattern
+Each `CellControl` gets its own set of 4 providers (`CompletionProvider`, `HoverProvider`, `SignatureHelpProvider`, `DiagnosticsProvider`). `IntelliSenseManager` owns the dictionary and manages lifecycle via `AttachToCell` / `DetachFromCell`.
+
+**Rationale**: Cells are independent kernel sub-contexts; each needs isolated debounce state and popup positioning.
+
+#### 2. Lazy kernel — IntelliSense inactive until first run
+`IntelliSenseManager.SetKernelClient()` is only called when the kernel becomes available (triggered by first cell execution). Until then, providers are attached but silently inactive (null-client fast-path).
+
+**Rationale**: Kernel startup is deferred to first execution. IntelliSense providers are cheap; the kernel process is not.
+
+#### 3. Adorner for diagnostics underlines
+`DiagnosticsProvider` uses a `DiagnosticAdorner : Adorner` subclass on the `TextBox`'s adorner layer. Setup is deferred to `TextBox.Loaded` since `AdornerLayer.GetAdornerLayer` requires the visual tree to be established.
+
+**Rationale**: The only way to draw non-interactive overlays (squiggly underlines) on a WPF `TextBox` without replacing it.
+
+#### 4. `CellControl.CodeEditor` internal property
+`CellControl` exposes `internal TextBox CodeEditor => _editor;` so `IntelliSenseManager` (same assembly) can attach providers to the TextBox directly.
+
+**Rationale**: Keeps TextBox as an implementation detail of CellControl while still allowing IntelliSense wiring within the `PolyglotNotebooks` assembly.
+
+#### 5. `NotebookControl.IntelliSenseManager` property triggers RebuildCells
+Setting the `IntelliSenseManager` property on `NotebookControl` calls `RebuildCells()` so that already-rendered cells get providers attached immediately.
+
+**Rationale**: `RebuildCells` is already the single source of truth for cell rendering; reusing it avoids a separate pass.
+
+### Implications
+
+1. Any future replacement of `TextBox` with a richer editor (e.g., AvalonEdit) must re-implement the 4 providers using that editor's APIs.
+2. `RequestSignatureHelpAsync` was added to `KernelClient` — follows the exact same pattern as `RequestCompletionsAsync`/`RequestHoverTextAsync`.
+3. `ExecutionCoordinator.KernelClientAvailable` event is now a public seam for any future feature that needs the kernel client after startup.
+
+---
+
+## Decision 14: Rich Output Rendering Architecture
+
+**Date**: 2026-03-27
+**Lead**: Wendy (UI & Tool Window Specialist)
+**Status**: ACTIVE
+**Task**: p3-rich-output
+
+### Summary
+
+Upgraded `OutputControl` to render rich MIME types using WebView2 and WPF Image controls.
+Two new helper classes support the expanded rendering pipeline.
+
+### Decisions Made
+
+#### 1. WebView2 as the HTML/Markdown/SVG/CSV Renderer
+
+**Choice**: All HTML-family output (text/html, text/markdown, text/csv, image/svg+xml) renders
+inside `WebView2OutputHost` — a `Border` subclass wrapping `Microsoft.Web.WebView2.Wpf.WebView2`.
+
+**Rationale**:
+- WebView2 is already in the csproj (`Microsoft.Web.WebView2` v1.0.3179.45).
+- WPF has no native HTML or SVG renderer; alternatives (e.g. AvalonEdit + Markdown) require
+  additional packages and produce lower-fidelity output.
+- WebView2 supports full CSS and layout, making VS-themed HTML output look polished.
+
+**Fallback**: If `EnsureCoreWebView2Async` fails (runtime not installed), a TextBlock with an
+install link is shown. `_initFailed = true` prevents repeated init attempts.
+
+#### 2. WebView2 User-Data Folder at `%LOCALAPPDATA%\PolyglotNotebooksVS\WebView2Cache`
+
+**Choice**: Pass an explicit `userDataFolder` to `CoreWebView2Environment.CreateAsync`.
+
+**Rationale**: Without an explicit folder, WebView2 defaults to a subfolder of the host executable
+(`devenv.exe`), which is under `Program Files` and may require admin rights. Using LocalAppData
+guarantees a writable, per-user cache location.
+
+#### 3. VS Theme Colours via WPF Resource Lookup
+
+**Choice**: Extract CSS colour strings from `Application.Current.TryFindResource(VsBrushes.*Key)`
+at navigation time rather than using `VSColorTheme.GetThemedColor(EnvironmentColors.*ColorKey)`.
+
+**Rationale**: The WPF resource lookup uses the same resource dictionary as all other UI controls
+and is guaranteed to return the current theme's colour. It avoids a dependency on
+`Microsoft.VisualStudio.PlatformUI.VSColorTheme` and `EnvironmentColors`, which require the
+`Microsoft.VisualStudio.PlatformUI` namespace and separate using directives.
+
+#### 4. OutputControl Targeted Replace for DisplayedValueUpdated
+
+**Choice**: `OnOutputsChanged` handles `NotifyCollectionChangedAction.Replace` with a targeted
+`ReplaceOutputAt(int, CellOutput)` path that disposes only the old slot's IDisposable and swaps
+the UIElement in-place, rather than triggering a full `Rebuild()`.
+
+**Rationale**: Full Rebuild destroys and re-creates WebView2 controls, causing visible flicker and
+re-initialisation cost. Targeted replace keeps all other slots intact.
+
+**Contract for execution layer (Ellie)**: To update a live display value, replace the matching
+`CellOutput` in `cell.Outputs` at its original index using the ObservableCollection indexer
+(`cell.Outputs[i] = newOutput`). The UI will update only that slot.
+
+#### 5. Output Area Capped at 500 px with ScrollViewer
+
+**Choice**: The outputs StackPanel is wrapped in a `ScrollViewer { MaxHeight = 500,
+VerticalScrollBarVisibility = Auto }`. WebView2 hosts are additionally capped at 480 px
+(auto-sized by JS height query after navigation).
+
+**Rationale**: Prevents runaway output from pushing cell content off-screen. Consistent with how
+Jupyter and VS Code notebooks handle tall output.
+
+### Implications for Other Agents
+
+- **Ellie (Execution)**: Use `cell.Outputs[index] = newOutput` (replace, not append) to trigger
+  in-place update for live displays. Track the index when initially appending the output.
+- **Theo (Testing)**: `WebView2OutputHost` requires WebView2 runtime; unit tests that exercise
+  `OutputControl.Rebuild()` will not fail even without WebView2 installed (fallback path handles
+  init failure gracefully).
+- **Penny (Packaging)**: `Microsoft.Web.WebView2` is already in the csproj — no additional
+  package references needed.
+
+---
+
+## Decision 15: Notebook Toolbar Architecture
+
+**Date**: 2026-03-27
+**Lead**: Vince (Extension Architect)
+**Status**: ACTIVE
+**Task**: p4-toolbar
+
+### Decision
+
+`NotebookToolbar` is a standalone `Border`-based WPF control (no XAML). It raises events (`RunAllRequested`, `InterruptRequested`, `RestartKernelRequested`, `ClearAllOutputsRequested`) that `NotebookControl` forwards as its own public events. `NotebookEditorPane` handles those events and dispatches to `ExecutionCoordinator` and `KernelProcessManager`.
+
+### Kernel Status Thread-Safety Pattern
+
+`KernelProcessManager.StatusChanged` fires on background threads. The `NotebookEditorPane` handler marshals to the UI thread via:
+
+```csharp
+_ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+{
+    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+    _control?.UpdateKernelStatus(status);
+});
+```
+
+`#pragma warning disable VSTHRD110` is required (fire-and-forget pattern, same as `HandleCellRunRequested`). This is the correct VS pattern per Decision 2.
+
+### ExecutionCoordinator Run-All / Cancel Contract
+
+- `HandleRunAllRequested(NotebookDocument)` — fire-and-forget; shares `_currentCts` with single-cell execution. Interrupt (`CancelCurrentExecution()`) cancels Run All mid-flight.
+- `CancelCurrentExecution()` — atomically swaps `_currentCts` to null, cancels, and disposes.
+
+### VsBrushes.Key Type
+
+`VsBrushes.*Key` properties return `object`, not `string`. Variables that hold a brush key for later use in `SetResourceReference` must be typed `object`.
+
+### Implications
+
+- **Ellie (Execution)**: No changes to the single-cell execution path. `CancelCurrentExecution()` is available if a cell-level interrupt UI is needed.
+- **Wendy (UI)**: The toolbar's `UpdateKernelStatus(KernelStatus)` public API is the integration seam for kernel state display. Future Busy/pulse animation can be added here.
+- **Theo (Reliability)**: The `OnKernelStatusChanged` handler in `NotebookEditorPane` must not be called after `Close()`. Current unsubscription in both `Close()` and `Dispose(bool)` covers all paths.
+
+---
+
 ## Adding New Decisions
 
 When the Squad makes a new architectural decision:

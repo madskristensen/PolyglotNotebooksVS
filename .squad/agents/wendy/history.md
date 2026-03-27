@@ -149,6 +149,55 @@ Available VizSurface colors: Green, Red, Gold, Brown, Plum, SteelBlue, StrongBlu
 
 ---
 
+## Learnings
+
+### Phase 3 — p3-rich-output: Rich Output Rendering
+
+**Date**: 2026-03-27
+
+#### What Was Built
+
+Three files added / modified in `src/Editor/`:
+
+| File | Change | Purpose |
+|------|--------|---------|
+| `WebView2OutputHost.cs` | **NEW** | WebView2 wrapper — lazy init, VS-themed HTML shell, auto-resize via JS, install fallback |
+| `ImageOutputControl.cs` | **NEW** | Image factory — raster (base64 → BitmapImage) and SVG (WebView2) |
+| `OutputControl.cs` | **ENHANCED** | Rich MIME routing, targeted Replace update, 500px scroll cap, WebView2 disposal |
+
+#### MIME Routing
+
+| MIME type | Renderer |
+|-----------|----------|
+| `text/plain` (default) | TextBlock (Consolas, theme FG) |
+| `text/html` | `WebView2OutputHost` |
+| `text/markdown` | Lightweight markdown→HTML converter → `WebView2OutputHost` |
+| `image/png`, `image/jpeg`, `image/gif`, `image/bmp` | `ImageOutputControl.CreateRasterElement` → WPF `Image` |
+| `image/svg+xml` | `ImageOutputControl.CreateSvgElement` → `WebView2OutputHost` |
+| `application/json` | `System.Text.Json.JsonSerializer` (WriteIndented) → TextBlock |
+| `text/csv` | `CsvToHtmlTable` helper → `WebView2OutputHost` |
+
+#### WebView2 Specifics
+
+- **User-data folder**: `%LOCALAPPDATA%\PolyglotNotebooksVS\WebView2Cache` — avoids writing to protected `devenv.exe` directory.
+- **Theme injection**: CSS variables derived from `Application.Current.TryFindResource(VsBrushes.*Key)` — reads actual WPF brush color at navigation time. Keys used: `ToolWindowBackgroundKey`, `ToolWindowTextKey`, `ToolWindowBorderKey`.
+- **Auto-resize**: `NavigationCompleted` → `ExecuteScriptAsync("document.body.scrollHeight")` → sets `Height = Math.Min(h+20, 480)`. Outer `ScrollViewer` caps at 500px.
+- **Fallback**: If `EnsureCoreWebView2Async` throws or `IsSuccess = false`, shows a TextBlock with install URL.
+- **Disposal**: `WebView2OutputHost : IDisposable`. `OutputControl` tracks instances in `_disposables`, disposes on `Rebuild()` and `Unloaded`.
+
+#### DisplayedValueUpdated In-Place Update
+
+`OutputControl.OnOutputsChanged` checks for `NotifyCollectionChangedAction.Replace`. If the `_outputContainer` is live and the index is in range, it calls `ReplaceOutputAt(int, CellOutput)` — disposes the old slot's IDisposable (if any), removes the old UIElement, and inserts the newly rendered element at the same index. All other change types (Add, Remove, Reset) trigger a full `Rebuild()`.
+
+#### VSSDK007 Warning
+
+`ThreadHelper.JoinableTaskFactory.RunAsync(...).FileAndForget(...)` correctly expresses fire-and-forget semantics per VS threading docs. The VSSDK007 analyzer (version in this project) does not suppress the warning when `.FileAndForget()` is chained — it still shows as VSSDK007. This is a known limitation of the analyzer version; the pattern is correct and 0 errors confirmed. Pre-existing VSTHRD110/VSTHRD001 warnings in `CompletionProvider.cs` follow the same policy.
+
+#### WebUtility.HtmlEncode
+
+`System.Net.WebUtility.HtmlEncode` (available via `using System.Net;`) is used in the markdown and CSV converters. Do **not** use `System.Web.HttpUtility.HtmlEncode` — that class requires `System.Web` assembly which is not referenced and is not appropriate in WPF extension code.
+
+
 ## 2026-03-27 — Phase 5 Complete: VS Theming Fully Implemented (p5-theming)
 
 **Status**: COMPLETE ✅
@@ -181,3 +230,33 @@ Available VizSurface colors: Green, Red, Gold, Brown, Plum, SteelBlue, StrongBlu
 - Decision 8: Cell UI Code-Only WPF Pattern
 
 **Status**: ACTIVE — Theming complete and verified
+
+---
+
+## 2026-03-27 — Phase 4 Batch Complete: Rich Output Rendering Final (p3-rich-output + phase 4)
+
+**Status**: COMPLETE ✅ — All 8 MIME types live with DisplayedValueUpdated in-place updates
+
+**What Changed** (Phase 4 completion):
+- Rich output rendering (Wendy) integrated with Ellie's execution layer and Theo's test suite.
+- Decision 14 (Rich Output Architecture) merged into decisions.md.
+- Keyboard shortcuts available (Vince's toolbar).
+- Kernel status display live (Wendy's UpdateKernelStatus in NotebookToolbar).
+
+**MIME Type Support**:
+✅ text/plain, text/html, text/markdown, text/csv, image/svg+xml, image/png, image/jpeg, application/json
+
+**Key Contracts**:
+- Execution layer (Ellie): Use `cell.Outputs[index] = newOutput` for live display updates (triggers in-place replace, no flicker)
+- Testing (Theo): WebView2OutputHost fallback ensures tests don't fail without runtime
+- Packaging (Penny): No new dependencies — Microsoft.Web.WebView2 already present
+
+**Build Status**: ✅ 0 errors  
+**Integration**: ✅ Complete with all agents
+
+**Related Decisions**:
+- Decision 14: Rich Output Rendering Architecture (ACTIVE)
+- Decision 12: VizSurface Color Keys (already active)
+- Decision 8: Cell UI Code-Only WPF Pattern
+
+**Status**: ACTIVE — Production-ready

@@ -98,3 +98,59 @@
 - Uses `VsBrushes.ToolWindowBackgroundKey`, `VsBrushes.ToolWindowTextKey`, `VsBrushes.GrayTextKey` via `SetResourceReference` for VS theming.
 - Subscribes to both `PropertyChanged` and `Cells.CollectionChanged` to keep cell count live.
 - Root element is a `Border` (not `Grid`) to correctly fill background.
+
+## Learnings (Phase 4 — Notebook Toolbar, p4-toolbar)
+
+### NotebookToolbar implementation
+- Created `src/Editor/NotebookToolbar.cs` as a `Border`-based WPF control; inherits `Border` (same pattern as `CellControl`, `OutputControl`).
+- `VsBrushes.*Key` properties return `object`, **not** `string` — `dotBrushKey` variable must be typed `object` when used as a `SetResourceReference` argument. Using `string` causes CS0266.
+- Layout uses a `DockPanel` with `LastChildFill=false`: status `StackPanel` docked `Right`, thin vertical `Rectangle` separator docked `Right`, action buttons docked `Left` — gives clean [buttons | separator | status] layout.
+- All color keys (`VizSurfaceGreenMediumKey`, `VizSurfaceGoldMediumKey`, `VizSurfaceRedMediumKey`, `GrayTextKey`) are used via `SetResourceReference` — consistent with `CellToolbar` pattern.
+
+### ExecutionCoordinator additions
+- Added `HandleRunAllRequested(NotebookDocument)` — fire-and-forget pattern identical to `HandleCellRunRequested`; shares `_currentCts` so Interrupt cancels Run All correctly.
+- Added `CancelCurrentExecution()` — atomically swaps `_currentCts` to null, cancels, and disposes.
+
+### NotebookControl additions
+- Added `NotebookToolbar _toolbar` field; inserted a new `GridLength.Auto` row (row 1) between the header (row 0) and scroll viewer (now row 2).
+- New public events: `RunAllRequested`, `InterruptRequested`, `RestartKernelRequested`, `ClearAllOutputsRequested` — forwarded from toolbar clicks.
+- Added `UpdateKernelStatus(KernelStatus)` — delegates to `_toolbar.UpdateKernelStatus()`.
+- Keyboard shortcuts via `OnPreviewKeyDown` override: `Ctrl+Shift+Enter` → `RunAllRequested`, `Ctrl+.` → `InterruptRequested`.
+- Added `using System.Windows.Input` and `using PolyglotNotebooks.Kernel` to the file.
+
+### NotebookEditorPane wiring
+- Kernel `StatusChanged` event fires on background thread (from `LaunchProcess` / `OnProcessExited`) — marshal to UI via `ThreadHelper.JoinableTaskFactory.RunAsync` + `SwitchToMainThreadAsync` with VSTHRD110 suppressed.
+- Toolbar event handlers (`OnRunAllRequested`, `OnInterruptRequested`, `OnRestartKernelRequested`, `OnClearAllOutputsRequested`) added as private methods.
+- `OnClearAllOutputsRequested` iterates `_document.Cells` and calls `cell.Outputs.Clear()` — triggers `CollectionChanged` which `OutputControl` already listens to, so the UI clears automatically.
+- All new subscriptions are unsubscribed in both `Close()` and `Dispose(bool)` to avoid leaks.
+
+---
+
+## 2026-03-27 — Phase 4 Batch Complete: Toolbar + Final Integration (p4-toolbar)
+
+**Status**: COMPLETE ✅ — Toolbar, keyboard shortcuts, kernel status all live and integrated
+
+**What Changed**:
+- NotebookToolbar created (Border-based WPF control) with 4 command buttons and kernel status badge.
+- ExecutionCoordinator enhanced with `HandleRunAllRequested` and `CancelCurrentExecution()`.
+- NotebookControl wired with toolbar integration and keyboard shortcuts (Ctrl+Shift+Enter, Ctrl+.).
+- NotebookEditorPane marshals kernel status changes from background thread to UI.
+- Decision 15 (Notebook Toolbar Architecture) merged into decisions.md.
+
+**Build Status**: ✅ 0 errors  
+**Test Status**: ✅ 204 tests all passing (Theo's batch)
+
+**Cross-Agent Synergy**:
+- **Theo**: Test suite validates all four workstreams (toolbar buttons exercise ExecutionCoordinator paths).
+- **Ellie**: IntelliSense providers inactive until first kernel run (kernel client available hook integrated).
+- **Wendy**: Rich output rendering (DisplayedValueUpdated) with toolbar's UpdateKernelStatus for live feedback.
+- **Vince**: Final architectural touch — toolbar as the user-facing command hub.
+
+**Related Decisions**:
+- Decision 15: Notebook Toolbar Architecture (ACTIVE)
+- Decision 11: Execution Engine Architecture (ACTIVE)
+- Decision 14: Rich Output Rendering Architecture (ACTIVE)
+- Decision 13: IntelliSense Architecture (ACTIVE)
+
+**Status**: ACTIVE — Phase 4 complete. Extension fully functional and production-ready for marketplace submission prep.
+
