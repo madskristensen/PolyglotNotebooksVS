@@ -1,0 +1,76 @@
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Ww][Ii][Nn]32/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio cache/options
+.vs/
+
+# Visual Studio code coverage results
+*.coverage
+*.coveragexml
+
+# Rider IDE
+.idea/
+*.sln.iml
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build lock files
+project.lock.json
+project.fragment.lock.json
+
+# NuGet
+*.nupkg
+*.snupkg
+*.nuget.props
+*.nuget.targets
+
+# VSIX packages
+*.vsix
+*.vsixmanifest.bak
+
+# Local history for Visual Studio
+.localhistory/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# macOS
+.DS_Store
+Thumbs.db
+
+# Extension-specific
+ActivityLog.xml
+*.vsto
+
+# Temporary files
+*.tmp
+*.temp
+~*
+
+# Package manager
+node_modules/
+package-lock.json
+yarn.lock
+
+# Environment
+.env
+.env.local

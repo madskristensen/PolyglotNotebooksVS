@@ -1,0 +1,25 @@
+# Auto line ending normalization
+* text=auto
+
+# Binary files
+*.vsix binary
+*.dll binary
+*.exe binary
+*.so binary
+*.dylib binary
+
+# Squad append-only files
+.squad/decisions.md merge=union
+.squad/ceremonies.md merge=union
+.squad/agents/*/history.md merge=union
+
+# VSCT and manifest files
+*.vsct text eol=lf
+*.vsixmanifest text eol=lf
+source.extension.cs text eol=lf
+
+# C# files
+*.cs text eol=lf
+
+# PowerShell
+*.ps1 text eol=crlf
