@@ -1,4 +1,4 @@
-# VS Extensions Squad Team Charter
+# Xtenders Team Charter
 
 ## Members
 

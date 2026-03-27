@@ -1,6 +1,6 @@
 # Squad Ceremonies
 
-Regular synchronization points for the VS Extensions Squad.
+Regular synchronization points for Xtenders.
 
 ## 1. Extension Design Review
 

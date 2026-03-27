@@ -1,6 +1,6 @@
 # Theo History
 
-## 2024-01-XX — VS Extensions Squad Founded
+## 2024-01-XX — Xtenders Founded
 
 **Context**: Founded as specialized team for Visual Studio extension developers.
 

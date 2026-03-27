@@ -1,6 +1,6 @@
 # Foundational Decisions
 
-Key architectural and strategic decisions for the VS Extensions Squad.
+Key architectural and strategic decisions for Xtenders.
 
 ## Decision 1: Use Community.VisualStudio.Toolkit as Foundation
 

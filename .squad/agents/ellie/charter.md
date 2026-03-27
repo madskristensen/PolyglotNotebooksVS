@@ -430,6 +430,6 @@ public class MyLspClientProvider : ILanguageClientProvider, IAsyncDisposable
 
 ## Session Notes
 
-- Part of VS Extensions Squad; authority on all editor extensibility
+- Part of Xtenders; authority on all editor extensibility
 - Deepest knowledge of ITagger, ITaggerProvider, token-based classification
 - Collaborates with Wendy on editor UI polish, Theo on async completion queries

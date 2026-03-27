@@ -1,8 +1,8 @@
-# VS Extensions Squad
+# Xtenders
 
 A specialized team of agents for Visual Studio extension development, built for Mads Kristensen and the VS extensibility community.
 
-This Squad is purpose-built to guide VSIX development from architecture through marketplace publication, using the [Community.VisualStudio.Toolkit](https://github.com/VsixCommunity/Community.VisualStudio.Toolkit) as the foundation and following modern async-first patterns.
+Xtenders is purpose-built to guide VSIX development from architecture through marketplace publication, using the [Community.VisualStudio.Toolkit](https://github.com/VsixCommunity/Community.VisualStudio.Toolkit) as the foundation and following modern async-first patterns.
 
 ## Agent Roster
 
@@ -22,7 +22,7 @@ This Squad is purpose-built to guide VSIX development from architecture through 
 ```bash
 # Clone and initialize the Squad
 git clone <repo-url>
-cd VSExtSquad
+cd Xtenders
 squad init
 
 # Create a new extension project
@@ -49,14 +49,14 @@ squad route "Need a tool window with real-time diagnostics" --to wendy,theo
 
 ## Supported VS Versions
 
-The Squad supports:
+Xtenders supports:
 - Visual Studio 2022 (v17.0+) — Default
 - Visual Studio 2019 (v16.0+) — Via explicit version targeting
 - Visual Studio 2017 (v15.0+) — Via legacy configuration (Toolkit v16)
 
 ## Extension Categories
 
-The Squad's agents specialize in:
+Xtenders' agents specialize in:
 
 1. **Language Services & Editor** (Ellie)
    - Tokenization, tagging, classification
