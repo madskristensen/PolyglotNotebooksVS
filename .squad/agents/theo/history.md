@@ -86,3 +86,33 @@ Provides diagnostics for crash analysis without unbounded memory growth on long-
 **IAsyncDisposable not used on net48**: The interface requires `Microsoft.Bcl.AsyncInterfaces` on
 net48. Went with `IDisposable` + a `Task StopAsync()` method instead — callers get full async
 shutdown without pulling in an extra package.
+
+### Phase 1 Unit Tests — What Was Tested and Patterns Found
+
+**What was tested (135 tests across 3 files)**:
+- `ProtocolClientTests.cs` (52 tests): `KernelCommandEnvelope.Create` token uniqueness and Base64-GUID
+  format, JSON round-trip with camelCase policy, `WhenWritingNull` omission of optional fields,
+  `KernelEventEnvelope` deserialization from realistic JSON payloads (KernelReady, CommandSucceeded,
+  CompletionsProduced, DiagnosticsProduced), all `CommandTypes` and `KernelEventTypes` string constants,
+  graceful handling of malformed JSON (expects `JsonException`, which `KernelClient.DispatchLine` catches).
+- `DocumentModelTests.cs` (51 tests): `NotebookDocument` create/add/remove/move cells, dirty-tracking
+  cascade from cell to document, `INotifyPropertyChanged` event coverage, `NotebookParser.ParseDib` /
+  `SerializeDib` round-trip with real `Microsoft.DotNet.Interactive.Documents` parsing,
+  `NotebookDocumentManager` initial state and event wiring, `CellOutput` and `FormattedOutput` construction.
+- `KernelProcessManagerTests.cs` (32 tests): `KernelConnectionInfo` default values, `KernelStatus`
+  enum completeness, `KernelProcessManager` initial state, dispose idempotency, `ObjectDisposedException`
+  on post-dispose async calls, `KernelInstallationDetector` cache coherence (calls dotnet if on PATH),
+  `StdinPingTimer` Start/Stop idempotency, double-dispose safety, exception swallowing in `OnTick`.
+
+**Key patterns found in testing**:
+- `ProtocolSerializerOptions` is `internal` — tests define `TestSerializerOptions.Default` locally with
+  identical settings (CamelCase + WhenWritingNull + CaseInsensitive).
+- `Assert.ThrowsException<T>` is NOT available in MSTest.Sdk 4.0.1 despite being present in legacy MSTest.
+  Replaced all usages with explicit try/catch + `Assert.IsTrue(threw, ...)`.
+- `ImplicitUsings=enable` in MSTest.Sdk does NOT make `Assert.ThrowsException<T>` available — explicit
+  `using Microsoft.VisualStudio.TestTools.UnitTesting;` required, but `ThrowsException<T>` still missing.
+  This may be a breaking change in MSTest v4; recommend team-wide adoption of try/catch pattern.
+- `System.Text.Json.JsonSerializer.Deserialize<T>` throws `JsonException` on malformed input, it never
+  returns null — important for callers to handle (as `KernelClient.DispatchLine` correctly does).
+- Building `PolyglotNotebooks.slnx` with both projects: main project (`src/`) must succeed first since
+  tests project-reference it. Both projects build clean with 0 errors, 0 warnings (after fixes).

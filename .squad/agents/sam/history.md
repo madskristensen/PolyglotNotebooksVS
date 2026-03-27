@@ -45,6 +45,27 @@
 
 ## Learnings
 
+### .ipynb Format Support (p4-ipynb)
+
+**What was already in place**:
+- `NotebookParser.cs` already had `ParseIpynb()`, `SerializeIpynb()`, format-detection in `Load()`, and format-preserving `Save()`.
+- `PolyglotNotebooksPackage.cs` already had `[ProvideEditorExtension(..., ".ipynb", 50)]`.
+- `NotebookFormat` enum already had `Ipynb`.
+
+**Changes made**:
+1. **`NotebookDocument.Metadata`** — Added `Dictionary<string, object> Metadata { get; }` property (backed by constructor init) to carry document-level Jupyter metadata (kernelspec, language_info, nbformat) across open/edit/save cycles.
+2. **`NotebookParser.MapToDocument()`** — Copies `interactive.Metadata` (populated by `Notebook.Parse()`) into `doc.Metadata` for round-trip fidelity.
+3. **`NotebookParser.MapToInteractive()`** — Copies `doc.Metadata` back into the new `InteractiveDocument.Metadata` before calling `Notebook.ToJupyterJson()`, so Jupyter metadata survives edits.
+4. **`NotebookParser.NormalizeKernelName()`** — Public helper that maps `.net-csharp` → `csharp`, `.net-fsharp` → `fsharp`, etc. Applied to default kernel and per-cell kernel names during parse.
+5. **`NotebookConverter.cs`** — New class with `ConvertDibToIpynb(string, string?)` and `ConvertIpynbToDib(string)` for Export features; operates on strings, no file I/O.
+
+**`InteractiveDocument.Metadata` API**:
+- `IDictionary<string, object>` property — confirmed via reflection; always non-null (initialized to empty dict), safe to copy into without null-check on the target.
+- `Notebook.Parse()` populates this with the original Jupyter top-level metadata.
+- `Notebook.ToJupyterJson()` reads it back to reconstruct kernelspec in the output JSON.
+
+**Build note**: Test project has a pre-existing `ExpectedExceptionAttribute` error (unrelated to these changes); main project `PolyglotNotebooks.csproj` builds with 0 errors, 0 warnings.
+
 ### Document Model — `Microsoft.DotNet.Interactive.Documents` Compatibility (net48)
 
 **Package**: `Microsoft.DotNet.Interactive.Documents` v1.0.0-beta.25177.1  

@@ -55,6 +55,8 @@
 - Manifest: src/source.extension.vsixmanifest
 - Generated source: src/source.extension.cs
 - Editor factory: src/Editor/NotebookEditorFactory.cs
+- Editor pane: src/Editor/NotebookEditorPane.cs
+- Notebook control (stub): src/Editor/NotebookControl.cs
 - Test project: 	est/PolyglotNotebooks.Test/PolyglotNotebooks.Test.csproj
 - CI workflow: .github/workflows/build.yaml
 
@@ -69,3 +71,30 @@
 - Prefers BookmarkStudio patterns matched exactly.
 - Art/icons go in rt/ folder at repo root, linked into Resources/ inside the VSIX.
 - LICENSE at repo root (MIT, no .txt extension), linked as Resources\LICENSE.
+
+## Learnings (Phase 2.1 — Custom Editor Factory, p2-editor-factory)
+
+### IVsEditorFactory / IVsPersistDocData lifecycle
+- `CreateEditorInstance` should NOT load the document. Create the pane with just the file path; VS calls `IVsPersistDocData.LoadDocData` afterward.
+- Both `ppunkDocView` and `ppunkDocData` point to the same `NotebookEditorPane` object (pane acts as both view and data).
+- `IVsPersistDocData` has 9 members including `OnRegisterDocData` — easy to miss; reference examples often omit it.
+- `MapLogicalView`: return `S_OK` with `pbstrPhysicalView = null` for Primary and TextView; `E_NOTIMPL` for others.
+- `GetGuidEditorType` must return the editor factory GUID, not a new GUID.
+
+### Threading in WPF controls inside VS
+- PropertyChanged / CollectionChanged events fire on the UI thread in this codebase — no Dispatcher marshaling needed in NotebookControl.
+- `Dispatcher.InvokeAsync` triggers VSTHRD001/VSTHRD110; avoid it when already guaranteed to be on the UI thread.
+- `ThreadHelper.JoinableTaskFactory.Run(() => asyncMethod())` is correct for calling async-shaped-but-synchronous methods (like `NotebookDocumentManager.OpenAsync`) from COM-invoked methods.
+
+### NotebookDocumentManager extension
+- Added `RegisterDocument(string filePath, NotebookDocument doc)` to support `RenameDocData`: close old path registration, update `FilePath` on document, re-register under new path without re-loading from disk.
+
+### VSSAVEFLAGS handling
+- `VSSAVE_Save` / `VSSAVE_SilentSave`: `doc.Save()` in place.
+- `VSSAVE_SaveAs`: show dialog, `doc.SaveAs(newPath)`, update `_filePath` and `pbstrMkDocumentNew`.
+- `VSSAVE_SaveCopyAs`: serialize via `NotebookParser`, write to chosen path — do NOT update `FilePath` or dirty state.
+
+### NotebookControl stub
+- Uses `VsBrushes.ToolWindowBackgroundKey`, `VsBrushes.ToolWindowTextKey`, `VsBrushes.GrayTextKey` via `SetResourceReference` for VS theming.
+- Subscribes to both `PropertyChanged` and `Cells.CollectionChanged` to keep cell count live.
+- Root element is a `Border` (not `Grid`) to correctly fill background.
