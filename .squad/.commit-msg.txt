@@ -1,0 +1,24 @@
+docs: log final batch — all 22 work items complete, 309 tests passing
+
+Final batch delivery includes:
+- Orchestration logs for Theo, Ellie, Wendy, Vince
+- Session log: 2026-03-27T19:48:01-final-batch.md with project milestone
+- Decisions merged: decisions.md includes KernelInfoCache population strategy, 
+  variable explorer architecture
+- Agent histories updated with final batch completion entries
+
+Project Status:
+✅ All 22 work items complete
+✅ 309 tests passing (105 new in p3+p4 batch)
+✅ Build: 0 errors, 0 warnings
+✅ Features: Kernel selector UI, execution modes, variable explorer, toolbar commands
+
+Agents Completed:
+- Theo (Threading): p3-tests + p4-tests (105 new tests)
+- Ellie (Editor): p3-kernel-selector + p4-exec-modes (kernel UI + modes)
+- Wendy (UI): p3-variables (variable explorer tool window)
+- Vince (Architect): p4-toolbar (toolbar commands + status indicator)
+
+Ready for marketplace submission preparation.
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>

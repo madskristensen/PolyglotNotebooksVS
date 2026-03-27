@@ -149,6 +149,47 @@ Available VizSurface colors: Green, Red, Gold, Brown, Plum, SteelBlue, StrongBlu
 
 ---
 
+## 2026 — Phase 3 (p3-variables): Variable Sharing + Explorer
+
+### What Was Built
+
+Five new files in `src/Variables/` and protocol additions:
+
+| File | Role |
+|------|------|
+| `VariableInfo.cs` | WPF-bindable model (INotifyPropertyChanged) for a single variable |
+| `VariableService.cs` | Protocol bridge singleton; manages KernelClient, auto-refresh, RequestValueInfos/RequestValue/SendValue |
+| `VariableExplorerControl.cs` | Code-only WPF DataGrid (Name/Type/Value/Kernel) with toolbar + detail pane |
+| `VariableExplorerToolWindow.cs` | BaseToolWindow<T> + nested Pane class (Guid attribute on Pane) |
+| `ShowVariableExplorerCommand.cs` | Static helper wrapping `VariableExplorerToolWindow.ShowAsync()` |
+
+Protocol additions:
+- `Events.cs`: Added `KernelValueInfo`, `ValueInfosProduced`, `ValueProduced` model classes
+- `Commands.cs`: Added `TargetKernelName` to `RequestValueInfos`, `RequestValue`, `SendValue`
+- `KernelClient.cs`: Added `RequestValueInfosAsync`, `RequestValueAsync`, `SendValueAsync` convenience methods
+
+Wire-up changes:
+- `PolyglotNotebooksPackage.cs`: Added `[ProvideToolWindow(typeof(VariableExplorerToolWindow.Pane))]`; calls `VariableService.Initialize()` in `InitializeAsync`
+- `NotebookEditorPane.cs`: `OnKernelClientAvailable` now also calls `VariableService.Current?.SetKernelClient(client)`
+
+### Key Patterns Used
+
+- **Singleton service**: `VariableService.Current` (static, initialized by package). No MEF needed.
+- **Auto-refresh trigger**: `VariableService` subscribes to ALL kernel events, filters `CommandSucceeded` where `CommandType == SubmitCode` — ensures refresh only after cell code runs, not after completions/hover/diagnostics.
+- **Refresh serialization**: `SemaphoreSlim(1,1)` with `WaitAsync(0)` — new refresh request is silently dropped if one is already in progress (avoids flooding the kernel).
+- **BaseToolWindow<T> pane GUID**: The `[Guid]` attribute goes on the nested `Pane : ToolWindowPane` class, NOT on the `BaseToolWindow<T>` subclass. Package registers via `[ProvideToolWindow(typeof(VariableExplorerToolWindow.Pane))]`.
+- **SelectionChangedEventArgs ambiguity**: `global using Community.VisualStudio.Toolkit` introduces `Community.VisualStudio.Toolkit.SelectionChangedEventArgs` into every file. Any file with `using System.Windows.Controls` must qualify: `System.Windows.Controls.SelectionChangedEventArgs`.
+
+### Pre-existing Bug Fixed
+
+`CellToolbar.cs` had an ambiguous `SelectionChangedEventArgs` reference (same conflict as above). Fixed by qualifying to `System.Windows.Controls.SelectionChangedEventArgs`.
+
+### Kernel Name Defaulting
+
+`VariableService` defaults to `["csharp", "fsharp"]` as known kernels. `RequestValueInfos` failures per kernel are logged and skipped silently (not all kernels support variables). The list can be updated via `SetKnownKernels()`.
+
+---
+
 ## Learnings
 
 ### Phase 3 — p3-rich-output: Rich Output Rendering
@@ -260,3 +301,31 @@ Three files added / modified in `src/Editor/`:
 - Decision 8: Cell UI Code-Only WPF Pattern
 
 **Status**: ACTIVE — Production-ready
+
+---
+
+## 2026-03-27T19:48:01Z — Final Batch Complete: p3-variables (Variable Explorer finalized)
+
+**Status**: COMPLETE ✅ — Variable Explorer tool window fully integrated and tested
+
+**What Was Completed**:
+- Five files in src/Variables/ (VariableInfo, VariableService, VariableExplorerControl, VariableExplorerToolWindow, ShowVariableExplorerCommand)
+- Auto-refresh on SubmitCode events with SemaphoreSlim serialization
+- DataGrid with Name/Type/Value/Kernel columns
+- Protocol bridge for kernel value queries
+- Wired into NotebookEditorPane.OnKernelClientAvailable
+
+**Cross-Agent Integration**:
+- **Ellie**: Variable context respects kernel selector (per-kernel variables)
+- **Theo**: 35 tests in RichOutputHelperTests cover output rendering used by variable display
+- **Vince**: Toolbar's kernel status reflected in variable explorer refresh state
+
+**Build**: ✅ 0 errors, 0 warnings  
+**Decisions Captured**:
+- Decision 2: Variable Explorer Architecture (singleton service, auto-refresh trigger, SelectionChangedEventArgs qualification, Pane GUID placement)
+
+**Related Decisions**:
+- Decision 8: Cell UI Code-Only WPF Pattern (ACTIVE)
+- Decision 12: VizSurface Color Keys (ACTIVE)
+
+**Status**: COMPLETE — Production-ready for integration tests

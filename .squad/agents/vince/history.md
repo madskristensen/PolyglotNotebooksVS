@@ -154,3 +154,35 @@
 
 **Status**: ACTIVE — Phase 4 complete. Extension fully functional and production-ready for marketplace submission prep.
 
+---
+
+## 2026-03-27T19:48:01Z — Final Batch Complete: p4-toolbar (Toolbar finalized, 22 work items shipped)
+
+**Status**: COMPLETE ✅ — Notebook toolbar fully integrated, all phases delivered
+
+**What Was Completed**:
+- NotebookToolbar.cs with Run All, Interrupt, Restart, Clear Outputs commands
+- Kernel status indicator (Ready/Running/Error states with VizSurface colors)
+- Keyboard shortcuts: Ctrl+Shift+R (Run All), Ctrl+. (Interrupt), Ctrl+Shift+T (Restart), Ctrl+Shift+O (Clear Outputs)
+- Integration with ExecutionCoordinator and NotebookControl event handlers
+- Cross-thread kernel status marshaling via ThreadHelper.JoinableTaskFactory
+
+**Final Batch Integration**:
+- **Theo**: 309 tests (all passing) validate toolbar paths and kernel execution
+- **Ellie**: Toolbar shortcuts coordinate with cell-level Run Above/Below/Selection
+- **Wendy**: Toolbar status updates trigger variable explorer refresh
+
+**Project Completion**:
+✅ **All 22 work items delivered**
+✅ **Build**: 0 errors, 0 warnings
+✅ **Tests**: 309 passing (105 new in p3+p4 batch)
+✅ **Decisions**: 1–15 finalized and merged
+
+**Architectural Summary**:
+- **Decision 11**: Execution Engine (ACTIVE)
+- **Decision 13**: IntelliSense Architecture (ACTIVE)
+- **Decision 14**: Rich Output Rendering (ACTIVE)
+- **Decision 15**: Notebook Toolbar Architecture (ACTIVE)
+
+**Status**: COMPLETE — Extension ready for marketplace submission
+
