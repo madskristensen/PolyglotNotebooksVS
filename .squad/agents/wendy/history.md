@@ -1,5 +1,30 @@
 # Wendy History
 
+## 2026-03-27T23:02:37Z — Cell Auto-Sizing Implementation Complete
+
+**Status**: COMPLETE ✅ — Font-metric-based height calculation deployed
+
+**What Changed**:
+- **CellControl.cs**: Replaced hardcoded MinHeight=60px / MaxHeight=400px with dynamic calculation
+  - Formula: `FontFamily.LineSpacing × FontSize`
+  - MinHeight: ~2 lines, MaxHeight: ~20 lines
+- **Scroll Behavior**: VerticalScrollBarVisibility changed from Hidden → Auto
+  - Scrollbar appears only when cell content exceeds 20-line cap
+- **Existing Integration**: AdjustEditorHeight() already respects Min/MaxHeight bounds
+
+**Why**:
+- Short cells now compact instead of wasting vertical space
+- Long cells become scrollable instead of being clipped
+- Font-metric calculation ensures heights scale with actual rendered dimensions
+
+**Affected Components**: CellControl UI only (OutputControl, CellToolbar, NotebookControl unchanged)
+
+**Build Status**: ✅ Clean, 0 errors, VSIX produced
+
+**Decision**: Decision 4 added to decisions.md (Font-Metric-Based Cell Sizing)
+
+---
+
 ## Core Context
 
 **Role**: UI Specialist for VS Extension team. Specializes in tool window design, WPF control architecture, VS theming, output rendering, and accessibility.
@@ -388,3 +413,23 @@ Vince's architectural research identified WebView2CompositionControl as the solu
 **Build verification**: Type confirmed present via reflection in Microsoft.Web.WebView2.Wpf.dll at v1.0.3856.49 (net462 target). Full project build requires VS SDK tooling not available in CLI — baseline has identical resolution failures.
 
 **Related Decisions**: Decision 16 (Vince's WebView2CompositionControl Architecture Recommendation)
+
+---
+
+## 2025 — Cell Auto-Height Sizing
+
+### What Was Done
+
+Updated CellControl.cs to make code cells auto-size their height based on content, capped at 20 lines.
+
+**Changes to TextBox configuration:**
+- Replaced hardcoded MinHeight=60 / MaxHeight=400 with font-metric-based calculations: FontFamily.LineSpacing * FontSize gives the line height, then lineHeight * N + verticalPadding for min (2 lines) and max (20 lines).
+- Changed VerticalScrollBarVisibility from Hidden to Auto — scrollbar only appears when content exceeds the 20-line cap.
+- Extracted ontFamily and ontSize as local variables so the line-height calculation is clear and maintainable.
+
+**How it works:**
+- AdjustEditorHeight() (existing method) measures content via Measure() and clamps to MinHeight/MaxHeight — no change needed there.
+- On every TextChanged, the editor grows/shrinks to fit content up to 20 lines.
+- Beyond 20 lines, MaxHeight caps the TextBox and the scrollbar takes over.
+
+**Key formula:** lineHeight = fontFamily.LineSpacing * fontSize (~15.87px for Consolas 13). MinHeight ≈ 40px (2 lines), MaxHeight ≈ 326px (20 lines).

@@ -133,6 +133,46 @@ var webView = new WebView2CompositionControl();
 - Decision 14: Rich Output Rendering Architecture (uses WebView2)
 - Decision 2: Variable Explorer Architecture (displays formatted output via WebView2)
 
+## Decision 4: Font-Metric-Based Cell Sizing
+
+**Date**: 2026-03-27  
+**Author**: Wendy (UI Specialist)  
+**Status**: ACTIVE  
+**Type**: Architecture / UI/UX
+
+### Context
+
+Code cells had hardcoded `MinHeight=60` / `MaxHeight=400` with `VerticalScrollBarVisibility=Hidden`. This caused:
+- Short cells wasting vertical space
+- Long cells clipped at 400px with no scroll mechanism
+
+### Decision
+
+Use `FontFamily.LineSpacing × FontSize` to derive line height, then calculate:
+- **MinHeight**: ~2 lines (adaptive to font)
+- **MaxHeight**: ~20 lines (adaptive to font)
+- Enable `VerticalScrollBarVisibility=Auto` so scrollbar appears only when content exceeds 20-line cap
+
+Implementation in `CellControl.cs` leverages existing `AdjustEditorHeight()` method which already respects Min/MaxHeight bounds.
+
+### Rationale
+
+- Font-metric calculation ensures MinHeight/MaxHeight scale with actual rendered line dimensions
+- Auto scrollbar provides progressive disclosure: short cells remain compact, long cells become scrollable
+- 20-line cap balances visibility and usability (typical large notebook cell is 15-18 lines)
+- No breaking changes; existing cell styling and layout unaffected
+
+### Implications
+
+- If `FontSize` becomes user-configurable in future, the line-height calculation should move to a shared helper
+- All `CellControl` instances use the same formula (consistent across notebook)
+- `OutputControl`, `CellToolbar`, `NotebookControl` are unchanged
+- Build verified clean, 0 errors
+
+### Related Decisions
+
+- None currently; standalone UI/UX improvement
+
 ---
 
-*Decisions merged from inbox by Scribe, 2026-03-27T22:29:00Z*
+*Decisions merged from inbox by Scribe, 2026-03-27T23:02:37Z*
