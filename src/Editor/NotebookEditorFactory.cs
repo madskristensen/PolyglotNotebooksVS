@@ -27,11 +27,13 @@ namespace PolyglotNotebooks.Editor
             pbstrPhysicalView = null!;
 
             if (rguidLogicalView == VSConstants.LOGVIEWID_Primary ||
-                rguidLogicalView == VSConstants.LOGVIEWID_TextView)
+                rguidLogicalView == VSConstants.LOGVIEWID_Designer)
             {
                 return VSConstants.S_OK;
             }
 
+            // Code and TextView views: return E_NOTIMPL so VS falls back to
+            // the built-in text editor for F7 (View Code).
             return VSConstants.E_NOTIMPL;
         }
 

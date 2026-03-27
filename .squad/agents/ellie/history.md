@@ -273,6 +273,13 @@
 - The call site in `NotebookEditorPane.LoadDocData` already has the `detector` instance available — just pass it through to `ShowAsync(detector)`.
 - Build environment note: the VS SDK assemblies (`Microsoft.VisualStudio.*`) aren't resolvable outside the VS dev hive, so `dotnet msbuild` produces ~257 CS0234 errors as baseline. These are all namespace resolution failures, not logic errors. The project builds correctly inside VS.
 
+### View Code / View Designer toggle (F7 / Shift+F7)
+- Added `ProvideEditorLogicalView` attribute for `Designer_string` on the package class — registers our editor as the Designer view handler.
+- Updated `MapLogicalView` in `NotebookEditorFactory`: `LOGVIEWID_Primary` and `LOGVIEWID_Designer` return `S_OK` (our WPF UI); everything else (including `LOGVIEWID_TextView` and `LOGVIEWID_Code`) returns `E_NOTIMPL` so VS falls back to its built-in text editor.
+- Key insight: Previously `LOGVIEWID_TextView` returned `S_OK`, which would prevent VS from opening the text editor for F7. Changing it to `E_NOTIMPL` is what enables the code/designer split.
+- No `ProvideEditorLogicalView` needed for `Code_string` or `TextView_string` — by NOT claiming those views, VS naturally falls back to the default text editor for F7.
+- No test changes needed: existing `EditorFactoryTests` only test `NotebookDocumentManager`, not `MapLogicalView` (VS SDK types unavailable in test runner).
+
 ### Auto-start kernel after install (seamless post-install UX)
 - Changed `KernelNotInstalledDialog.ShowAsync` return type from `Task` to `Task<bool>` — returns `true` on successful install, `false` on cancel/failure/docs.
 - Removed the "please re-open" success MessageBox; kept status bar message and error/failure MessageBoxes.

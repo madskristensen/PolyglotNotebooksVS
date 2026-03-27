@@ -4,6 +4,7 @@
         <Identity Id="PolyglotNotebooks.52d750bb-4c45-43d1-bc22-a9d5fe2cdf91" Version="1.0.1" Language="en-US" Publisher="Mads Kristensen" />
         <DisplayName>Polyglot Notebooks</DisplayName>
         <Description>Interactive notebook experience for Visual Studio. Execute C#, JavaScript, and SQL code in cells with rich output, IntelliSense, and cross-language variable sharing. Powered by .NET Interactive.</Description>
+        <MoreInfo>https://github.com/madskristensen/PolyglotNotebooksVS</MoreInfo>
         <License>Resources\LICENSE.txt</License>
         <Icon>Resources\Icon.png</Icon>
         <PreviewImage>Resources\Icon.png</PreviewImage>

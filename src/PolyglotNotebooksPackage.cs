@@ -17,6 +17,7 @@ namespace PolyglotNotebooks
     [ProvideEditorFactory(typeof(Editor.NotebookEditorFactory), 101)]
     [ProvideEditorExtension(typeof(Editor.NotebookEditorFactory), ".dib", 50)]
     [ProvideEditorExtension(typeof(Editor.NotebookEditorFactory), ".ipynb", 50)]
+    [ProvideEditorLogicalView(typeof(Editor.NotebookEditorFactory), VSConstants.LOGVIEWID.Designer_string)]
     [ProvideToolWindow(typeof(Variables.VariableExplorerToolWindow.Pane))]
     [Guid(PackageGuids.PolyglotNotebooksString)]
     public sealed class PolyglotNotebooksPackage : ToolkitPackage
