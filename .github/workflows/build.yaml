@@ -7,9 +7,9 @@ permissions:
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   pull_request_target:
-    branches: [master]
+    branches: [main]
   workflow_dispatch:
 
 jobs:
@@ -74,6 +74,7 @@ jobs:
     runs-on: windows-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      VsixFileName: PolyglotNotebooks.vsix
 
     steps:
       - uses: actions/checkout@v5
@@ -86,12 +87,12 @@ jobs:
       - name: Upload to Open VSIX
         uses: timheuer/openvsixpublish@v1
         with:
-          vsix-file: ${{ github.event.repository.name }}.vsix
+          vsix-file: ${{ env.VsixFileName }}
 
       - name: Publish extension to Marketplace
         if: ${{ github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[release]') }}
         uses: cezarypiatek/VsixPublisherAction@1.0
         with:
-          extension-file: '${{ github.event.repository.name }}.vsix'
+          extension-file: ${{ env.VsixFileName }}
           publish-manifest-file: 'vs-publish.json'
           personal-access-code: ${{ secrets.VS_PUBLISHER_ACCESS_TOKEN }}
