@@ -23,3 +23,6 @@ source.extension.cs text eol=lf
 
 # PowerShell
 *.ps1 text eol=crlf
+# Squad: union merge for append-only team state files
+.squad/log/** merge=union
+.squad/orchestration-log/** merge=union
