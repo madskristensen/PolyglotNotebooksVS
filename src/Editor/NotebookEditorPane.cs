@@ -155,7 +155,7 @@ namespace PolyglotNotebooks.Editor
                     if (_control != null)
                         _control.IntelliSenseManager = _intelliSenseManager;
 
-                    Variables.VariableService.Current?.SetKernelClient(client);
+                    Variables.VariableService.Current.SetKernelClient(client);
                 }
                 catch (Exception ex)
                 {

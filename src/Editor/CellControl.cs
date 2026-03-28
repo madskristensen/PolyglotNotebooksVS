@@ -51,6 +51,10 @@ namespace PolyglotNotebooks.Editor
             ["markdown"] = "markdown"
         };
 
+        // Cached regex for inline markdown formatting (bold, code, italic)
+        private static readonly Regex _inlineFormattingRegex =
+            new Regex(@"\*\*(.+?)\*\*|__(.+?)__|`(.+?)`|\*(.+?)\*|_([^_\s](?:[^_]*[^_\s])?)_", RegexOptions.Compiled);
+
         // Markdown cell state
         private StackPanel _markdownDisplay;
         private bool _isMarkdownEditing;
@@ -728,10 +732,9 @@ namespace PolyglotNotebooks.Editor
             }
 
             // Priority: bold (**/__) before code (`), then italic (*/_)
-            var regex = new Regex(@"\*\*(.+?)\*\*|__(.+?)__|`(.+?)`|\*(.+?)\*|_([^_\s](?:[^_]*[^_\s])?)_");
             int lastEnd = 0;
 
-            foreach (Match m in regex.Matches(text))
+            foreach (Match m in _inlineFormattingRegex.Matches(text))
             {
                 if (m.Index > lastEnd)
                     inlines.Add(new Run(text.Substring(lastEnd, m.Index - lastEnd)));

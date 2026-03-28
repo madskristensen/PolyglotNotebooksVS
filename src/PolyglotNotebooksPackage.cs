@@ -11,9 +11,6 @@ namespace PolyglotNotebooks
     [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
     [InstalledProductRegistration(Vsix.Name, Vsix.Description, Vsix.Version)]
     [ProvideMenuResource("Menus.ctmenu", 1)]
-    [ProvideAutoLoad(VSConstants.UICONTEXT.NoSolution_string, PackageAutoLoadFlags.BackgroundLoad)]
-    [ProvideAutoLoad(VSConstants.UICONTEXT.SolutionExists_string, PackageAutoLoadFlags.BackgroundLoad)]
-    [ProvideAutoLoad(VSConstants.UICONTEXT.FolderOpened_string, PackageAutoLoadFlags.BackgroundLoad)]
     [ProvideEditorFactory(typeof(Editor.NotebookEditorFactory), 101)]
     [ProvideEditorExtension(typeof(Editor.NotebookEditorFactory), ".dib", 50)]
     [ProvideEditorExtension(typeof(Editor.NotebookEditorFactory), ".ipynb", 50)]
@@ -24,8 +21,6 @@ namespace PolyglotNotebooks
     {
         protected override async Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress)
         {
-            Variables.VariableService.Initialize();
-
             await this.RegisterCommandsAsync();
 
             await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);

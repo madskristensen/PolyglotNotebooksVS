@@ -16,8 +16,16 @@ namespace PolyglotNotebooks.Variables
     {
         private static VariableService? _current;
 
-        /// <summary>Global singleton, initialized by the package.</summary>
-        public static VariableService? Current => _current;
+        /// <summary>Global singleton, created lazily on first access.</summary>
+        public static VariableService Current
+        {
+            get
+            {
+                if (_current == null)
+                    Initialize();
+                return _current!;
+            }
+        }
 
         private KernelClient? _kernelClient;
         private IDisposable? _eventSubscription;

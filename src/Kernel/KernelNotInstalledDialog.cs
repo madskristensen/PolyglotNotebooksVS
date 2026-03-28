@@ -173,9 +173,9 @@ namespace PolyglotNotebooks.Kernel
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
 
-            await tcs.Task.ConfigureAwait(false);
+            var exitCode = await tcs.Task.ConfigureAwait(false);
 
-            return (tcs.Task.Result, stdoutBuilder.ToString(), stderrBuilder.ToString());
+            return (exitCode, stdoutBuilder.ToString(), stderrBuilder.ToString());
         }
 
         private static async Task SetStatusBarTextAsync(string text)
