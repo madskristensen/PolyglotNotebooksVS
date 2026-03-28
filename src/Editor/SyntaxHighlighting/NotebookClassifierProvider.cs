@@ -5,6 +5,8 @@ using Microsoft.VisualStudio.Text.Classification;
 using Microsoft.VisualStudio.Text.Tagging;
 using Microsoft.VisualStudio.Utilities;
 
+using PolyglotNotebooks.Diagnostics;
+
 namespace PolyglotNotebooks.Editor.SyntaxHighlighting
 {
     /// <summary>
@@ -24,8 +26,14 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
 
         public ITagger<T> CreateTagger<T>(ITextBuffer buffer) where T : ITag
         {
+            ExtensionLogger.LogInfo("NotebookClassifierProvider",
+                $"CreateTagger called for buffer with content type '{buffer?.ContentType.TypeName}'");
+
             if (buffer == null || typeof(T) != typeof(ClassificationTag))
                 return null;
+
+            ExtensionLogger.LogInfo("NotebookClassifierProvider",
+                $"Buffer has PolyglotNotebook.KernelName property: {buffer.Properties.ContainsProperty("PolyglotNotebook.KernelName")}");
 
             if (!buffer.Properties.ContainsProperty("PolyglotNotebook.KernelName"))
                 return null;
