@@ -300,3 +300,11 @@
 - `Process` objects in .NET hold OS handles. Always use `using` even when awaiting async completion via TCS+Exited event. On cancellation, kill the process before disposing.
 - `Task.Run()` fire-and-forget bypasses JoinableTaskFactory's shutdown tracking. In VS extensions, always use `ThreadHelper.JoinableTaskFactory.RunAsync()` for fire-and-forget async work, even when the work doesn't need the UI thread — JTF ensures proper join-on-shutdown behavior.
 - Suppress both `VSTHRD110` (fire-and-forget) and `VSSDK007` (un-awaited JTF.RunAsync) together when intentionally discarding the JoinableTask.
+
+---
+
+## 2026-03-28 — Reliability Round 3 Completed
+
+**Status**: COMPLETE ✅ — All three fixes applied, builds passing
+
+**Team Coordination**: Part of perf-reliability-round3 with Ellie (UI optimization). Documented decision: Reliability Fix Patterns for Resource Leaks & JTF Compliance. All fixes follow established patterns now applied squad-wide.

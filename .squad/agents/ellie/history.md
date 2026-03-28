@@ -683,3 +683,16 @@ Parallel session with Vince (defer install check). Both address startup/edit lat
 - Additional `DefaultTextViewHostOptions` to disable for compact cells: `HorizontalScrollBarId`, `VerticalScrollBarId`, `ZoomControlId`, `SelectionMarginId`, `ChangeTrackingId`
 - `_codewindowbehaviorflags.CWB_DISABLEDROPDOWNBAR` (OR'd with `CWB_DISABLESPLITTER`) hides the navigation dropdown bar at the top of the code window
 - Key file: `src/Editor/CellControl.cs` lines 227-265 — code window initialization and option configuration
+
+---
+
+## 2026-03-28 — UI Optimization: Bottom Margin Collapse
+
+**Status**: COMPLETE ✅ — Build passes
+
+**What Changed**: Collapsed the bottom status bar on cell text views in CellControl.cs to improve compact notebook interface. Disabled scrollbars, zoom, selection, and change tracking via editor options. Added CWB_DISABLEDROPDOWNBAR flag.
+
+**Files Modified**:
+- src/Editor/CellControl.cs
+
+**Team Coordination**: Parallel with Theo (reliability fixes). Both tasks in perf-reliability-round3.

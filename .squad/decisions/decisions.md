@@ -367,3 +367,51 @@ Thorough source-level audit of the full loading → editing → execution pipeli
 - Decision 3: WebView2CompositionControl (airspace fix, separate initiative)
 
 *Audit findings merged from inbox by Scribe, 2026-03-28T14:26:00Z*
+
+---
+
+# Decision: Reliability Fix Patterns for Resource Leaks and JTF Compliance
+
+**Author**: Theo (Threading & Reliability Engineer)  
+**Date**: 2026-07-21  
+**Status**: IMPLEMENTED
+
+## Context
+
+Audit findings #7, #8, #9 identified three classes of resource leak / threading violation:
+1. Process handles not disposed on cancellation paths
+2. CancellationTokenRegistration delegates leaking when ct.Register() return value is discarded
+3. Fire-and-forget async work bypassing JoinableTaskFactory shutdown tracking
+
+## Decisions
+
+### D1: Always dispose CancellationTokenRegistration
+When calling `ct.Register(...)`, capture the return value and dispose it when the awaited task completes:
+```csharp
+var registration = ct.Register(() => tcs.TrySetCanceled());
+try { return await tcs.Task; }
+finally { registration.Dispose(); }
+```
+This prevents the registration delegate from leaking if the CancellationTokenSource outlives the caller.
+
+### D2: Process objects require using + kill-on-cancel
+Process objects hold OS handles. Use `using var process = ...` and kill the process on cancellation:
+```csharp
+using var process = new Process { ... };
+try { await tcs.Task; }
+catch (OperationCanceledException) {
+    try { if (!process.HasExited) process.Kill(); } catch { }
+    return null;
+}
+```
+
+### D3: All fire-and-forget must use JoinableTaskFactory.RunAsync
+Never use `Task.Run()` for fire-and-forget in VS extension code. Always use:
+```csharp
+_ = ThreadHelper.JoinableTaskFactory.RunAsync(() => SomeAsync(...));
+```
+Suppress `VSTHRD110` and `VSSDK007` with `#pragma warning disable` and a comment explaining the intent.
+
+## Impact
+- All agents: Follow these patterns when creating new async code that uses CancellationToken, Process, or fire-and-forget
+- Applies to any future kernel management, protocol, or lifecycle code
