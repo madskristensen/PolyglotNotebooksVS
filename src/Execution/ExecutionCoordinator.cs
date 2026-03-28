@@ -77,6 +77,7 @@ namespace PolyglotNotebooks.Execution
                 }
                 finally
                 {
+                    Interlocked.CompareExchange(ref _currentCts, null, cts);
                     cts.Dispose();
                     ExecutionCompleted?.Invoke(this, EventArgs.Empty);
                 }
@@ -274,6 +275,7 @@ namespace PolyglotNotebooks.Execution
                 }
                 finally
                 {
+                    Interlocked.CompareExchange(ref _currentCts, null, cts);
                     cts.Dispose();
                     ExecutionCompleted?.Invoke(this, EventArgs.Empty);
                 }
