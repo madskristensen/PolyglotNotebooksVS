@@ -99,6 +99,7 @@
     <Compile Include="Editor\WebView2OutputHost.cs" />
     <Compile Include="Execution\CellExecutionEngine.cs" />
     <Compile Include="Execution\ExecutionCoordinator.cs" />
+    <Compile Include="Execution\NodeJsExecutor.cs" />
     <Compile Include="IntelliSense\CompletionProvider.cs" />
     <Compile Include="IntelliSense\DiagnosticsProvider.cs" />
     <Compile Include="IntelliSense\HoverProvider.cs" />

@@ -23,6 +23,7 @@ namespace PolyglotNotebooks.Execution
         private readonly KernelInstallationDetector _installationDetector = new KernelInstallationDetector();
         private readonly SemaphoreSlim _startupLock = new SemaphoreSlim(1, 1);
         private readonly CancellationTokenSource _lifetimeCts = new CancellationTokenSource();
+        private readonly NodeJsExecutor _nodeJsExecutor = new NodeJsExecutor();
 
         private KernelClient? _kernelClient;
         private CellExecutionEngine? _executionEngine;
@@ -67,8 +68,7 @@ namespace PolyglotNotebooks.Execution
             {
                 try
                 {
-                    await EnsureKernelStartedAsync(cts.Token).ConfigureAwait(false);
-                    await _executionEngine!.ExecuteCellAsync(cell, cts.Token).ConfigureAwait(false);
+                    await ExecuteCellRoutedAsync(cell, cts.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) { }
                 catch (Exception ex)
@@ -155,13 +155,11 @@ namespace PolyglotNotebooks.Execution
         {
             if (document == null) throw new ArgumentNullException(nameof(document));
 
-            await EnsureKernelStartedAsync(ct).ConfigureAwait(false);
-
             foreach (var cell in document.Cells)
             {
                 ct.ThrowIfCancellationRequested();
                 if (cell.Kind == CellKind.Code)
-                    await _executionEngine!.ExecuteCellAsync(cell, ct).ConfigureAwait(false);
+                    await ExecuteCellRoutedAsync(cell, ct).ConfigureAwait(false);
             }
         }
 
@@ -171,14 +169,12 @@ namespace PolyglotNotebooks.Execution
             if (document == null) throw new ArgumentNullException(nameof(document));
             if (currentCell == null) throw new ArgumentNullException(nameof(currentCell));
 
-            await EnsureKernelStartedAsync(ct).ConfigureAwait(false);
-
             foreach (var cell in document.Cells)
             {
                 if (ReferenceEquals(cell, currentCell)) break;
                 ct.ThrowIfCancellationRequested();
                 if (cell.Kind == CellKind.Code)
-                    await _executionEngine!.ExecuteCellAsync(cell, ct).ConfigureAwait(false);
+                    await ExecuteCellRoutedAsync(cell, ct).ConfigureAwait(false);
             }
         }
 
@@ -188,8 +184,6 @@ namespace PolyglotNotebooks.Execution
             if (document == null) throw new ArgumentNullException(nameof(document));
             if (currentCell == null) throw new ArgumentNullException(nameof(currentCell));
 
-            await EnsureKernelStartedAsync(ct).ConfigureAwait(false);
-
             bool reached = false;
             foreach (var cell in document.Cells)
             {
@@ -197,7 +191,7 @@ namespace PolyglotNotebooks.Execution
                 if (!reached) continue;
                 ct.ThrowIfCancellationRequested();
                 if (cell.Kind == CellKind.Code)
-                    await _executionEngine!.ExecuteCellAsync(cell, ct).ConfigureAwait(false);
+                    await ExecuteCellRoutedAsync(cell, ct).ConfigureAwait(false);
             }
         }
 
@@ -210,8 +204,15 @@ namespace PolyglotNotebooks.Execution
             if (cell == null) throw new ArgumentNullException(nameof(cell));
             if (string.IsNullOrEmpty(selectedText)) return;
 
-            await EnsureKernelStartedAsync(ct).ConfigureAwait(false);
-            await _executionEngine!.ExecuteSelectionAsync(cell, selectedText, ct).ConfigureAwait(false);
+            if (IsJavaScriptCell(cell))
+            {
+                await _nodeJsExecutor.ExecuteCodeAsync(cell, selectedText, clearOutputs: false, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                await EnsureKernelStartedAsync(ct).ConfigureAwait(false);
+                await _executionEngine!.ExecuteSelectionAsync(cell, selectedText, ct).ConfigureAwait(false);
+            }
         }
 
         /// <summary>
@@ -247,6 +248,33 @@ namespace PolyglotNotebooks.Execution
         }
 
         // ── Private helpers ───────────────────────────────────────────────────
+
+        /// <summary>
+        /// Returns true if the cell's kernel name is JavaScript and should be
+        /// executed via Node.js instead of the dotnet-interactive kernel.
+        /// </summary>
+        private static bool IsJavaScriptCell(NotebookCell cell)
+        {
+            var name = cell.KernelName?.ToLowerInvariant();
+            return name == "javascript" || name == "js";
+        }
+
+        /// <summary>
+        /// Executes a single cell, routing JavaScript cells to Node.js and
+        /// everything else to the dotnet-interactive kernel engine.
+        /// </summary>
+        private async Task ExecuteCellRoutedAsync(NotebookCell cell, CancellationToken ct)
+        {
+            if (IsJavaScriptCell(cell))
+            {
+                await _nodeJsExecutor.ExecuteAsync(cell, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                await EnsureKernelStartedAsync(ct).ConfigureAwait(false);
+                await _executionEngine!.ExecuteCellAsync(cell, ct).ConfigureAwait(false);
+            }
+        }
 
         /// <summary>
         /// Common fire-and-forget wrapper: cancels any pending execution, creates a new CTS,
