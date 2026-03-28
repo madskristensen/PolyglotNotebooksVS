@@ -27,6 +27,9 @@
 - `MakeAddCellButtons()` returns a horizontal StackPanel with two buttons; each captures `insertIndex` and `CellKind`
 - Markdown CellControl is `Focusable = true` so GotFocus event works for `_focusedCell` tracking
 - CellToolbar `InsertCellAt()` now takes CellKind — both menus (code and markdown) offer all four insert options
+- Split button pattern: Border(StackPanel(Button, Border-separator, Button)) — outer Border gives unified frame, inner buttons have BorderThickness=0, separator is 1px Border with VsBrushes.ToolWindowBorderKey
+- `_runBtn` and `_runDropdownBtn` fields preserved inside the split button so `UpdateStatusIndicator()` enable/disable still works
+- `BuildSplitRunButton()` returns a Border (not a Button) — DockPanel.SetDock works on any UIElement
 
 ## 2026-03-27T23:02:37Z — Cell Auto-Sizing Implementation Complete
 

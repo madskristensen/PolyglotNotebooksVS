@@ -271,6 +271,11 @@
 - **Try/catch fallback pattern**: MEF service resolution (`IComponentModel.GetService<T>`) can fail at runtime if assemblies aren't loaded. Wrapping `BuildCodeCellContent` in try/catch with TextBox fallback ensures cells are always editable even if the VS editor platform isn't available.
 - **Nullable `_editor` field**: For code cells with IWpfTextViewHost, `_editor` is null. All consumers (IntelliSenseManager, AdvanceFocusToNextCell) must null-check `CodeEditor`. IntelliSenseManager skips attachment (VS editor provides its own IntelliSense). AdvanceFocusToNextCell falls through: `TextView.VisualElement` → `CodeEditor` → `Focus()`.
 
+### ITextDocument Lifecycle & Content Type Fix (2026-07-22)
+- **ITextDocument duplicate key**: `GetDataBuffer()` can internally create an `ITextDocument` in `buffer.Properties`, so calling `CreateTextDocument()` afterwards throws a duplicate-key exception. Fix: use `TryGetTextDocument()` to detect the pre-existing document, remove it from properties (and dispose it), then create a fresh one with our fake file path. This ensures Roslyn sees the buffer with a `.cs`/`.fs`/etc. path via `MiscellaneousFilesWorkspace`.
+- **HTML content type**: VS resolves lowercase `"html"` to `"WebForms"`, not the modern HTML editor. Changed the `_kernelContentTypeMap` entry to `"htmlx"`, which is VS's modern HTML content type. If `"htmlx"` isn't available, the existing fallback-to-`"text"` logic handles it gracefully.
+- **Root cause of "Unexpected buffer without document"**: This VS-internal error was a downstream consequence of the `ITextDocument` duplicate-key failure. With the document properly created, VS's tagger and margin controllers can now find it through the factory's registry.
+
 ---
 
 ## 2026-03-28 — IWpfTextViewHost Runtime Fixes (Ellie-7)
@@ -779,3 +784,57 @@ Setting `hostControl.Height` inside the `LayoutChanged` handler caused layout re
 **Task**: Collapse all left-side editor margins (indicator/breakpoint gutter, selection margin, line numbers) from code cell IVsCodeWindow text views.
 **Approach**: The options were already set to false (GlyphMarginId, LineNumberMarginId, SelectionMarginId, ChangeTrackingId), but the left margin container can still occupy space. Added 	extViewHost.GetTextViewMargin("left") collapse, mirroring the existing bottom margin pattern.
 **Files Modified**: src/Editor/CellControl.cs — added left margin container collapse at line 267-270.
+
+### Bug Fix: Margins Reappear on Language Change (2026-07-25)
+**Problem**: When the user changes the kernel/language from the dropdown, `buffer.ChangeContentType()` triggers VS to rebuild margin containers, re-showing previously collapsed bottom and left margins.
+**Fix**: Added deferred margin re-collapse in the `KernelName` PropertyChanged handler. After calling `ChangeContentType`, we dispatch at `Render` priority to re-hide the "bottom" and "left" margins using the same `GetTextViewMargin` + `Visibility.Collapsed` pattern used during initial creation.
+**Key Pattern**: Any operation that changes content type on an IVsCodeWindow buffer can cause margin reconstruction. Always re-apply margin hiding after content type changes.
+**Files Modified**: src/Editor/CellControl.cs — KernelName handler in PropertyChanged lambda (~line 362-381).
+
+### Bug Fix: Code Cell Minimum Height (2026-07-25)
+**Problem**: When all text is deleted from a code cell, the auto-sizing logic could shrink the editor below one visible line because `TextSnapshot.LineCount` wasn't defensively clamped.
+**Fix**: Added `Math.Max(1, ...)` around `textView.TextSnapshot.LineCount` in both the `LayoutChanged` handler and the initial height calculation. This ensures the height never drops below `lineHeight + padding` even in edge cases.
+**Files Modified**: src/Editor/CellControl.cs — lines 286 and 306.
+
+### Learnings — Cell Auto-Sizing Clipping Fix (2026-07-25)
+
+**Problem**: Code cell text was clipped at the bottom — last line partially visible on both initial load and after buffer changes. Root cause: the height calculation used `FontFamily.LineSpacing * fontSize` (a WPF font metric), but the VS text editor renders lines at a different height available via `IWpfTextView.LineHeight`.
+
+**Fix** (4 changes in `CellControl.cs`):
+1. **LayoutChanged handler**: Replaced `lineHeight` (WPF estimate) with `textView.LineHeight` (actual VS editor metric). Also recomputes min/max dynamically and pushes them via Dispatcher along with the height to keep everything consistent.
+2. **Initial height after text view creation**: Uses `textView.LineHeight` (with fallback to WPF estimate) to recompute `minH`/`maxH` and initial height before first layout.
+3. **Padding buffer**: Increased `editorVerticalPadding` from `4+4` (8px) to `6+6` (12px) to better account for VS editor internal chrome.
+4. **Mouse wheel handler**: Changed `maxH` (stale captured variable) to `hostControl.MaxHeight` (dynamically updated by LayoutChanged).
+
+**Key Insight**: `IWpfTextView.LineHeight` is the authoritative line height for VS editor auto-sizing. The WPF `FontFamily.LineSpacing * fontSize` is only a rough pre-layout estimate — always prefer the editor's own metric once the text view exists.
+
+### ITextDocument Lifecycle Fix: Rename Instead of Remove/Recreate (2026-07-25)
+
+**Problem**: ITextDocument creation crashed with `"Key already added: WasAssociatedWithTextDocument"` for ALL languages. Disposing/removing the existing ITextDocument left a stale string key `"WasAssociatedWithTextDocument"` in buffer.Properties. `CreateTextDocument` then tried to add it again → crash. This blocked Roslyn C# QuickInfo/IntelliSense downstream.
+
+**Fix (Option A — Rename)**: Instead of removing + recreating the ITextDocument, call `existingDoc.Rename(fakePath)` on the pre-existing document. This changes the FilePath without touching any buffer properties, completely avoiding the property collision. Fallback path (no existing doc) cleans up both `typeof(ITextDocument)` and `"WasAssociatedWithTextDocument"` string keys before `CreateTextDocument`.
+
+**HTML content type fix**: Changed `"htmlx"` → `"HTML"` in `_kernelContentTypeMap`. The `"htmlx"` content type doesn't exist in VS 2022; `"HTML"` is the registered name.
+
+**Key Insight**: `ITextDocument.Rename(string)` is the safe way to change a document's file path on an existing buffer. Never dispose + recreate — the VS text infrastructure scatters additional property keys (string-keyed, not just typed) that are impossible to fully clean up.
+
+**Files Modified**: `src/Editor/CellControl.cs` — lines ~53 (HTML content type), ~219-246 (ITextDocument lifecycle).
+
+### KernelLanguageMap extraction for testability
+**Date**: 2026-03-28
+**Task**: Add unit tests for content type mapping and fake file name generation
+**Problem**: The kernel→content-type dictionary and GetFakeFileName were both private static inside CellControl.cs, making them untestable without reflection. Past regressions included `sql` mapping to `SQL` instead of `SQL Server Tools`, and `html` mapping to `htmlx` instead of `HTML`.
+**Solution**: Extracted both the content type dictionary and the file extension mapping into a new `internal static class KernelLanguageMap` in `src/Editor/KernelLanguageMap.cs`. CellControl now delegates to it. Created 30+ regression tests in `test/PolyglotNotebooks.Test/KernelLanguageMapTests.cs` covering every kernel mapping, case insensitivity, unknown/null fallbacks, and fake file path structure. All 346 tests pass (0 failures).
+**Key Insight**: The main project already had `[assembly: InternalsVisibleTo("PolyglotNotebooks.Test")]` in Properties/AssemblyInfo.cs, so `internal` visibility was sufficient. The old-style .csproj requires explicit `<Compile Include>` entries for new files.
+**Files Created**: `src/Editor/KernelLanguageMap.cs`, `test/PolyglotNotebooks.Test/KernelLanguageMapTests.cs`
+**Files Modified**: `src/Editor/CellControl.cs`, `src/PolyglotNotebooks.csproj`
+
+### RDT_VirtualDocument Flag Removal for Roslyn DataTip Fix (2026-07-25)
+
+**Problem**: After fixing the ITextDocument lifecycle (Rename fix), hover/DataTip still failed for C# cells with "Document is null when it was required for textdocument/_vs_dataTipRange". Root cause: RDT_VirtualDocument flag in RegisterAndLockDocument told VS the buffer wasn't a real document. Roslyn's MiscellaneousFilesWorkspace filters out virtual documents, so it never received 	extDocument/didOpen for the buffer. HTML/JS worked because their LSP servers activate on content type alone, but Roslyn requires workspace-level document registration.
+
+**Fix**: Removed _VSRDTFLAGS.RDT_VirtualDocument from the RDT registration flags, changing from RDT_ReadLock | RDT_VirtualDocument | RDT_DontAddToMRU to RDT_ReadLock | RDT_DontAddToMRU. The file already exists on disk (written via File.WriteAllText), so marking it as virtual was incorrect and actively harmful.
+
+**Key Insight**: RDT_VirtualDocument prevents Roslyn's MiscellaneousFilesWorkspace from discovering the document. For notebook cell buffers backed by real files on disk, omit this flag so language services that rely on workspace document tracking (like Roslyn C#) can provide hover, completion, and diagnostics.
+
+**Files Modified**: src/Editor/CellControl.cs — line 247 (RDT flags).

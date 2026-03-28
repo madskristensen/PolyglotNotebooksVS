@@ -1302,3 +1302,137 @@ Collapse the entire left margin container using `textViewHost.GetTextViewMargin(
 ### Files Changed
 
 - `src/Editor/CellControl.cs` — Left margin container collapse (lines 267-270)
+
+---
+
+# Decision: Remove RDT_VirtualDocument from Cell Buffer Registration
+
+**Date**: 2026-07-25
+**Lead**: Ellie (Editor Extension Specialist)
+**Status**: ACTIVE
+
+## Context
+
+The `_vs_dataTipRange` error occurred when hovering over C# code in notebook cells. The VS LSP client infrastructure (DataTipServiceImpl) tried to send a hover request to Roslyn, but Roslyn's language server didn't know about the document. Root cause: `RDT_VirtualDocument` in the Running Document Table registration flags told VS the buffer was virtual, which caused Roslyn's MiscellaneousFilesWorkspace to skip it entirely.
+
+## Decision
+
+Remove `_VSRDTFLAGS.RDT_VirtualDocument` from the `RegisterAndLockDocument` call in CellControl.cs. The flags change from:
+
+```csharp
+// Before
+(uint)(_VSRDTFLAGS.RDT_ReadLock | _VSRDTFLAGS.RDT_VirtualDocument | _VSRDTFLAGS.RDT_DontAddToMRU)
+
+// After
+(uint)(_VSRDTFLAGS.RDT_ReadLock | _VSRDTFLAGS.RDT_DontAddToMRU)
+```
+
+## Rationale
+
+1. The backing file already exists on disk (`File.WriteAllText` creates it before RDT registration), so "virtual" was factually incorrect.
+2. `RDT_VirtualDocument` specifically prevents MiscellaneousFilesWorkspace from discovering the document — this is the documented VS SDK behavior.
+3. HTML/JS language servers don't need workspace registration (they activate on content type), which is why they worked. Roslyn C# requires workspace-level document tracking.
+4. `RDT_DontAddToMRU` is retained to keep cell files out of the recent files list.
+
+## Implications
+
+1. Roslyn's MiscellaneousFilesWorkspace will now discover cell buffers, enabling DataTip/hover, completions, and diagnostics for C# cells.
+2. All language servers that rely on workspace document tracking (not just Roslyn) will benefit.
+3. The document appears as a "real" document in the RDT — if any VS component iterates non-virtual RDT entries, our cell files will now appear. The `RDT_DontAddToMRU` flag mitigates the most common user-visible side effect.
+
+## Files Changed
+
+- `src/Editor/CellControl.cs` — RDT registration flags (line 247)
+
+---
+
+# Decision: Use IWpfTextView.LineHeight for Cell Auto-Sizing
+
+**Date**: 2026-07-25
+**Author**: Ellie (Editor Specialist)
+**Status**: IMPLEMENTED
+
+## Context
+
+Code cell auto-sizing was clipping the last line of text. The height calculation used `FontFamily.LineSpacing * fontSize` — a WPF font metric that doesn't match the VS text editor's actual rendered line height.
+
+## Decision
+
+All cell height calculations that run **after** the `IWpfTextView` is created must use `textView.LineHeight` instead of the WPF font estimate. The WPF estimate (`FontFamily.LineSpacing * fontSize`) is kept only as a pre-layout fallback before the text view exists.
+
+Additionally, `editorVerticalPadding` was increased from 8px to 12px to account for VS editor internal chrome.
+
+## Implications
+
+- Any future cell sizing logic must query `textView.LineHeight` rather than computing line height from font metrics.
+- The `LayoutChanged` handler now dynamically updates `MinHeight`/`MaxHeight` on the host control, so these values are self-correcting after first layout.
+- Event handlers that reference max height should read `hostControl.MaxHeight` (live property) rather than a captured local variable.
+
+---
+
+# Decision: ITextDocument Lifecycle Management in CellControl
+
+**Date**: 2026-07-22
+**Author**: Ellie (Editor Extension Specialist)
+**Status**: IMPLEMENTED
+
+## Context
+
+When opening multi-language `.dib` notebooks, every code cell triggered three cascading errors:
+1. `ITextDocument creation failed` — duplicate key in `buffer.Properties`
+2. `Unexpected buffer without document` — VS taggers/margins couldn't find the document
+3. `Content type mismatch: got 'WebForms', expected 'HTML'`
+
+The result: Roslyn semantic colorization and IntelliSense were completely non-functional.
+
+## Decision
+
+### 1. Pre-existing ITextDocument cleanup before creation
+
+`IVsEditorAdaptersFactoryService.GetDataBuffer()` may internally create an `ITextDocument` and store it in `buffer.Properties[typeof(ITextDocument)]`. Our subsequent `CreateTextDocument()` call then fails with a duplicate-key exception.
+
+**Fix**: After `GetDataBuffer()`, use `TryGetTextDocument()` to check for a pre-existing document. If found, remove it from properties and dispose it, then create a fresh `ITextDocument` with the correct fake file path (`.cs`, `.fs`, etc.) that Roslyn needs.
+
+### 2. HTML content type mapping
+
+Changed `_kernelContentTypeMap["html"]` from `"html"` to `"htmlx"`. VS resolves lowercase `"html"` to `"WebForms"`, which is not the modern HTML editor. `"htmlx"` is VS 2022's modern HTML content type.
+
+## Implications
+
+- All team members should be aware that `GetDataBuffer()` has document-creation side effects — any future buffer setup code must check for pre-existing properties before adding new ones.
+- The HTML content type `"htmlx"` requires VS 2022+. The existing fallback-to-`"text"` logic handles the case where `"htmlx"` isn't registered.
+
+---
+
+# Decision: Use ITextDocument.Rename() Instead of Remove/Recreate
+
+**Date**: 2026-07-25
+**Lead**: Ellie (Editor Specialist)
+**Status**: ACTIVE
+
+## Context
+
+When creating embedded IVsCodeWindow instances for notebook cells, the VS text infrastructure automatically creates an ITextDocument with a default (empty) file path. We need to set a fake `.cs`/`.js`/etc. file path so Roslyn and other language services discover the buffer.
+
+## Problem
+
+The previous approach — removing the existing ITextDocument from buffer.Properties, disposing it, then calling `CreateTextDocument(buffer, fakePath)` — crashed because `Dispose()` (or the original creation) adds a **string-keyed** property `"WasAssociatedWithTextDocument"` that we weren't cleaning up. `CreateTextDocument` then tried to add that key again → `ArgumentException`.
+
+## Decision
+
+**Use `ITextDocument.Rename(fakePath)` on the existing document** instead of removing and recreating it. This:
+- Changes the `FilePath` property to our fake path
+- Does NOT touch buffer.Properties at all
+- Completely avoids the property key collision
+- Is the API specifically designed for this purpose
+
+## Implications
+
+1. When an `ITextDocument` already exists on a buffer, always prefer `Rename()` over remove/recreate
+2. Never assume you know all the property keys the VS text infrastructure adds — there are undocumented string keys beyond the typed ones
+3. Fallback path (no existing doc) must clean up BOTH `typeof(ITextDocument)` and `"WasAssociatedWithTextDocument"` before `CreateTextDocument`
+
+## Also
+
+Changed HTML content type mapping from `"htmlx"` (doesn't exist in VS 2022) to `"HTML"` (registered name).
+
