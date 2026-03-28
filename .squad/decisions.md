@@ -556,6 +556,48 @@ Setting the `IntelliSenseManager` property on `NotebookControl` calls `RebuildCe
 ### Summary
 
 Upgraded `OutputControl` to render rich MIME types using WebView2 and WPF Image controls.
+
+---
+
+## Decision 15: IWpfTextViewHost Keyboard & Resilience Fixes
+
+**Author**: Ellie (Editor Extension Specialist)  
+**Date**: 2026-03-28  
+**Status**: ACTIVE  
+
+### Context
+
+IWpfTextViewHost was integrated for code cells but had three runtime issues: keyboard input not reaching the text view, no syntax highlighting engagement, and dead adorner code remaining in the file.
+
+### Decision
+
+1. **Try/Catch with TextBox Fallback**: `BuildCodeCellContent` is now wrapped in try/catch. If IWpfTextViewHost creation fails (e.g., MEF services unavailable, content type resolution failure), it logs to ExtensionLogger + ActivityLog and falls back to `BuildCodeCellFallback()` — a plain TextBox with visible text. This ensures cells are always editable.
+
+2. **Explicit Text View Roles**: Changed from `textEditorFactory.DefaultRoles` to explicitly specifying `Editable`, `Interactive`, `Document`, `Zoomable` roles via `CreateTextViewRoleSet()`. This guarantees the text view accepts keyboard input regardless of what `DefaultRoles` contains.
+
+3. **WPF Focus Routing**: Added `hostControl.Focusable = true` and a `GotFocus` handler that calls `Keyboard.Focus(textView.VisualElement)`. This ensures WPF keyboard focus reaches the actual text view surface when the host control receives focus.
+
+4. **Content Type Diagnostic Logging**: `ResolveContentType` now logs: which content type was resolved, whether it fell back to "text", and any lookup failures. This enables debugging syntax highlighting issues at runtime via the VS Activity Log.
+
+5. **Dead Code Cleanup**: Removed `_syntaxAdorner` field, `SetupSyntaxAdorner()`, and `OnCellPropertyChanged()` from CellControl.cs. Removed `using PolyglotNotebooks.Editor.SyntaxHighlighting;`. The SyntaxHighlighting folder files remain (they don't hurt compilation and may be useful for markdown cells later).
+
+6. **Null-Safety for `_editor`**: `_editor` is now `TextBox?` (nullable). For code cells with IWpfTextViewHost, `_editor` is null and `CodeEditor` returns null. IntelliSenseManager skips attachment when `CodeEditor` is null (VS editor provides its own IntelliSense). `AdvanceFocusToNextCell` uses `TextView.VisualElement` for code cells.
+
+### Impact
+
+- **CellControl.cs**: Major refactor of `BuildCodeCellContent`, new `BuildCodeCellFallback`, dead code removal
+- **NotebookControl.cs**: `AdvanceFocusToNextCell` now handles IWpfTextView, TextBox, and null cases
+- **IntelliSenseManager.cs**: Null guard on `CodeEditor` — skips custom IntelliSense for IWpfTextViewHost cells
+
+### Validation
+
+- Build: Clean (0 errors)
+- Tests: 309 passing
+- Requires: Live keyboard input testing to validate WPF focus fix
+
+### Future Work
+
+If keyboard input still doesn't work at runtime with the WPF focus fix, the next step is `IVsEditorAdaptersFactoryService.CreateVsTextViewAdapter()` + `IVsTextView.Initialize()` to create views with full OLE command target routing. This would require adding a `Microsoft.VisualStudio.Editor` reference and restructuring view creation.
 Two new helper classes support the expanded rendering pipeline.
 
 ### Decisions Made

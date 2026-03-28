@@ -265,6 +265,85 @@
 
 ## Learnings
 
+### IWpfTextViewHost Keyboard & Resilience Fixes (2026-03-28)
+- **Explicit roles fix**: `ITextEditorFactoryService.DefaultRoles` may not include `Editable` and `Interactive`. Always use `CreateTextViewRoleSet(Editable, Interactive, Document, Zoomable)` explicitly when creating text views that must accept keyboard input.
+- **WPF focus routing**: When hosting `IWpfTextViewHost.HostControl` inside a `WindowPane`, set `hostControl.Focusable = true` and add a `GotFocus` handler that calls `Keyboard.Focus(textView.VisualElement)`. Without this, the host control receives focus but the text view's editable surface doesn't.
+- **Try/catch fallback pattern**: MEF service resolution (`IComponentModel.GetService<T>`) can fail at runtime if assemblies aren't loaded. Wrapping `BuildCodeCellContent` in try/catch with TextBox fallback ensures cells are always editable even if the VS editor platform isn't available.
+- **Nullable `_editor` field**: For code cells with IWpfTextViewHost, `_editor` is null. All consumers (IntelliSenseManager, AdvanceFocusToNextCell) must null-check `CodeEditor`. IntelliSenseManager skips attachment (VS editor provides its own IntelliSense). AdvanceFocusToNextCell falls through: `TextView.VisualElement` → `CodeEditor` → `Focus()`.
+
+---
+
+## 2026-03-28 — IWpfTextViewHost Runtime Fixes (Ellie-7)
+
+**Date**: 2026-03-28T01:06:57Z  
+**Status**: COMPLETED  
+**Task**: Fixed three critical runtime issues with IWpfTextViewHost integration
+
+### What Changed
+
+1. **Resilience via Try/Catch + TextBox Fallback**
+   - `BuildCodeCellContent` wrapped in try/catch block
+   - On MEF initialization failure or content type resolution failure, falls back to `BuildCodeCellFallback()` (plain TextBox)
+   - Logs to ExtensionLogger + VS ActivityLog for debugging
+   - Ensures cells are always editable even if VS editor services unavailable
+
+2. **Explicit Text View Roles for Keyboard Routing**
+   - Changed from `textEditorFactory.DefaultRoles` to explicit role set: `Editable`, `Interactive`, `Document`, `Zoomable`
+   - Uses `CreateTextViewRoleSet()` API for role creation
+   - Guarantees keyboard input routing regardless of DefaultRoles configuration
+
+3. **WPF Focus Routing Fix**
+   - Added `hostControl.Focusable = true`
+   - Implemented `GotFocus` event handler routing to `Keyboard.Focus(textView.VisualElement)`
+   - Ensures WPF keyboard focus reaches the actual text view surface when host control receives focus
+   - Primary validation point for keyboard input flow
+
+4. **Content Type Diagnostic Logging**
+   - Enhanced `ResolveContentType` method with:
+     - Log of resolved content type
+     - Fallback tracking (when unavailable, logs fallback to "text")
+     - Lookup failure logging for debugging
+   - Debuggable via VS Activity Log at runtime
+
+5. **Dead Code Cleanup**
+   - Removed `_syntaxAdorner` field from CellControl
+   - Removed `SetupSyntaxAdorner()` method
+   - Removed `OnCellPropertyChanged()` handler and subscription
+   - Removed `using PolyglotNotebooks.Editor.SyntaxHighlighting;` from CellControl.cs
+   - Kept SyntaxHighlighting folder files (no compilation impact; may be useful for markdown syntax highlighting in future)
+
+6. **Null-Safety for `_editor` Field**
+   - Changed `_editor` to nullable `TextBox?` type
+   - For code cells with IWpfTextViewHost: `_editor` remains null, `CodeEditor` property returns null
+   - IntelliSenseManager: Added null guard on `CodeEditor` property; skips attachment when null (VS editor provides native IntelliSense)
+   - `AdvanceFocusToNextCell` in NotebookControl: Updated to handle null case using `textView.VisualElement` instead
+
+### Files Changed
+
+| File | Changes |
+|------|---------|
+| CellControl.cs | Major refactor of `BuildCodeCellContent`, new `BuildCodeCellFallback()` method, dead code removal, null-safety |
+| NotebookControl.cs | Updated `AdvanceFocusToNextCell()` for IWpfTextView/TextBox/null cases |
+| IntelliSenseManager.cs | Added null guard on `CodeEditor` property access |
+
+### Build & Test Results
+
+- **Build Status**: Clean (0 errors)
+- **Test Results**: 309 tests passing
+- **Ready for**: Live keyboard input testing, focus routing validation
+
+### Next Steps
+
+- **Validation**: Live keyboard input required to verify WPF focus fix works end-to-end
+- **Fallback Plan**: If keyboard input still fails, next step is `IVsEditorAdaptersFactoryService.CreateVsTextViewAdapter()` + `IVsTextView.Initialize()` for full OLE command target routing (requires Microsoft.VisualStudio.Editor reference)
+
+### Decision Recorded
+
+**Decision 15: IWpfTextViewHost Keyboard & Resilience Fixes** — Added to decisions.md. Addresses keyboard input routing, content type resilience, diagnostic logging, and dead code cleanup.
+- **Content type logging**: `ResolveContentType` now logs resolved and fallback content types. Common VS content type strings: "CSharp", "F#", "JavaScript", "TypeScript", "Python", "PowerShell", "SQL", "html", "markdown".
+- **Dead adorner code**: `SyntaxHighlightAdorner` field/methods removed from CellControl. The SyntaxHighlighting folder files stay (no compilation impact, possible future use for markdown).
+- **IOleCommandTarget fallback**: If WPF focus routing still doesn't work at runtime, the next step is `IVsEditorAdaptersFactoryService.CreateVsTextViewAdapter()` to get full OLE command target chain integration. This requires `Microsoft.VisualStudio.Editor` assembly reference.
+
 ### Auto-install dialog pattern (KernelNotInstalledDialog)
 - `System.Windows.MessageBox` with `YesNoCancel` is the simplest way to offer 3 options in a VS extension dialog without pulling in TaskDialog or InfoBar infrastructure.
 - The `IVsStatusbar` via `ServiceProvider.GlobalProvider.GetService(typeof(SVsStatusbar))` is the correct way to show progress text in the VS status bar from a static context. Requires `SwitchToMainThreadAsync` before access.
