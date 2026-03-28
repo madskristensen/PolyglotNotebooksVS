@@ -155,7 +155,10 @@ namespace PolyglotNotebooks.Protocol
                 if (e.EventType == KernelEventTypes.KernelReady)
                     tcs.TrySetResult(true);
             }));
-            await tcs.Task.ConfigureAwait(false);
+            var completed = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(30), ct)).ConfigureAwait(false);
+            if (completed != tcs.Task)
+                throw new TimeoutException("Kernel did not send KernelReady within 30 seconds.");
+            await tcs.Task.ConfigureAwait(false); // propagate cancellation
         }
 
         // ── Convenience methods ───────────────────────────────────────────────

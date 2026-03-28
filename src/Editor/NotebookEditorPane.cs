@@ -139,6 +139,7 @@ namespace PolyglotNotebooks.Editor
             _kernelProcessManager.StatusChanged += OnKernelStatusChanged;
 
             _coordinator.KernelClientAvailable += OnKernelClientAvailable;
+            _coordinator.ExecutionCompleted += OnExecutionCompleted;
 
             return VSConstants.S_OK;
         }
@@ -253,6 +254,9 @@ namespace PolyglotNotebooks.Editor
 
                 if (_coordinator != null)
                     _coordinator.KernelClientAvailable -= OnKernelClientAvailable;
+
+                if (_coordinator != null)
+                    _coordinator.ExecutionCompleted -= OnExecutionCompleted;
 
                 _intelliSenseManager?.Dispose();
                 _intelliSenseManager = null;
@@ -460,6 +464,9 @@ namespace PolyglotNotebooks.Editor
                 if (_coordinator != null)
                     _coordinator.KernelClientAvailable -= OnKernelClientAvailable;
 
+                if (_coordinator != null)
+                    _coordinator.ExecutionCompleted -= OnExecutionCompleted;
+
                 _intelliSenseManager?.Dispose();
                 _coordinator?.Dispose();
                 _kernelProcessManager?.Dispose();
@@ -473,12 +480,14 @@ namespace PolyglotNotebooks.Editor
         private void OnRunAllRequested(object sender, EventArgs e)
         {
             if (_coordinator == null || _document == null) return;
+            _control?.SetExecuting(true);
             _coordinator.HandleRunAllRequested(_document);
         }
 
         private void OnRestartAndRunAllRequested(object sender, EventArgs e)
         {
             if (_coordinator == null || _document == null) return;
+            _control?.SetExecuting(true);
             _coordinator.HandleRestartAndRunAllRequested(_document);
         }
 
@@ -535,6 +544,17 @@ namespace PolyglotNotebooks.Editor
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 _control?.UpdateKernelStatus(status);
+            });
+#pragma warning restore VSTHRD110, VSSDK007
+        }
+
+        private void OnExecutionCompleted(object sender, EventArgs e)
+        {
+#pragma warning disable VSTHRD110, VSSDK007
+            _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                _control?.SetExecuting(false);
             });
 #pragma warning restore VSTHRD110, VSSDK007
         }

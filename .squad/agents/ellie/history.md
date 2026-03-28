@@ -487,3 +487,74 @@ CellControl now branches on CellKind in constructor:
 
 ### Key Insight
 - In VS extensions hosting WPF inside Win32 frames, WPF mouse handling works independently of Win32 focus, but keyboard messages always follow Win32 focus. You must explicitly bridge the two focus systems.
+
+---
+
+## 2026-03-27 --- IVsCodeWindow Adapter Pattern (keyboard-fix)
+
+**Status**: COMPLETE
+
+### What Changed
+
+Refactored CellControl.BuildCodeCellContent() from ITextEditorFactoryService.CreateTextView() (no HWND, broken keyboard input) to the IVsEditorAdaptersFactoryService + IVsCodeWindow adapter pattern. This fixes keyboard input in all hosted code cells.
+
+**Files modified**:
+- src/Editor/CellControl.cs -- Core refactor; new _vsTextView/_codeWindow fields; VsTextView property; GetOleServiceProvider() helper; removed SetFocus P/Invoke and GotFocus/PreviewMouseDown hacks
+- src/Editor/NotebookEditorPane.cs -- Added IOleCommandTarget; new IVsFilterKeys2-based PreProcessMessage; removed GetFocus/SetFocus P/Invoke
+- src/Editor/NotebookControl.cs -- Added GetFocusedCommandTarget()
+- src/PolyglotNotebooks.csproj -- Added Microsoft.VisualStudio.TextManager.Interop.8.0 v17.14.40260 PackageReference
+
+### Key Technical Decisions
+
+**Root cause of keyboard failure**: ITextEditorFactoryService.CreateTextView() creates a pure WPF view with no HWND. VS Win32 message loop never delivers keystrokes to it. Fix: IVsEditorAdaptersFactoryService.CreateVsCodeWindowAdapter() which creates a proper HWND-backed editor with its own IOleCommandTarget chain.
+
+**Pattern reference**: Ryan Molden ToolWindowHostedEditorExample on GitHub.
+
+**Namespace gotcha -- critical**: VSUSERCONTEXTATTRIBUTEUSAGE is in Microsoft.VisualStudio.Shell.Interop, NOT in Microsoft.VisualStudio.TextManager.Interop. Requires using Microsoft.VisualStudio.Shell.Interop even though IVsCodeWindowEx is in TextManager.Interop.
+
+**NuGet type-forwarder stubs**: The TextManager.Interop NuGet packages have 0 types -- they are empty stubs that forward to VS runtime assemblies. Had to add explicit Microsoft.VisualStudio.TextManager.Interop.8.0 v17.14.40260 PackageReference so MSBuild picks up the right resolution chain.
+
+**Buffer access in adapter pattern**: Get ITextBuffer from adapter via editorAdapterFactory.GetDataBuffer((IVsTextBuffer)bufferAdapter), NOT from ITextBufferFactoryService. The MEF ITextBuffer is needed for event subscriptions and ChangeContentType.
+
+**IOleCommandTarget on WindowPane**: WindowPane base already implements IOleCommandTarget. Adding explicit implementation intercepts and forwards to focused IVsTextView. OLECMDERR_E_NOTSUPPORTED causes VS to fall back to next target (OleMenuCommandService), so toolbar menu commands still work.
+
+**IVsFilterKeys2 keyboard routing**: PreProcessMessage uses SVsFilterKeys service with TranslateAcceleratorEx + VSTAEXF_UseTextEditorKBScope. Two-pass: first pass fires command; if multi-key chord, second pass with VSTAEXF_NoFireCommand checks if key is handled. Returns true = handled by VS.
+
+**Fallback preserved**: try/catch around CreateVsCodeWindowAdapter falls back to TextBox if creation fails.
+
+**Build result**: MSBuild 0 errors. PolyglotNotebooks.dll, .vsix, and Test.dll all produced.
+## Learnings
+
+### MEF Classifier for Notebook Syntax Highlighting (2025)
+
+#### What Was Built
+Replaced the dead WPF adorner-based syntax highlighting (SyntaxHighlightAdorner.cs + SyntaxTokenizer.cs) with a proper MEF ITagger<ClassificationTag> pipeline that integrates with VS's native editor classifier infrastructure.
+
+#### Key Files
+- src/Editor/SyntaxHighlighting/NotebookClassifierProvider.cs -- MEF [Export(typeof(ITaggerProvider))], [ContentType("text")] provider; guards on "PolyglotNotebook.KernelName" buffer property; caches tagger per buffer via GetOrCreateSingletonProperty.
+- src/Editor/SyntaxHighlighting/NotebookClassifier.cs -- ITagger<ClassificationTag> implementation; per-language LanguagePattern (C#, F#, JS, TS, Python, PowerShell, SQL, HTML); fires TagsChanged on ITextBuffer.Changed.
+- src/Editor/CellControl.cs -- Sets uffer.Properties.AddProperty("PolyglotNotebook.KernelName", ...) after GetDataBuffer() to mark notebook cell buffers.
+- src/PolyglotNotebooks.csproj -- Updated <Compile Include> entries to new filenames.
+
+#### Patterns Used
+- **Buffer property sentinel**: Use uffer.Properties.AddProperty("PolyglotNotebook.KernelName", kernelName) in CellControl after getting the data buffer. The classifier provider checks for this property to skip non-notebook buffers.
+- **ContentType "text"**: Register classifier on the base "text" content type so it fires regardless of what VS-assigned content type the hosted buffer gets.
+- **Classification type names as strings**: PredefinedClassificationTypeNames is not available without adding another assembly reference. Use string literals "keyword", "string", "comment", "number", "class name" directly with IClassificationTypeRegistryService.GetClassificationType().
+- **Line-span extension in GetTags**: Extend requested spans to full line boundaries before running regex, then filter intersection back, to handle multi-line comment/string patterns correctly.
+- **TagsChanged on buffer.Changed**: Raise TagsChanged for each changed span's new span so the editor re-classifies as the user types.
+
+#### Build Note
+Warnings about nullable reference types (CS8603, CS8618) are pre-existing in the project; the new files produce the same pattern of nullable warnings, which is acceptable.
+
+## Session: Ellie — Classifier Fix + Run Button UX (2026-03-27)
+
+### Task
+Fix MEF classifier engagement for syntax highlighting, and disable run buttons during execution.
+
+### Learnings
+- **SetLanguageServiceID interference**: Calling SetLanguageServiceID on the VS text buffer adapter installs a COM-level colorizer that blocks MEF ITaggerProvider classifiers entirely. Removing this call is the prerequisite for any MEF-based syntax highlighting to work.
+- **Content type forcing and temp file/ITextDocument**: Forcing a content type change after buffer creation and creating an ITextDocument via ITextDocumentFactoryService were both unnecessary and potentially harmful to MEF classifier engagement.
+- **View buffer vs data buffer**: The VS editor adapter may expose different ITextBuffer instances for the data buffer and the view's TextBuffer. Setting the PolyglotNotebook.KernelName property on both ensures the MEF tagger sees it regardless of which buffer it receives.
+- **Diagnostic logging in MEF providers**: Adding ExtensionLogger.LogInfo at the top of CreateTagger (before any early returns) lets you confirm via ActivityLog whether the provider is being invoked at all during debugging.
+- **Run button field promotion**: Promoting unBtn/unDropdownBtn/unAllBtn/estartRunAllBtn from constructor locals to class fields is the pattern for controlling button state from event handlers.
+- **SetExecuting pattern**: A SetExecuting(bool) method threading through NotebookControl → NotebookToolbar is the right extensibility hook for callers (e.g. NotebookEditorPane) to toggle toolbar button state.

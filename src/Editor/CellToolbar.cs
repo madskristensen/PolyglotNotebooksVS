@@ -139,7 +139,6 @@ namespace PolyglotNotebooks.Editor
                     Margin = new Thickness(0, 0, 4, 0),
                     ToolTip = "Clear cell output (Ctrl+Shift+Backspace)"
                 };
-                clearBtn.SetResourceReference(Button.BackgroundProperty, VsBrushes.ButtonFaceKey);
                 clearBtn.SetResourceReference(Button.ForegroundProperty, VsBrushes.ToolWindowTextKey);
                 clearBtn.SetResourceReference(Button.BorderBrushProperty, VsBrushes.ToolWindowBorderKey);
                 clearBtn.Click += (s, e) => _cell.Outputs.Clear();
@@ -161,7 +160,6 @@ namespace PolyglotNotebooks.Editor
                     Margin = new Thickness(0, 0, 0, 0),
                     ToolTip = "Run cell (Shift+Enter)"
                 };
-                _runBtn.SetResourceReference(Button.BackgroundProperty, VsBrushes.ButtonFaceKey);
                 _runBtn.SetResourceReference(Button.ForegroundProperty, VsBrushes.ToolWindowTextKey);
                 _runBtn.SetResourceReference(Button.BorderBrushProperty, VsBrushes.ToolWindowBorderKey);
                 _runBtn.Click += (s, e) => RunRequested?.Invoke(this, EventArgs.Empty);
@@ -201,7 +199,6 @@ namespace PolyglotNotebooks.Editor
                 Margin = new Thickness(0, 0, 4, 0),
                 ToolTip = "Run options"
             };
-            btn.SetResourceReference(Button.BackgroundProperty, VsBrushes.ButtonFaceKey);
             btn.SetResourceReference(Button.ForegroundProperty, VsBrushes.ToolWindowTextKey);
             btn.SetResourceReference(Button.BorderBrushProperty, VsBrushes.ToolWindowBorderKey);
 
@@ -234,7 +231,6 @@ namespace PolyglotNotebooks.Editor
                 Margin = new Thickness(0, 0, 4, 0),
                 ToolTip = "Cell options"
             };
-            btn.SetResourceReference(Button.BackgroundProperty, VsBrushes.ButtonFaceKey);
             btn.SetResourceReference(Button.ForegroundProperty, VsBrushes.ToolWindowTextKey);
             btn.SetResourceReference(Button.BorderBrushProperty, VsBrushes.ToolWindowBorderKey);
 
@@ -287,7 +283,6 @@ namespace PolyglotNotebooks.Editor
                 Margin = new Thickness(0, 0, 4, 0),
                 ToolTip = "Cell options"
             };
-            btn.SetResourceReference(Button.BackgroundProperty, VsBrushes.ButtonFaceKey);
             btn.SetResourceReference(Button.ForegroundProperty, VsBrushes.ToolWindowTextKey);
             btn.SetResourceReference(Button.BorderBrushProperty, VsBrushes.ToolWindowBorderKey);
 

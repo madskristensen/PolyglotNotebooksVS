@@ -2,6 +2,7 @@ using Microsoft.VisualStudio.ComponentModelHost;
 using Microsoft.VisualStudio.Editor;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Text;
+using Microsoft.VisualStudio.Text.Classification;
 using Microsoft.VisualStudio.Text.Editor;
 using Microsoft.VisualStudio.TextManager.Interop;
 using Microsoft.VisualStudio.Utilities;
@@ -229,6 +230,21 @@ namespace PolyglotNotebooks.Editor
                 _vsTextView = vsTextView;
                 _codeWindow = codeWindow;
                 TextView = textView;
+
+                // Force the classifier aggregator to engage for this buffer.
+                // Getting the classifier triggers MEF discovery for IClassifierProvider exports.
+                try
+                {
+                    var classifierAggregator = componentModel.GetService<IClassifierAggregatorService>();
+                    var classifier = classifierAggregator?.GetClassifier(buffer);
+                    ExtensionLogger.LogInfo(nameof(CellControl),
+                        $"Classifier aggregator returned: {classifier?.GetType().Name ?? "null"}");
+                }
+                catch (Exception classEx)
+                {
+                    ExtensionLogger.LogWarning(nameof(CellControl),
+                        $"Failed to force classifier engagement: {classEx.Message}");
+                }
 
                 var hostControl = textViewHost.HostControl;
                 hostControl.MinHeight = minH;

@@ -4,17 +4,18 @@ using System.Text.RegularExpressions;
 
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Classification;
-using Microsoft.VisualStudio.Text.Tagging;
+
+using PolyglotNotebooks.Diagnostics;
 
 namespace PolyglotNotebooks.Editor.SyntaxHighlighting
 {
     /// <summary>
-    /// Regex-based <see cref="ITagger{T}"/> that emits
-    /// <see cref="ClassificationTag"/> spans for notebook cell buffers.
+    /// Regex-based <see cref="IClassifier"/> that emits
+    /// <see cref="ClassificationSpan"/> spans for notebook cell buffers.
     /// The language is determined by the <c>"PolyglotNotebook.KernelName"</c>
     /// property stored on the <see cref="ITextBuffer"/>.
     /// </summary>
-    internal sealed class NotebookClassifier : ITagger<ClassificationTag>
+    internal sealed class NotebookClassifier : IClassifier
     {
         private readonly ITextBuffer _buffer;
         private readonly IClassificationType _keyword;
@@ -24,7 +25,7 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
         private readonly IClassificationType _typeName;
         private readonly LanguagePattern _language;
 
-        public event EventHandler<SnapshotSpanEventArgs> TagsChanged;
+        public event EventHandler<ClassificationChangedEventArgs> ClassificationChanged;
 
         internal NotebookClassifier(ITextBuffer buffer, IClassificationTypeRegistryService registry)
         {
@@ -38,39 +39,39 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
             var kernelName = buffer.Properties.GetProperty<string>("PolyglotNotebook.KernelName");
             _language = LanguagePattern.Get(kernelName);
 
+            ExtensionLogger.LogInfo("NotebookClassifier",
+                $"Created for kernel '{kernelName}', language patterns found: {_language != null}");
+
             _buffer.Changed += OnBufferChanged;
         }
 
         private void OnBufferChanged(object sender, TextContentChangedEventArgs e)
         {
-            var snapshot = e.After;
             foreach (var change in e.Changes)
             {
-                var span = new SnapshotSpan(snapshot, change.NewSpan);
-                TagsChanged?.Invoke(this, new SnapshotSpanEventArgs(span));
+                ClassificationChanged?.Invoke(this,
+                    new ClassificationChangedEventArgs(
+                        new SnapshotSpan(e.After, change.NewSpan)));
             }
         }
 
-        public IEnumerable<ITagSpan<ClassificationTag>> GetTags(NormalizedSnapshotSpanCollection spans)
+        public IList<ClassificationSpan> GetClassificationSpans(SnapshotSpan span)
         {
-            if (spans == null || spans.Count == 0 || _language == null)
-                yield break;
+            var result = new List<ClassificationSpan>();
+            if (_language == null)
+                return result;
 
-            var snapshot = spans[0].Snapshot;
+            var snapshot = span.Snapshot;
+            var startLine = snapshot.GetLineFromPosition(span.Start);
+            var endLine   = snapshot.GetLineFromPosition(span.End > 0 ? span.End - 1 : span.End);
 
-            foreach (var requestedSpan in spans)
+            var lineStart = startLine.Start.Position;
+            var lineEnd   = endLine.End.Position;
+            var lineSpan  = new SnapshotSpan(snapshot, lineStart, lineEnd - lineStart);
+            var text      = lineSpan.GetText();
+
+            try
             {
-                // Extend to full lines for accurate multi-line patterns
-                var startLine = snapshot.GetLineFromPosition(requestedSpan.Start);
-                var endLine   = snapshot.GetLineFromPosition(requestedSpan.End > 0
-                    ? requestedSpan.End - 1
-                    : requestedSpan.End);
-
-                var lineStart = startLine.Start.Position;
-                var lineEnd   = endLine.End.Position;
-                var lineSpan  = new SnapshotSpan(snapshot, lineStart, lineEnd - lineStart);
-                var text      = lineSpan.GetText();
-
                 var matches = _language.Pattern.Matches(text);
                 foreach (Match m in matches)
                 {
@@ -80,11 +81,16 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
                     if (classificationType == null) continue;
 
                     var tagSpan = new SnapshotSpan(snapshot, lineStart + m.Index, m.Length);
-                    // Only yield spans that actually overlap the requested span
-                    if (tagSpan.IntersectsWith(requestedSpan))
-                        yield return new TagSpan<ClassificationTag>(tagSpan, new ClassificationTag(classificationType));
+                    if (tagSpan.IntersectsWith(span))
+                        result.Add(new ClassificationSpan(tagSpan, classificationType));
                 }
             }
+            catch (RegexMatchTimeoutException)
+            {
+                ExtensionLogger.LogWarning("NotebookClassifier", "Regex timed out during classification.");
+            }
+
+            return result;
         }
 
         private IClassificationType Classify(Match m)
@@ -141,7 +147,8 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
             @"|(?<type>\b(?:bool|byte|char|decimal|double|float|int|long|object|sbyte|short|string|uint|ulong|ushort|var|dynamic|nint|nuint)\b)" +
             @"|(?<keyword>\b(?:abstract|as|async|await|base|break|case|catch|checked|class|const|continue|default|delegate|do|else|enum|event|explicit|extern|false|finally|fixed|for|foreach|goto|if|implicit|in|interface|internal|is|lock|namespace|new|null|operator|out|override|params|private|protected|public|readonly|record|ref|required|return|sealed|sizeof|stackalloc|static|struct|switch|this|throw|true|try|typeof|unchecked|unsafe|using|virtual|void|volatile|when|where|while|yield|global|init|nameof)\b)" +
             @"|(?<number>\b(?:0[xX][0-9a-fA-F_]+[uUlL]{0,2}|0[bB][01_]+[uUlL]{0,2}|\d[\d_]*(?:\.[\d_]+)?(?:[eE][+-]?\d+)?[fFdDmMuUlL]{0,2})\b)",
-            RegexOptions.Compiled | RegexOptions.Multiline);
+            RegexOptions.Compiled | RegexOptions.Multiline,
+            TimeSpan.FromMilliseconds(250));
 
         // ── F# ──────────────────────────────────────────────────────────────
 
@@ -151,7 +158,8 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
             @"|(?<type>\b(?:bool|byte|char|decimal|double|float|float32|int|int16|int32|int64|sbyte|single|string|uint|uint16|uint32|uint64|unit|bigint|nativeint|unativeint)\b)" +
             @"|(?<keyword>\b(?:abstract|and|as|assert|base|begin|class|default|delegate|do|done|downcast|downto|elif|else|end|exception|extern|false|finally|for|fun|function|global|if|in|inherit|inline|interface|internal|lazy|let|match|member|module|mutable|namespace|new|not|null|of|open|or|override|private|public|rec|return|static|struct|then|to|true|try|type|upcast|use|val|void|when|while|with|yield)\b)" +
             @"|(?<number>\b(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|\d[\d_]*(?:\.[\d_]+)?(?:[eE][+-]?\d+)?)[ysnlLfFmM]?\b)",
-            RegexOptions.Compiled | RegexOptions.Multiline);
+            RegexOptions.Compiled | RegexOptions.Multiline,
+            TimeSpan.FromMilliseconds(250));
 
         // ── JavaScript ──────────────────────────────────────────────────────
 
@@ -160,7 +168,8 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
             @"|(?<string>`(?:\\.|[^`\\])*`|""(?:\\.|[^""\\])*""|'(?:\\.|[^'\\])*')" +
             @"|(?<keyword>\b(?:async|await|break|case|catch|class|const|continue|debugger|default|delete|do|else|export|extends|false|finally|for|from|function|get|if|import|in|instanceof|let|new|null|of|return|set|static|super|switch|this|throw|true|try|typeof|undefined|var|void|while|with|yield)\b)" +
             @"|(?<number>\b(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|\d[\d_]*(?:\.[\d_]+)?(?:[eE][+-]?\d+)?n?)\b)",
-            RegexOptions.Compiled | RegexOptions.Multiline);
+            RegexOptions.Compiled | RegexOptions.Multiline,
+            TimeSpan.FromMilliseconds(250));
 
         // ── TypeScript ──────────────────────────────────────────────────────
 
@@ -170,7 +179,8 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
             @"|(?<type>\b(?:any|boolean|never|number|object|string|symbol|unknown|bigint)\b)" +
             @"|(?<keyword>\b(?:abstract|as|async|await|break|case|catch|class|const|continue|debugger|declare|default|delete|do|else|enum|export|extends|false|finally|for|from|function|get|if|implements|import|in|instanceof|interface|keyof|let|module|namespace|new|null|of|package|private|protected|public|readonly|require|return|set|static|super|switch|this|throw|true|try|type|typeof|undefined|var|void|while|with|yield)\b)" +
             @"|(?<number>\b(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|\d[\d_]*(?:\.[\d_]+)?(?:[eE][+-]?\d+)?n?)\b)",
-            RegexOptions.Compiled | RegexOptions.Multiline);
+            RegexOptions.Compiled | RegexOptions.Multiline,
+            TimeSpan.FromMilliseconds(250));
 
         // ── Python ──────────────────────────────────────────────────────────
 
@@ -180,7 +190,8 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
             @"|(?<type>\b(?:bool|bytes|bytearray|complex|dict|float|frozenset|int|list|memoryview|object|range|set|str|tuple|type)\b)" +
             @"|(?<keyword>\b(?:False|None|True|and|as|assert|async|await|break|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|nonlocal|not|or|pass|raise|return|try|while|with|yield)\b)" +
             @"|(?<number>\b(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|\d[\d_]*(?:\.[\d_]+)?(?:[eE][+-]?\d+)?j?)\b)",
-            RegexOptions.Compiled | RegexOptions.Multiline);
+            RegexOptions.Compiled | RegexOptions.Multiline,
+            TimeSpan.FromMilliseconds(250));
 
         // ── PowerShell ──────────────────────────────────────────────────────
 
@@ -190,7 +201,8 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
             @"|(?<type>\$[a-zA-Z_]\w*)" +
             @"|(?<keyword>\b(?:begin|break|catch|class|continue|data|define|do|dynamicparam|else|elseif|end|enum|exit|filter|finally|for|foreach|from|function|hidden|if|in|param|process|return|static|switch|throw|trap|try|until|using|var|while)\b)" +
             @"|(?<number>\b(?:0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?(?:[eE][+-]?\d+)?(?:kb|mb|gb|tb|pb)?)\b)",
-            RegexOptions.Compiled | RegexOptions.Multiline | RegexOptions.IgnoreCase);
+            RegexOptions.Compiled | RegexOptions.Multiline | RegexOptions.IgnoreCase,
+            TimeSpan.FromMilliseconds(250));
 
         // ── SQL ─────────────────────────────────────────────────────────────
 
@@ -200,7 +212,8 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
             @"|(?<type>\b(?:INT|INTEGER|BIGINT|SMALLINT|TINYINT|BIT|DECIMAL|NUMERIC|FLOAT|REAL|MONEY|CHAR|VARCHAR|NCHAR|NVARCHAR|TEXT|NTEXT|DATE|DATETIME|DATETIME2|TIME|TIMESTAMP|BINARY|VARBINARY|IMAGE|XML|UNIQUEIDENTIFIER|SQL_VARIANT|CURSOR)\b)" +
             @"|(?<keyword>\b(?:SELECT|FROM|WHERE|AND|OR|NOT|INSERT|INTO|VALUES|UPDATE|SET|DELETE|CREATE|TABLE|ALTER|DROP|INDEX|VIEW|JOIN|INNER|LEFT|RIGHT|OUTER|FULL|ON|AS|ORDER|BY|GROUP|HAVING|DISTINCT|UNION|ALL|EXISTS|IN|BETWEEN|LIKE|IS|NULL|COUNT|SUM|AVG|MIN|MAX|CASE|WHEN|THEN|ELSE|END|DECLARE|BEGIN|COMMIT|ROLLBACK|EXEC|EXECUTE|PROCEDURE|FUNCTION|TRIGGER|TOP|LIMIT|OFFSET|PRIMARY|KEY|FOREIGN|REFERENCES|CONSTRAINT|DEFAULT|CHECK|UNIQUE|IDENTITY|WITH|GO|USE|PRINT|IF|WHILE|RETURN|GRANT|REVOKE|DENY|CROSS|ASC|DESC|DATABASE|SCHEMA)\b)" +
             @"|(?<number>\b\d+(?:\.\d+)?\b)",
-            RegexOptions.Compiled | RegexOptions.Multiline | RegexOptions.IgnoreCase);
+            RegexOptions.Compiled | RegexOptions.Multiline | RegexOptions.IgnoreCase,
+            TimeSpan.FromMilliseconds(250));
 
         // ── HTML ────────────────────────────────────────────────────────────
 
@@ -209,6 +222,7 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
             @"|(?<string>""[^""]*""|'[^']*')" +
             @"|(?<type>\b[a-zA-Z\-]+(?=\s*=))" +
             @"|(?<keyword></?[a-zA-Z][a-zA-Z0-9]*\b|/?>)",
-            RegexOptions.Compiled | RegexOptions.Multiline);
+            RegexOptions.Compiled | RegexOptions.Multiline,
+            TimeSpan.FromMilliseconds(250));
     }
 }

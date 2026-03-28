@@ -2,7 +2,6 @@ using System.ComponentModel.Composition;
 
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Classification;
-using Microsoft.VisualStudio.Text.Tagging;
 using Microsoft.VisualStudio.Utilities;
 
 using PolyglotNotebooks.Diagnostics;
@@ -10,26 +9,27 @@ using PolyglotNotebooks.Diagnostics;
 namespace PolyglotNotebooks.Editor.SyntaxHighlighting
 {
     /// <summary>
-    /// MEF-exported <see cref="ITaggerProvider"/> that creates a
-    /// <see cref="NotebookClassifier"/> for buffers that carry the
+    /// MEF-exported <see cref="IClassifierProvider"/> that creates a
+    /// <see cref="NotebookClassifier"/> for buffers carrying the
     /// <c>"PolyglotNotebook.KernelName"</c> property.  Registered for the
     /// "text" content type so it fires regardless of which language content
     /// type VS assigns to the hosted <see cref="IVsCodeWindow"/> buffer.
+    /// Using IClassifierProvider instead of ITaggerProvider as it engages
+    /// more reliably for embedded code windows.
     /// </summary>
-    [Export(typeof(ITaggerProvider))]
+    [Export(typeof(IClassifierProvider))]
     [ContentType("text")]
-    [TagType(typeof(ClassificationTag))]
-    internal sealed class NotebookClassifierProvider : ITaggerProvider
+    internal sealed class NotebookClassifierProvider : IClassifierProvider
     {
         [Import]
         internal IClassificationTypeRegistryService ClassificationRegistry { get; set; }
 
-        public ITagger<T> CreateTagger<T>(ITextBuffer buffer) where T : ITag
+        public IClassifier GetClassifier(ITextBuffer buffer)
         {
             ExtensionLogger.LogInfo("NotebookClassifierProvider",
-                $"CreateTagger called for buffer with content type '{buffer?.ContentType.TypeName}'");
+                $"GetClassifier called for buffer with content type '{buffer?.ContentType.TypeName}'");
 
-            if (buffer == null || typeof(T) != typeof(ClassificationTag))
+            if (buffer == null)
                 return null;
 
             ExtensionLogger.LogInfo("NotebookClassifierProvider",
@@ -39,7 +39,7 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
                 return null;
 
             return buffer.Properties.GetOrCreateSingletonProperty(
-                () => new NotebookClassifier(buffer, ClassificationRegistry)) as ITagger<T>;
+                () => new NotebookClassifier(buffer, ClassificationRegistry));
         }
     }
 }

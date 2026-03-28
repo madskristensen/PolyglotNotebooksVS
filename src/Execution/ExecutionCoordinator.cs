@@ -31,6 +31,9 @@ namespace PolyglotNotebooks.Execution
 
         public event Action<KernelClient>? KernelClientAvailable;
 
+        /// <summary>Raised when any run operation (Run All, Run Cell, etc.) completes or is cancelled.</summary>
+        public event EventHandler? ExecutionCompleted;
+
         public KernelClient? KernelClient => _kernelClient;
 
         public ExecutionCoordinator(KernelProcessManager kernelProcessManager)
@@ -48,6 +51,9 @@ namespace PolyglotNotebooks.Execution
         {
             if (e?.Cell == null) return;
             var cell = e.Cell;
+
+            // Immediate UI feedback before kernel startup begins.
+            cell.ExecutionStatus = CellExecutionStatus.Running;
 
             var previous = Interlocked.Exchange(ref _currentCts, null);
             previous?.Cancel();
@@ -69,7 +75,11 @@ namespace PolyglotNotebooks.Execution
                     ExtensionLogger.LogException(nameof(ExecutionCoordinator),
                         "Unhandled error during cell execution.", ex);
                 }
-                finally { cts.Dispose(); }
+                finally
+                {
+                    cts.Dispose();
+                    ExecutionCompleted?.Invoke(this, EventArgs.Empty);
+                }
             });
 #pragma warning restore VSTHRD110, VSSDK007
         }
@@ -78,6 +88,9 @@ namespace PolyglotNotebooks.Execution
         public void HandleRunAllRequested(NotebookDocument document)
         {
             if (document == null) return;
+            foreach (var cell in document.Cells)
+                if (cell.Kind == CellKind.Code)
+                    cell.ExecutionStatus = CellExecutionStatus.Running;
             FireAndForget(ct => RunAllCellsAsync(document, ct), "Run All");
         }
 
@@ -85,6 +98,12 @@ namespace PolyglotNotebooks.Execution
         public void HandleRunCellsAboveRequested(NotebookDocument document, NotebookCell currentCell)
         {
             if (document == null || currentCell == null) return;
+            foreach (var cell in document.Cells)
+            {
+                if (ReferenceEquals(cell, currentCell)) break;
+                if (cell.Kind == CellKind.Code)
+                    cell.ExecutionStatus = CellExecutionStatus.Running;
+            }
             FireAndForget(ct => RunCellsAboveAsync(document, currentCell, ct), "Run Cells Above");
         }
 
@@ -92,6 +111,13 @@ namespace PolyglotNotebooks.Execution
         public void HandleRunCellsBelowRequested(NotebookDocument document, NotebookCell currentCell)
         {
             if (document == null || currentCell == null) return;
+            bool reached = false;
+            foreach (var cell in document.Cells)
+            {
+                if (ReferenceEquals(cell, currentCell)) reached = true;
+                if (reached && cell.Kind == CellKind.Code)
+                    cell.ExecutionStatus = CellExecutionStatus.Running;
+            }
             FireAndForget(ct => RunCellsBelowAsync(document, currentCell, ct), "Run Cells Below");
         }
 
@@ -106,6 +132,9 @@ namespace PolyglotNotebooks.Execution
         public void HandleRestartAndRunAllRequested(NotebookDocument document)
         {
             if (document == null) return;
+            foreach (var cell in document.Cells)
+                if (cell.Kind == CellKind.Code)
+                    cell.ExecutionStatus = CellExecutionStatus.Running;
             FireAndForget(ct => RestartAndRunAllAsync(document, ct), "Restart and Run All");
         }
 
@@ -243,7 +272,11 @@ namespace PolyglotNotebooks.Execution
                     ExtensionLogger.LogException(nameof(ExecutionCoordinator),
                         $"Unhandled error during {operationName}.", ex);
                 }
-                finally { cts.Dispose(); }
+                finally
+                {
+                    cts.Dispose();
+                    ExecutionCompleted?.Invoke(this, EventArgs.Empty);
+                }
             });
 #pragma warning restore VSTHRD110, VSSDK007
         }
@@ -301,7 +334,19 @@ namespace PolyglotNotebooks.Execution
                         }
                     })))
                 {
-                    await _kernelClient.WaitForReadyAsync(ct).ConfigureAwait(false);
+                    try
+                    {
+                        await _kernelClient.WaitForReadyAsync(ct).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // Kernel failed to start — clean up so next attempt starts fresh.
+                        _kernelClient?.Dispose();
+                        _kernelClient = null;
+                        _executionEngine = null;
+                        _kernelStarted = false;
+                        throw;
+                    }
                 }
 
                 if (kernelReadyInfo != null)

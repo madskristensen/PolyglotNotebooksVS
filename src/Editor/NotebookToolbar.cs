@@ -187,7 +187,6 @@ namespace PolyglotNotebooks.Editor
                 Margin = new Thickness(0, 0, 4, 0),
                 VerticalAlignment = VerticalAlignment.Center
             };
-            btn.SetResourceReference(Button.BackgroundProperty, VsBrushes.ButtonFaceKey);
             btn.SetResourceReference(Button.ForegroundProperty, VsBrushes.ToolWindowTextKey);
             btn.SetResourceReference(Button.BorderBrushProperty, VsBrushes.ToolWindowBorderKey);
             return btn;
