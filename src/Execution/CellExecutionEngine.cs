@@ -317,6 +317,35 @@ namespace PolyglotNotebooks.Execution
                         cell.Outputs.Add(BuildOutput(CellOutputKind.Display, e.FormattedValues, e.ValueId));
                     break;
                 }
+                case KernelEventTypes.DisplayedValueUpdated:
+                {
+                    var e = envelope.Event.Deserialize<DisplayedValueUpdated>(
+                        ProtocolSerializerOptions.Default);
+                    if (e != null)
+                    {
+                        // Find and replace the existing output with the matching ValueId.
+                        // This enables live-updating NuGet install progress.
+                        int existingIndex = -1;
+                        if (!string.IsNullOrEmpty(e.ValueId))
+                        {
+                            for (int i = 0; i < cell.Outputs.Count; i++)
+                            {
+                                if (cell.Outputs[i].ValueId == e.ValueId)
+                                {
+                                    existingIndex = i;
+                                    break;
+                                }
+                            }
+                        }
+
+                        var updated = BuildOutput(CellOutputKind.Display, e.FormattedValues, e.ValueId);
+                        if (existingIndex >= 0)
+                            cell.Outputs[existingIndex] = updated;
+                        else
+                            cell.Outputs.Add(updated);
+                    }
+                    break;
+                }
                 case KernelEventTypes.StandardOutputValueProduced:
                 {
                     var e = envelope.Event.Deserialize<StandardOutputValueProduced>(

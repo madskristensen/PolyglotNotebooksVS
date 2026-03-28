@@ -147,7 +147,9 @@ namespace PolyglotNotebooks.Protocol
 
         /// <summary>
         /// Returns a task that completes when CommandSucceeded or CommandFailed is received for this token.
-        /// Times out after 60 seconds to prevent VS from freezing if the kernel crashes mid-execution.
+        /// Times out after 5 minutes to prevent VS from freezing if the kernel hangs.
+        /// NuGet package installs (e.g. #r "nuget:...") can take well over 60 seconds
+        /// for large dependency trees; kernel crashes are handled separately via OnStreamCompleted.
         /// </summary>
         public async System.Threading.Tasks.Task<KernelEventEnvelope> WaitForTerminalEventAsync(
             System.Threading.CancellationToken ct = default)
@@ -157,9 +159,9 @@ namespace PolyglotNotebooks.Protocol
             {
                 var completed = await System.Threading.Tasks.Task.WhenAny(
                     _terminalTcs.Task,
-                    System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(60), ct)).ConfigureAwait(false);
+                    System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(300), ct)).ConfigureAwait(false);
                 if (completed != _terminalTcs.Task)
-                    throw new TimeoutException("Kernel did not respond within 60 seconds.");
+                    throw new TimeoutException("Kernel did not respond within 5 minutes.");
                 return await _terminalTcs.Task.ConfigureAwait(false);
             }
             finally { registration.Dispose(); }
