@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
@@ -35,6 +36,25 @@ namespace PolyglotNotebooks.Kernel
 
         /// <summary>Maximum number of automatic restart attempts after a crash.</summary>
         public const int MaxRestartAttempts = 3;
+
+        /// <summary>
+        /// Tracks all living instances so the package can dispose them at shutdown,
+        /// preventing orphaned dotnet-interactive processes.
+        /// </summary>
+        private static readonly ConcurrentDictionary<KernelProcessManager, byte> s_instances = new();
+
+        /// <summary>
+        /// Disposes every tracked instance. Called from the VS package Dispose
+        /// to kill any kernel processes still alive when the IDE exits.
+        /// </summary>
+        public static void DisposeAll()
+        {
+            foreach (var kvp in s_instances)
+            {
+                try { kvp.Key.Dispose(); }
+                catch { }
+            }
+        }
 
         private readonly string _workingDirectory;
         private readonly SemaphoreSlim _restartLock = new SemaphoreSlim(1, 1);
@@ -94,6 +114,8 @@ namespace PolyglotNotebooks.Kernel
             _workingDirectory = string.IsNullOrEmpty(workingDirectory)
                 ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
                 : workingDirectory!;
+
+            s_instances.TryAdd(this, 0);
         }
 
         /// <summary>
@@ -431,6 +453,8 @@ namespace PolyglotNotebooks.Kernel
 
             _disposed = true;
             _intentionalStop = true;
+
+            s_instances.TryRemove(this, out _);
 
             ExtensionLogger.LogInfo(nameof(KernelProcessManager), "Disposing kernel process manager.");
 

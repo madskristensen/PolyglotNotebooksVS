@@ -35,5 +35,15 @@ namespace PolyglotNotebooks
             await JoinableTaskFactory.SwitchToMainThreadAsync(cancellationToken);
             RegisterEditorFactory(new Editor.NotebookEditorFactory(this));
         }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                Kernel.KernelProcessManager.DisposeAll();
+            }
+
+            base.Dispose(disposing);
+        }
     }
 }
