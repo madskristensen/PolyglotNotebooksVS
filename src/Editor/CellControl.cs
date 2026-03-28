@@ -395,6 +395,16 @@ namespace PolyglotNotebooks.Editor
                     _vsTextView = null;
                 };
 
+                // The IVsCodeWindow may internally parent the HostControl to its own container.
+                // When running deferred (after the CellControl is already in the visual tree),
+                // we must disconnect it before re-parenting to our Grid.
+                if (hostControl.Parent is System.Windows.Controls.Panel parentPanel)
+                    parentPanel.Children.Remove(hostControl);
+                else if (hostControl.Parent is System.Windows.Controls.ContentControl parentCC)
+                    parentCC.Content = null;
+                else if (hostControl.Parent is System.Windows.Controls.Decorator parentDec)
+                    parentDec.Child = null;
+
                 Grid.SetRow(hostControl, 1);
                 grid.Children.Add(hostControl);
 
