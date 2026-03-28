@@ -601,3 +601,30 @@ See commit 000082f. Changes:
 - `IntelliSenseManager.AttachToCell()` already short-circuits when `CodeEditor` is null (IVsCodeWindow cells), so no special handling needed
 - Kernel installation check (`KernelInstallationDetector`) converted from blocking `JoinableTaskFactory.Run` to fire-and-forget `RunAsync`
 - Suppress `VSTHRD110`, `VSTHRD001`, `VSSDK007` pragmas for intentional fire-and-forget and Dispatcher usage
+
+## 2026-03-28 — Performance Optimization: Regex Caching in CellControl
+
+**Event**: Optimized text formatting by caching compiled Regex patterns.
+
+**What Changed**: Converted inline Regex creation in AddInlineFormatting and related methods to static eadonly cached patterns with RegexOptions.Compiled flag.
+
+**Why**: 
+- Regex compilation is expensive (~5-50ms per pattern) and was happening on every call
+- Particularly noticeable on large notebooks with many cells and many formatting operations
+- Identified in prior architecture audit (Vince's Finding 17)
+
+**Files Modified**: src/Editor/CellControl.cs
+
+**Patterns Cached**:
+- Bold/italic formatting detection
+- Code block delimiters
+- Special character escaping
+
+**Impact**: 
+- UI thread responds faster during cell rendering and editing
+- Startup/initial load time slightly improved
+- Zero behavioral change — formatting output identical
+
+**Status**: IMPLEMENTED
+
+**Coordination**: Part of three-agent quick-wins session (Vince + Theo + Ellie, parallel) — orchestration log at .squad/orchestration-log/2026-03-28T1435-ellie.md

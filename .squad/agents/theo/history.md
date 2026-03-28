@@ -250,3 +250,25 @@
 **Decision File**: Decision 6 merged to decisions.md
 
 ---
+
+## 2026-03-28 — Critical Threading Fix: Remove .Result Blocking Call
+
+**Event**: Fixed SDK Analyzer violation in KernelNotInstalledDialog.
+
+**What Changed**: Removed .Result synchronous blocking call from dialog initialization; replaced with proper async/await pattern using JoinableTaskFactory.SwitchToMainThreadAsync().
+
+**Why**: 
+- .Result blocks the UI thread and violates Microsoft.VisualStudio.SDK.Analyzers Decision #2 (async-first)
+- Can cause deadlocks and UI freezes during dialog display
+- Flagged as Critical (C1) in prior reliability audit — must fix before merge
+
+**Files Modified**: src/Dialogs/KernelNotInstalledDialog.cs
+
+**Impact**: 
+- Clears analyzer gates for CI/CD
+- Dialog initialization no longer blocks VS responsiveness
+- Consistent with squad threading model (JoinableTaskFactory + async/await)
+
+**Status**: IMPLEMENTED — Critical violation resolved
+
+**Coordination**: Part of three-agent quick-wins session (Vince + Theo + Ellie, parallel) — orchestration log at .squad/orchestration-log/2026-03-28T1435-theo.md

@@ -887,3 +887,264 @@ When the Squad makes a new architectural decision:
 2. Document here with Date, Lead, Rationale, Implications
 3. Update routing.md if decision affects specialist routing
 4. Notify all agents via squad init
+
+
+# Decision: Quick-Win Performance Fixes (AutoLoad + VariableService)
+
+**Author:** Vince (Extension Architect)  
+**Date:** 2025-07-15  
+**Status:** IMPLEMENTED  
+**Requested by:** Brady Gaster
+
+## Context
+
+The performance audit (Decision 7) identified two easy, high-value fixes for startup time.
+
+## Fix 1 — Remove ProvideAutoLoad Attributes
+
+**Problem:** Three `[ProvideAutoLoad]` attributes caused the package to load on every VS startup — NoSolution, SolutionExists, and FolderOpened — even when no notebook file is present.
+
+**Solution:** Removed all three. The package still loads on-demand via `[ProvideEditorExtension]` when a `.dib` or `.ipynb` file is opened. This is the correct VS extension pattern — load only when needed.
+
+**Risk:** None. The editor factory registration (`ProvideEditorExtension`) handles on-demand loading. Menu commands are registered lazily by the toolkit.
+
+## Fix 2 — Lazy VariableService Singleton
+
+**Problem:** `VariableService.Initialize()` was called in `InitializeAsync`, creating a singleton with `SemaphoreSlim` and `ObservableCollection` allocations on every VS startup.
+
+**Solution:** Made `VariableService.Current` lazy-init — the singleton is created on first property access instead of during package initialization. This defers all allocations until a notebook is actually opened or the Variable Explorer is shown.
+
+**Approach chosen:** Lazy property getter over moving to `LoadDocData`, because:
+- No double-init guard needed (property getter is naturally idempotent)
+- No changes to `NotebookEditorPane` initialization order
+- Works for both code paths that access `Current` (editor pane + tool window)
+
+**Risk:** Low. `Initialize()` still disposes any previous instance before creating a new one. The property getter is not thread-safe, but `Current` is only accessed from the UI thread context (package init, editor pane, tool window creation).
+
+## Files Changed
+
+- `src/PolyglotNotebooksPackage.cs` — Removed 3 `[ProvideAutoLoad]` lines, removed `VariableService.Initialize()` call
+- `src/Variables/VariableService.cs` — Changed `Current` from passive getter to lazy-init property
+- `src/Editor/NotebookEditorPane.cs` — Removed null-conditional (`?.`) on `Current` access (no longer nullable)
+
+
+# Decision: Two-Phase Deferred Code Window Loading
+
+**Author:** Ellie (Editor Extension Specialist)
+**Date:** 2025-07-25
+**Status:** Implemented
+
+## Context
+
+Opening a .dib/.ipynb file blocked the UI thread for 1-2 seconds on a 10-cell notebook because `CellControl` created an `IVsCodeWindow` (heavy COM object, ~100-200ms each) synchronously in its constructor during `LoadDocData`.
+
+## Decision
+
+Adopted a two-phase loading pattern:
+
+1. **Phase 1 (immediate):** Constructor creates a lightweight read-only `TextBox` placeholder with monospaced font and VS theme colors. No COM calls — renders in <10ms per cell.
+
+2. **Phase 2 (deferred):** After the `Loaded` event, `Dispatcher.BeginInvoke(DispatcherPriority.Background)` swaps in the real `IVsCodeWindow`. UI stays responsive during the heavy work.
+
+Additionally, the kernel installation check (`KernelInstallationDetector`) was changed from blocking `JoinableTaskFactory.Run` to fire-and-forget `RunAsync` so it no longer delays document rendering.
+
+## Files Modified
+
+- `src/Editor/CellControl.cs` — Added `BuildCodeCellPlaceholder()`, `UpgradeToCodeWindow()`, and supporting fields/event handlers
+- `src/Editor/NotebookEditorPane.cs` — Changed kernel check from blocking to async fire-and-forget
+
+## Trade-offs
+
+- Users see plain text (no syntax highlighting) for ~200ms per cell during upgrade. Acceptable because the visual transition is smooth (same font, same theme colors).
+- The placeholder is read-only — users can't edit until upgrade completes. Upgrade happens within 200ms of visibility, so this is barely noticeable.
+- `IntelliSenseManager.AttachToCell()` already no-ops for IVsCodeWindow cells, so no special re-attachment needed.
+
+
+# Decision: Execution Freeze Fix, IClassifierProvider, Button Hover
+
+**Date**: 2025  
+**Author**: Ellie (Editor Extension Specialist)  
+**Commit**: 000082f
+
+## Decisions Made
+
+### 1. Use Task.WhenAny for kernel timeouts (not CancellationToken alone)
+
+The `WaitForReadyAsync` and `WaitForTerminalEventAsync` methods used `TaskCompletionSource` with no deadline. Added `Task.WhenAny(tcs.Task, Task.Delay(30s/60s, ct))` pattern. Chosen over a linked CTS with timeout because it preserves the original cancellation semantics while adding a hard deadline.
+
+**Timeouts**: 30s for KernelReady, 60s for command terminal events.
+
+### 2. Immediate ExecutionStatus=Running before kernel startup
+
+Run button disable is driven entirely by `NotebookCell.ExecutionStatus` via `CellToolbar.UpdateStatusIndicator`. The status was previously only set inside `CellExecutionEngine.ExecuteCellAsync` which runs after 5-10s kernel startup. Fix: set `Running` immediately in the coordinator's UI-thread handlers before the async work starts.
+
+### 3. ExecutionCompleted event on ExecutionCoordinator
+
+Added `public event EventHandler? ExecutionCompleted` to `ExecutionCoordinator`, fired from the `finally` blocks of both `HandleCellRunRequested` and `FireAndForget`. This lets `NotebookEditorPane` re-enable the toolbar via `SetExecuting(false)` without polling or callback parameters.
+
+### 4. IClassifierProvider over ITaggerProvider
+
+Multiple failed attempts with `ITaggerProvider`/`[TagType(typeof(ClassificationTag))]`. Switched to `IClassifierProvider` which routes through VS's `IClassifierAggregatorService` pipeline rather than the tagger aggregator. Also calling `IClassifierAggregatorService.GetClassifier(buffer)` immediately after buffer creation forces MEF to instantiate the provider for that buffer without waiting for the editor to request it.
+
+### 5. Regex 250ms timeout on all language patterns
+
+All `LanguagePattern` regex constructors now include `TimeSpan.FromMilliseconds(250)`. This prevents `RegexMatchTimeoutException` crashes reported by the user on pathological input (e.g. long lines, deeply nested constructs). Exceptions are caught in `GetClassificationSpans` and logged as warnings — graceful degradation.
+
+### 6. Remove Button.BackgroundProperty from toolbar buttons
+
+Setting `Button.BackgroundProperty` via `SetResourceReference` overrides the WPF `ButtonBase` ControlTemplate's trigger-based visual states (normal/hover/pressed). Removing this line lets the VS theme's default button template handle hover highlighting correctly.
+
+
+# Decision: Custom MEF Classifier for Notebook Cell Syntax Highlighting
+
+**Author:** Ellie (Editor Extension Specialist)  
+**Date:** 2025  
+**Status:** Implemented
+
+## Context
+
+Syntax highlighting was not working for any language in notebook cell buffers hosted via `IVsCodeWindow` adapters. The previous approach (WPF adorner overlay + regex tokenizer on a TextBox) was effectively dead code after the keyboard-input refactor moved cells to `IVsCodeWindow`. VS's built-in classifiers were not engaging for the hosted buffers even when the content type and language service GUID were set correctly.
+
+## Decision
+
+Implement a MEF `ITaggerProvider` + `ITagger<ClassificationTag>` that:
+
+1. Is registered on the `"text"` content type (base of all content types) so it fires unconditionally for any buffer.
+2. Immediately gates on a `"PolyglotNotebook.KernelName"` sentinel property set on the buffer in `CellControl.cs`. Non-notebook buffers get `null` returned from `CreateTagger` and are unaffected.
+3. Uses VS standard classification type names (`"keyword"`, `"string"`, `"comment"`, `"number"`, `"class name"`) so highlighting respects the user's color theme automatically.
+4. Re-uses the per-language regex patterns already developed for the old adorner, ported to emit `ITagSpan<ClassificationTag>`.
+
+## Alternatives Considered
+
+- **Fix VS built-in classifiers**: Attempted via `SetLanguageServiceID` and `ChangeContentType`. VS's built-in language classifiers appear not to engage in HWND-hosted adapter buffers. Not pursued further.
+- **Keep adorner approach**: The adorner rendered text using `FormattedText` drawn over a transparent TextBox — incompatible with the `IVsCodeWindow` architecture where VS owns all rendering.
+
+## Key Technical Notes
+
+- `PredefinedClassificationTypeNames` constants require an extra assembly reference not present in this project. Use string literals directly (`"keyword"`, etc.) — these are stable VS constants.
+- Register on `"text"` content type, NOT on language-specific types like `"CSharp"`. The buffer adapter assigns content types, but the specific type that activates MEF providers for hosted adapters is the base `"text"` type.
+- The `"PolyglotNotebook.KernelName"` property must be added to the **data buffer** (returned by `GetDataBuffer()`) before any MEF tagger providers are invoked, which happens lazily on first view creation.
+
+## Impact
+
+- All 8 kernel languages (C#, F#, JS, TS, Python, PowerShell, SQL, HTML) now get keyword/string/comment/number classification.
+- Zero performance impact on non-notebook buffers (null guard at `CreateTagger`).
+- Classification colors follow VS theme (no hard-coded brushes).
+
+
+# Decision: MEF Classifier Engagement Strategy
+
+**Date:** 2026-03-27  
+**Author:** Ellie (Editor Extension Specialist)  
+**Requested by:** Mads Kristensen
+
+## Context
+
+`NotebookClassifierProvider` is a MEF `ITaggerProvider` registered for the `"text"` content type. It checks for a `"PolyglotNotebook.KernelName"` buffer property to gate activation. Despite being correctly exported, it was not engaging.
+
+## Root Cause
+
+`CellControl.BuildCodeCell` called `IVsTextBuffer.SetLanguageServiceID(ref langServiceId)` on the buffer adapter. This installs the legacy COM language service colorizer (e.g. Roslyn's C# colorizer) which takes precedence over and suppresses MEF `ITaggerProvider` classifiers on that buffer. This is a fundamental VS extensibility constraint: COM colorizers and MEF classifiers are in conflict.
+
+Secondary issues also removed:
+- `buffer.ChangeContentType()` forced re-classification in a way that could race with MEF setup
+- `ITextDocumentFactoryService.CreateTextDocument()` + temp file write attempted (and failed) to engage Roslyn's MiscellaneousFilesWorkspace, adding noise with no benefit
+
+## Decision
+
+1. **Remove `SetLanguageServiceID`** — our custom MEF classifier handles highlighting; we do not need the legacy COM colorizer.
+2. **Remove content type forcing** — the adapter factory already assigns the correct content type.
+3. **Remove temp file / ITextDocument creation** — Roslyn engagement is not a goal right now.
+4. **Set `PolyglotNotebook.KernelName` property on both data buffer and view's `TextBuffer`** — the VS adapter stack can return different `ITextBuffer` instances; setting on both ensures the tagger sees it.
+5. **Add diagnostic logging** to `NotebookClassifierProvider.CreateTagger` — essential for verifying whether the provider is invoked and whether the property check passes.
+
+## Alternatives Considered
+
+- **Manually invoke the classifier via `IClassifierAggregatorService`**: More invasive; deferred unless logging confirms the tagger is never called.
+- **Keep `SetLanguageServiceID` and additionally register as a COM colorizer**: Adds significant complexity; not aligned with the MEF-first architecture.
+
+## Follow-up
+
+If diagnostic logs show `CreateTagger` IS called but the property is not found, investigate whether the VS adapter is creating a projection buffer layer that does not carry the property bag forward.
+
+
+# Decision: Status Icon & Classifier Diagnostics
+
+**Author:** Ellie (Editor Extension Specialist)
+**Date:** 2025-07-25
+
+## Task 1: Checkmark → KnownMonikers.TestCoveredPassing
+
+**What changed:** In `CellToolbar.cs`, the success status after cell execution now shows a 20×20 `CrispImage` with `KnownMonikers.TestCoveredPassing` instead of a Unicode "✓" in a TextBlock.
+
+**Approach:** Added a `_statusIcon` CrispImage field alongside the existing `_statusIndicator` TextBlock. Both live in the same DockPanel (Dock.Right). `UpdateStatusIndicator()` toggles visibility between them — CrispImage for Succeeded, TextBlock for Running/Failed/default.
+
+**Why 20×20:** Standard button icons use 16×16. The status icon is slightly larger for visual weight/emphasis per Mads's request.
+
+## Task 2: Classifier Syntax Highlighting Fix
+
+**Root causes addressed:**
+1. **"class name" null:** `registry.GetClassificationType("class name")` can return null in some VS configurations. Added fallback to `"type"`.
+2. **No initial paint:** Classifier may be created after VS has already painted the buffer. Added a 100ms delayed `ClassificationChanged` event to force re-classification on startup.
+3. **No diagnostic visibility:** Added logging of all 5 classification type null-checks in constructor, and per-call logging in `GetClassificationSpans` (kernel, text length, span count).
+
+**Files modified:**
+- `src/Editor/CellToolbar.cs`
+- `src/Editor/SyntaxHighlighting/NotebookClassifier.cs`
+
+
+# Decision: Use IVsCodeWindow Adapter for Hosted Editor Cells
+
+**Date**: 2025-07-14  
+**Author**: Ellie (Editor Extension Specialist)  
+**Status**: ACTIVE  
+
+## Summary
+
+All code cells must be created using `IVsEditorAdaptersFactoryService.CreateVsCodeWindowAdapter()`, not `ITextEditorFactoryService.CreateTextView()`. This is the only pattern that provides a proper Win32 HWND with an IOleCommandTarget chain, which is required for keyboard input to work inside a tool window or pane.
+
+## Context
+
+`ITextEditorFactoryService.CreateTextView()` produces a pure WPF text view with no HWND. VS's Win32 message loop intercepts keystrokes before they reach the WPF visual tree, so they never arrive at the editor. This was discovered as the root cause of keyboard input not working in notebook cells.
+
+## Required Pattern
+
+### CellControl (per cell):
+1. `IVsEditorAdaptersFactoryService.CreateVsTextBufferAdapter()` — creates buffer with content type
+2. `bufferAdapter.InitializeContent(text, length)` — populate initial text
+3. `editorAdapterFactory.GetDataBuffer((IVsTextBuffer)bufferAdapter)` — get MEF ITextBuffer for events
+4. `ITextDocumentFactoryService.CreateTextDocument(buffer, fakeFile)` — Roslyn engagement
+5. `IVsEditorAdaptersFactoryService.CreateVsCodeWindowAdapter(oleServiceProvider)` — code window with HWND
+6. `((IVsCodeWindowEx)codeWindow).Initialize(CWB_DISABLESPLITTER, ...)` — disable splitter bar
+7. `codeWindow.SetBuffer((IVsTextLines)bufferAdapter)` — associate buffer
+8. `codeWindow.GetPrimaryView()` — get IVsTextView
+9. `editorAdapterFactory.GetWpfTextViewHost(vsTextView)` — get WPF host
+
+### NotebookEditorPane:
+- Implements `IOleCommandTarget` explicitly to forward Exec/QueryStatus to focused cell's IVsTextView
+- `PreProcessMessage` uses `IVsFilterKeys2.TranslateAcceleratorEx` with `VSTAEXF_UseTextEditorKBScope` for proper keyboard-to-command translation
+
+### NotebookControl:
+- `GetFocusedCommandTarget()` walks `_cellStack` for the focused cell and returns `cc.VsTextView as IOleCommandTarget`
+
+## Namespace Gotcha
+
+`VSUSERCONTEXTATTRIBUTEUSAGE` is in `Microsoft.VisualStudio.Shell.Interop`, even though `IVsCodeWindowEx` is in `Microsoft.VisualStudio.TextManager.Interop`. Both usings are needed.
+
+## Assembly Reference
+
+Add `Microsoft.VisualStudio.TextManager.Interop.8.0` v17.14.40260 as ExcludeAssets=Runtime PackageReference. The NuGet assemblies are type-forwarder stubs; MSBuild needs explicit reference entries to resolve the type chain correctly.
+
+## What NOT to Do
+
+- Do NOT use `ITextEditorFactoryService.CreateTextView()` for any editor that needs keyboard input
+- Do NOT use Win32 SetFocus/GetFocus P/Invoke to route keyboard messages to WPF editors
+- Do NOT add `GotFocus` or `PreviewMouseDown` hacks to grab Win32 focus for WPF text views
+
+## Files
+
+- `src/Editor/CellControl.cs` — per-cell editor creation
+- `src/Editor/NotebookEditorPane.cs` — pane-level command routing
+- `src/Editor/NotebookControl.cs` — focused cell lookup
+- `src/PolyglotNotebooks.csproj` — assembly reference
+

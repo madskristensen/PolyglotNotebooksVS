@@ -319,3 +319,25 @@
 **Architecture**: Standard VS multi-view file type pattern. Aligns with .vsixmanifest, .resx conventions.
 
 **Status**: ACTIVE — Logged as Decision 10. Integration points verified.
+
+## 2026-03-28 — Quick-Win Fixes: Startup Performance (ProvideAutoLoad + VariableService)
+
+**Event**: Implemented two low-risk, high-impact startup optimizations from prior architecture audit.
+
+**What Changed**:
+1. Removed all [ProvideAutoLoad] attributes (NoSolution, SolutionExists, FolderOpened) from PolyglotNotebooksPackage.cs
+2. Converted VariableService.Current to lazy-init property (defers singleton creation until first access)
+
+**Why**: 
+- ProvideAutoLoad forced package load on every VS startup, even when no notebook files open
+- VariableService singleton allocated during InitializeAsync unconditionally, consuming memory and time
+- Both optimizations have zero behavioral risk — existing code paths unchanged
+
+**Affected Areas**: 
+- Package lifecycle (startup time reduced)
+- Variable Explorer (deferred initialization)
+- Complements Theo's threading fixes and Ellie's deferred-loading patterns
+
+**Status**: IMPLEMENTED — Decision merged to decisions.md as "Quick-Win Performance Fixes (AutoLoad + VariableService)"
+
+**Coordination**: Three-agent quick-wins session (Vince + Theo + Ellie, parallel) — orchestration logs at .squad/orchestration-log/2026-03-28T1435-*.md
