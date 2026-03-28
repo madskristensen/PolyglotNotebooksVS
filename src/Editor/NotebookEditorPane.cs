@@ -76,9 +76,10 @@ namespace PolyglotNotebooks.Editor
             ThreadHelper.ThrowIfNotOnUIThread();
             _filePath = pszMkDocument;
 
-            // Check dotnet-interactive installation and notify the user if missing.
-            // If the user installs via the dialog, re-check and proceed normally.
-            ThreadHelper.JoinableTaskFactory.Run(async () =>
+            // Check dotnet-interactive installation asynchronously — don't block file loading.
+            // If missing, the user is notified after the editor is already visible.
+#pragma warning disable VSTHRD110, VSSDK007
+            _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
             {
                 var detector = new Kernel.KernelInstallationDetector();
                 bool isInstalled = await detector.IsInstalledAsync().ConfigureAwait(false);
@@ -100,6 +101,7 @@ namespace PolyglotNotebooks.Editor
                         $"dotnet-interactive detected. Loading '{pszMkDocument}'.");
                 }
             });
+#pragma warning restore VSTHRD110, VSSDK007
 
             try
             {

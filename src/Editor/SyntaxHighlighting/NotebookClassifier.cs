@@ -34,15 +34,27 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
             _string   = registry.GetClassificationType("string");
             _comment  = registry.GetClassificationType("comment");
             _number   = registry.GetClassificationType("number");
-            _typeName = registry.GetClassificationType("class name");
+            _typeName = registry.GetClassificationType("class name")
+                     ?? registry.GetClassificationType("type");
 
             var kernelName = buffer.Properties.GetProperty<string>("PolyglotNotebook.KernelName");
             _language = LanguagePattern.Get(kernelName);
 
             ExtensionLogger.LogInfo("NotebookClassifier",
-                $"Created for kernel '{kernelName}', language patterns found: {_language != null}");
+                $"Created for kernel '{kernelName}', language patterns found: {_language != null}, " +
+                $"keyword={_keyword != null}, string={_string != null}, comment={_comment != null}, " +
+                $"number={_number != null}, typeName={_typeName != null}");
 
             _buffer.Changed += OnBufferChanged;
+
+            // Force initial classification after a short delay to ensure the view has loaded
+            System.Threading.Tasks.Task.Delay(100).ContinueWith(_ =>
+            {
+                var snapshot = _buffer.CurrentSnapshot;
+                ClassificationChanged?.Invoke(this,
+                    new ClassificationChangedEventArgs(
+                        new SnapshotSpan(snapshot, 0, snapshot.Length)));
+            }, System.Threading.Tasks.TaskScheduler.Default);
         }
 
         private void OnBufferChanged(object sender, TextContentChangedEventArgs e)
@@ -59,7 +71,12 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
         {
             var result = new List<ClassificationSpan>();
             if (_language == null)
+            {
+                var kernelName = _buffer.Properties.TryGetProperty<string>("PolyglotNotebook.KernelName", out var kn) ? kn : "(unknown)";
+                ExtensionLogger.LogInfo("NotebookClassifier",
+                    $"GetClassificationSpans: kernel={kernelName}, _language is null — returning empty");
                 return result;
+            }
 
             var snapshot = span.Snapshot;
             var startLine = snapshot.GetLineFromPosition(span.Start);
@@ -89,6 +106,11 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
             {
                 ExtensionLogger.LogWarning("NotebookClassifier", "Regex timed out during classification.");
             }
+
+            ExtensionLogger.LogInfo("NotebookClassifier",
+                $"GetClassificationSpans: text length={text.Length}, " +
+                $"text preview=\"{(text.Length > 100 ? text.Substring(0, 100) + "..." : text)}\", " +
+                $"spans found={result.Count}");
 
             return result;
         }

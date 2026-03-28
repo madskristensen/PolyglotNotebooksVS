@@ -22,6 +22,7 @@ namespace PolyglotNotebooks.Editor
         private readonly ComboBox _kernelCombo;
         private readonly TextBlock _executionCounter;
         private readonly TextBlock _statusIndicator;
+        private readonly CrispImage _statusIcon;
         private Button? _runBtn;
         private Button? _runDropdownBtn;
 
@@ -116,8 +117,19 @@ namespace PolyglotNotebooks.Editor
                 Margin = new Thickness(4, 0, 0, 0),
                 Visibility = Visibility.Collapsed
             };
+            _statusIcon = new CrispImage
+            {
+                Moniker = KnownMonikers.TestCoveredPassing,
+                Width = 20,
+                Height = 20,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(4, 0, 0, 0),
+                Visibility = Visibility.Collapsed
+            };
             if (!isMarkdown)
             {
+                DockPanel.SetDock(_statusIcon, Dock.Right);
+                Children.Add(_statusIcon);
                 DockPanel.SetDock(_statusIndicator, Dock.Right);
                 Children.Add(_statusIndicator);
             }
@@ -404,6 +416,7 @@ namespace PolyglotNotebooks.Editor
             switch (_cell.ExecutionStatus)
             {
                 case CellExecutionStatus.Running:
+                    _statusIcon.Visibility = Visibility.Collapsed;
                     _statusIndicator.Text = "⟳ Running";
                     _statusIndicator.SetResourceReference(TextBlock.ForegroundProperty, VsBrushes.VizSurfaceGoldMediumKey);
                     _statusIndicator.Visibility = Visibility.Visible;
@@ -411,13 +424,14 @@ namespace PolyglotNotebooks.Editor
                     if (_runDropdownBtn != null) _runDropdownBtn.IsEnabled = false;
                     break;
                 case CellExecutionStatus.Succeeded:
-                    _statusIndicator.Text = "✓";
-                    _statusIndicator.SetResourceReference(TextBlock.ForegroundProperty, VsBrushes.VizSurfaceGreenMediumKey);
-                    _statusIndicator.Visibility = Visibility.Visible;
+                    _statusIndicator.Visibility = Visibility.Collapsed;
+                    _statusIcon.Moniker = KnownMonikers.TestCoveredPassing;
+                    _statusIcon.Visibility = Visibility.Visible;
                     if (_runBtn != null) _runBtn.IsEnabled = true;
                     if (_runDropdownBtn != null) _runDropdownBtn.IsEnabled = true;
                     break;
                 case CellExecutionStatus.Failed:
+                    _statusIcon.Visibility = Visibility.Collapsed;
                     _statusIndicator.Text = "✗ Error";
                     _statusIndicator.SetResourceReference(TextBlock.ForegroundProperty, VsBrushes.VizSurfaceRedMediumKey);
                     _statusIndicator.Visibility = Visibility.Visible;
@@ -425,6 +439,7 @@ namespace PolyglotNotebooks.Editor
                     if (_runDropdownBtn != null) _runDropdownBtn.IsEnabled = true;
                     break;
                 default:
+                    _statusIcon.Visibility = Visibility.Collapsed;
                     _statusIndicator.Text = string.Empty;
                     _statusIndicator.Visibility = Visibility.Collapsed;
                     if (_runBtn != null) _runBtn.IsEnabled = true;
