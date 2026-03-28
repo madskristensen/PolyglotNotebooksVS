@@ -91,8 +91,8 @@
     <Compile Include="Editor\NotebookEditorFactory.cs" />
     <Compile Include="Editor\NotebookEditorPane.cs" />
     <Compile Include="Editor\NotebookToolbar.cs" />
-    <Compile Include="Editor\SyntaxHighlighting\SyntaxHighlightAdorner.cs" />
-    <Compile Include="Editor\SyntaxHighlighting\SyntaxTokenizer.cs" />
+    <Compile Include="Editor\SyntaxHighlighting\NotebookClassifier.cs" />
+    <Compile Include="Editor\SyntaxHighlighting\NotebookClassifierProvider.cs" />
     <Compile Include="Editor\ThemedContextMenuHelper.cs" />
     <Compile Include="Editor\OutputControl.cs" />
     <Compile Include="Editor\WebView2OutputHost.cs" />

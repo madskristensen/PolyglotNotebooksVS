@@ -29,6 +29,8 @@ namespace PolyglotNotebooks.IntelliSense
             if (_attached.ContainsKey(cell)) return;
 
             var editor = cell.CodeEditor;
+            if (editor == null) return; // IWpfTextViewHost cell — VS editor provides its own IntelliSense
+
             var providers = new CellProviders
             {
                 Completion = new CompletionProvider(editor),

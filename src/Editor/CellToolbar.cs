@@ -46,37 +46,67 @@ namespace PolyglotNotebooks.Editor
             LastChildFill = false;
             Margin = new Thickness(0, 0, 0, 4);
 
-            // ── Kernel selector (left) ─────────────────────────────────────────
-            _kernelCombo = new ComboBox
+            bool isMarkdown = cell.Kind == CellKind.Markdown;
+
+            // ── Left side: kernel selector or markdown label ──────────────────
+            if (isMarkdown)
             {
-                FontSize = 11,
-                FontWeight = FontWeights.SemiBold,
-                Padding = new Thickness(4, 1, 4, 1),
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 8, 0),
-                BorderThickness = new Thickness(1),
-                IsEditable = false,
-                ToolTip = "Select kernel language"
-            };
-            _kernelCombo.SetResourceReference(ComboBox.BackgroundProperty, VsBrushes.ButtonFaceKey);
-            _kernelCombo.SetResourceReference(ComboBox.ForegroundProperty, VsBrushes.ToolWindowTextKey);
-            _kernelCombo.SetResourceReference(ComboBox.BorderBrushProperty, VsBrushes.ToolWindowBorderKey);
+                var mdLabel = new TextBlock
+                {
+                    Text = "Markdown",
+                    FontSize = 11,
+                    FontWeight = FontWeights.SemiBold,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(4, 1, 8, 1),
+                    Padding = new Thickness(4, 1, 4, 1),
+                };
+                mdLabel.SetResourceReference(TextBlock.ForegroundProperty, VsBrushes.ToolWindowTextKey);
+                var mdBorder = new Border
+                {
+                    Child = mdLabel,
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(3),
+                };
+                mdBorder.SetResourceReference(Border.BackgroundProperty, VsBrushes.ButtonFaceKey);
+                mdBorder.SetResourceReference(Border.BorderBrushProperty, VsBrushes.ToolWindowBorderKey);
+                DockPanel.SetDock(mdBorder, Dock.Left);
+                Children.Add(mdBorder);
 
-            PopulateKernelComboItems();
-            SyncKernelComboSelection();
+                _kernelCombo = new ComboBox { Visibility = Visibility.Collapsed };
+            }
+            else
+            {
+                _kernelCombo = new ComboBox
+                {
+                    FontSize = 11,
+                    FontWeight = FontWeights.SemiBold,
+                    Padding = new Thickness(4, 1, 4, 1),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 8, 0),
+                    BorderThickness = new Thickness(1),
+                    IsEditable = false,
+                    ToolTip = "Select kernel language"
+                };
+                _kernelCombo.SetResourceReference(ComboBox.BackgroundProperty, VsBrushes.ButtonFaceKey);
+                _kernelCombo.SetResourceReference(ComboBox.ForegroundProperty, VsBrushes.ToolWindowTextKey);
+                _kernelCombo.SetResourceReference(ComboBox.BorderBrushProperty, VsBrushes.ToolWindowBorderKey);
 
-            _kernelCombo.SelectionChanged += OnKernelComboSelectionChanged;
+                PopulateKernelComboItems();
+                SyncKernelComboSelection();
 
-            DockPanel.SetDock(_kernelCombo, Dock.Left);
-            Children.Add(_kernelCombo);
+                _kernelCombo.SelectionChanged += OnKernelComboSelectionChanged;
 
-            // Subscribe to cache updates (fires on background thread → marshal to UI).
-            KernelInfoCache.Default.KernelsChanged += OnKernelsCacheChanged;
-            Unloaded += (s, e) => KernelInfoCache.Default.KernelsChanged -= OnKernelsCacheChanged;
+                DockPanel.SetDock(_kernelCombo, Dock.Left);
+                Children.Add(_kernelCombo);
+
+                // Subscribe to cache updates (fires on background thread → marshal to UI).
+                KernelInfoCache.Default.KernelsChanged += OnKernelsCacheChanged;
+                Unloaded += (s, e) => KernelInfoCache.Default.KernelsChanged -= OnKernelsCacheChanged;
+            }
 
             // ── Right-side controls (added right-to-left via Dock.Right) ──────
 
-            // Status indicator (rightmost)
+            // Status indicator (rightmost) — code cells only
             _statusIndicator = new TextBlock
             {
                 FontSize = 11,
@@ -84,54 +114,60 @@ namespace PolyglotNotebooks.Editor
                 Margin = new Thickness(4, 0, 0, 0),
                 Visibility = Visibility.Collapsed
             };
-            DockPanel.SetDock(_statusIndicator, Dock.Right);
-            Children.Add(_statusIndicator);
+            if (!isMarkdown)
+            {
+                DockPanel.SetDock(_statusIndicator, Dock.Right);
+                Children.Add(_statusIndicator);
+            }
 
             // Cell menu (···)
-            var menuBtn = BuildMenuButton();
+            var menuBtn = isMarkdown ? BuildMarkdownMenuButton() : BuildMenuButton();
             DockPanel.SetDock(menuBtn, Dock.Right);
             Children.Add(menuBtn);
 
-            // Clear Output button
-            var clearBtn = new Button
+            if (!isMarkdown)
             {
-                Content = MakeCrispImage(KnownMonikers.ClearWindowContent),
-                Padding = new Thickness(4, 2, 4, 2),
-                BorderThickness = new Thickness(1),
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 4, 0),
-                ToolTip = "Clear cell output (Ctrl+Shift+Backspace)"
-            };
-            clearBtn.SetResourceReference(Button.BackgroundProperty, VsBrushes.ButtonFaceKey);
-            clearBtn.SetResourceReference(Button.ForegroundProperty, VsBrushes.ToolWindowTextKey);
-            clearBtn.SetResourceReference(Button.BorderBrushProperty, VsBrushes.ToolWindowBorderKey);
-            clearBtn.Click += (s, e) => _cell.Outputs.Clear();
-            DockPanel.SetDock(clearBtn, Dock.Right);
-            Children.Add(clearBtn);
+                // Clear Output button
+                var clearBtn = new Button
+                {
+                    Content = MakeCrispImage(KnownMonikers.ClearWindowContent),
+                    Padding = new Thickness(4, 2, 4, 2),
+                    BorderThickness = new Thickness(1),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 4, 0),
+                    ToolTip = "Clear cell output (Ctrl+Shift+Backspace)"
+                };
+                clearBtn.SetResourceReference(Button.BackgroundProperty, VsBrushes.ButtonFaceKey);
+                clearBtn.SetResourceReference(Button.ForegroundProperty, VsBrushes.ToolWindowTextKey);
+                clearBtn.SetResourceReference(Button.BorderBrushProperty, VsBrushes.ToolWindowBorderKey);
+                clearBtn.Click += (s, e) => _cell.Outputs.Clear();
+                DockPanel.SetDock(clearBtn, Dock.Right);
+                Children.Add(clearBtn);
 
-            // Run-mode dropdown button (▼) — opens run-mode context menu
-            var runDropdownBtn = BuildRunDropdownButton();
-            DockPanel.SetDock(runDropdownBtn, Dock.Right);
-            Children.Add(runDropdownBtn);
+                // Run-mode dropdown button (▼) — opens run-mode context menu
+                var runDropdownBtn = BuildRunDropdownButton();
+                DockPanel.SetDock(runDropdownBtn, Dock.Right);
+                Children.Add(runDropdownBtn);
 
-            // Run button
-            var runBtn = new Button
-            {
-                Content = MakeCrispImage(KnownMonikers.Run),
-                Padding = new Thickness(4, 2, 4, 2),
-                BorderThickness = new Thickness(1, 1, 0, 1),
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 0, 0),
-                ToolTip = "Run cell (Shift+Enter)"
-            };
-            runBtn.SetResourceReference(Button.BackgroundProperty, VsBrushes.ButtonFaceKey);
-            runBtn.SetResourceReference(Button.ForegroundProperty, VsBrushes.ToolWindowTextKey);
-            runBtn.SetResourceReference(Button.BorderBrushProperty, VsBrushes.ToolWindowBorderKey);
-            runBtn.Click += (s, e) => RunRequested?.Invoke(this, EventArgs.Empty);
-            DockPanel.SetDock(runBtn, Dock.Right);
-            Children.Add(runBtn);
+                // Run button
+                var runBtn = new Button
+                {
+                    Content = MakeCrispImage(KnownMonikers.Run),
+                    Padding = new Thickness(4, 2, 4, 2),
+                    BorderThickness = new Thickness(1, 1, 0, 1),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 0, 0),
+                    ToolTip = "Run cell (Shift+Enter)"
+                };
+                runBtn.SetResourceReference(Button.BackgroundProperty, VsBrushes.ButtonFaceKey);
+                runBtn.SetResourceReference(Button.ForegroundProperty, VsBrushes.ToolWindowTextKey);
+                runBtn.SetResourceReference(Button.BorderBrushProperty, VsBrushes.ToolWindowBorderKey);
+                runBtn.Click += (s, e) => RunRequested?.Invoke(this, EventArgs.Empty);
+                DockPanel.SetDock(runBtn, Dock.Right);
+                Children.Add(runBtn);
+            }
 
-            // Execution counter [N]
+            // Execution counter [N] — code cells only
             _executionCounter = new TextBlock
             {
                 FontFamily = new FontFamily("Consolas"),
@@ -140,11 +176,13 @@ namespace PolyglotNotebooks.Editor
                 Margin = new Thickness(0, 0, 8, 0)
             };
             _executionCounter.SetResourceReference(TextBlock.ForegroundProperty, VsBrushes.GrayTextKey);
-            UpdateExecutionCounter();
-            DockPanel.SetDock(_executionCounter, Dock.Right);
-            Children.Add(_executionCounter);
-
-            UpdateStatusIndicator();
+            if (!isMarkdown)
+            {
+                UpdateExecutionCounter();
+                DockPanel.SetDock(_executionCounter, Dock.Right);
+                Children.Add(_executionCounter);
+                UpdateStatusIndicator();
+            }
 
             _cell.PropertyChanged += OnCellPropertyChanged;
             Unloaded += (s, e) => _cell.PropertyChanged -= OnCellPropertyChanged;
@@ -202,8 +240,10 @@ namespace PolyglotNotebooks.Editor
             ThemedContextMenuHelper.ApplyVsTheme(menu);
             menu.Items.Add(MakeMenuItem("Run Cell", () => RunRequested?.Invoke(this, EventArgs.Empty), KnownMonikers.Run));
             menu.Items.Add(new Separator());
-            menu.Items.Add(MakeMenuItem("Insert Cell Above", () => InsertCellAt(0), KnownMonikers.InsertClause));
-            menu.Items.Add(MakeMenuItem("Insert Cell Below", () => InsertCellAt(1), KnownMonikers.InsertClause));
+            menu.Items.Add(MakeMenuItem("Insert Code Cell Above", () => InsertCellAt(0, CellKind.Code), KnownMonikers.InsertClause));
+            menu.Items.Add(MakeMenuItem("Insert Code Cell Below", () => InsertCellAt(1, CellKind.Code), KnownMonikers.InsertClause));
+            menu.Items.Add(MakeMenuItem("Insert Markdown Cell Above", () => InsertCellAt(0, CellKind.Markdown), KnownMonikers.InsertClause));
+            menu.Items.Add(MakeMenuItem("Insert Markdown Cell Below", () => InsertCellAt(1, CellKind.Markdown), KnownMonikers.InsertClause));
             menu.Items.Add(new Separator());
             menu.Items.Add(MakeMenuItem("Move Up", MoveUp, KnownMonikers.MoveUp));
             menu.Items.Add(MakeMenuItem("Move Down", MoveDown, KnownMonikers.MoveDown));
@@ -221,6 +261,43 @@ namespace PolyglotNotebooks.Editor
 
             menu.Items.Add(new Separator());
             menu.Items.Add(MakeMenuItem("Clear Output", () => _cell.Outputs.Clear(), KnownMonikers.ClearWindowContent));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(MakeMenuItem("Delete Cell", DeleteCell, KnownMonikers.DeleteListItem));
+
+            btn.Click += (s, e) =>
+            {
+                menu.PlacementTarget = btn;
+                menu.Placement = PlacementMode.Bottom;
+                menu.IsOpen = true;
+            };
+
+            return btn;
+        }
+
+        private Button BuildMarkdownMenuButton()
+        {
+            var btn = new Button
+            {
+                Content = MakeCrispImage(KnownMonikers.Ellipsis),
+                Padding = new Thickness(4, 2, 4, 2),
+                BorderThickness = new Thickness(1),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 4, 0),
+                ToolTip = "Cell options"
+            };
+            btn.SetResourceReference(Button.BackgroundProperty, VsBrushes.ButtonFaceKey);
+            btn.SetResourceReference(Button.ForegroundProperty, VsBrushes.ToolWindowTextKey);
+            btn.SetResourceReference(Button.BorderBrushProperty, VsBrushes.ToolWindowBorderKey);
+
+            var menu = new ContextMenu();
+            ThemedContextMenuHelper.ApplyVsTheme(menu);
+            menu.Items.Add(MakeMenuItem("Insert Code Cell Above", () => InsertCellAt(0, CellKind.Code), KnownMonikers.InsertClause));
+            menu.Items.Add(MakeMenuItem("Insert Code Cell Below", () => InsertCellAt(1, CellKind.Code), KnownMonikers.InsertClause));
+            menu.Items.Add(MakeMenuItem("Insert Markdown Cell Above", () => InsertCellAt(0, CellKind.Markdown), KnownMonikers.InsertClause));
+            menu.Items.Add(MakeMenuItem("Insert Markdown Cell Below", () => InsertCellAt(1, CellKind.Markdown), KnownMonikers.InsertClause));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(MakeMenuItem("Move Up", MoveUp, KnownMonikers.MoveUp));
+            menu.Items.Add(MakeMenuItem("Move Down", MoveDown, KnownMonikers.MoveDown));
             menu.Items.Add(new Separator());
             menu.Items.Add(MakeMenuItem("Delete Cell", DeleteCell, KnownMonikers.DeleteListItem));
 
@@ -374,11 +451,12 @@ namespace PolyglotNotebooks.Editor
             };
         }
 
-        private void InsertCellAt(int offset)
+        private void InsertCellAt(int offset, CellKind kind)
         {
             int idx = _document.Cells.IndexOf(_cell);
             if (idx < 0) return;
-            _document.AddCell(CellKind.Code, _document.DefaultKernelName, idx + offset);
+            var kernelName = kind == CellKind.Markdown ? "markdown" : _document.DefaultKernelName;
+            _document.AddCell(kind, kernelName, idx + offset);
         }
 
         private void MoveUp()

@@ -1,0 +1,214 @@
+using System;
+using System.Collections.Generic;
+using System.Text.RegularExpressions;
+
+using Microsoft.VisualStudio.Text;
+using Microsoft.VisualStudio.Text.Classification;
+using Microsoft.VisualStudio.Text.Tagging;
+
+namespace PolyglotNotebooks.Editor.SyntaxHighlighting
+{
+    /// <summary>
+    /// Regex-based <see cref="ITagger{T}"/> that emits
+    /// <see cref="ClassificationTag"/> spans for notebook cell buffers.
+    /// The language is determined by the <c>"PolyglotNotebook.KernelName"</c>
+    /// property stored on the <see cref="ITextBuffer"/>.
+    /// </summary>
+    internal sealed class NotebookClassifier : ITagger<ClassificationTag>
+    {
+        private readonly ITextBuffer _buffer;
+        private readonly IClassificationType _keyword;
+        private readonly IClassificationType _string;
+        private readonly IClassificationType _comment;
+        private readonly IClassificationType _number;
+        private readonly IClassificationType _typeName;
+        private readonly LanguagePattern _language;
+
+        public event EventHandler<SnapshotSpanEventArgs> TagsChanged;
+
+        internal NotebookClassifier(ITextBuffer buffer, IClassificationTypeRegistryService registry)
+        {
+            _buffer   = buffer;
+            _keyword  = registry.GetClassificationType("keyword");
+            _string   = registry.GetClassificationType("string");
+            _comment  = registry.GetClassificationType("comment");
+            _number   = registry.GetClassificationType("number");
+            _typeName = registry.GetClassificationType("class name");
+
+            var kernelName = buffer.Properties.GetProperty<string>("PolyglotNotebook.KernelName");
+            _language = LanguagePattern.Get(kernelName);
+
+            _buffer.Changed += OnBufferChanged;
+        }
+
+        private void OnBufferChanged(object sender, TextContentChangedEventArgs e)
+        {
+            var snapshot = e.After;
+            foreach (var change in e.Changes)
+            {
+                var span = new SnapshotSpan(snapshot, change.NewSpan);
+                TagsChanged?.Invoke(this, new SnapshotSpanEventArgs(span));
+            }
+        }
+
+        public IEnumerable<ITagSpan<ClassificationTag>> GetTags(NormalizedSnapshotSpanCollection spans)
+        {
+            if (spans == null || spans.Count == 0 || _language == null)
+                yield break;
+
+            var snapshot = spans[0].Snapshot;
+
+            foreach (var requestedSpan in spans)
+            {
+                // Extend to full lines for accurate multi-line patterns
+                var startLine = snapshot.GetLineFromPosition(requestedSpan.Start);
+                var endLine   = snapshot.GetLineFromPosition(requestedSpan.End > 0
+                    ? requestedSpan.End - 1
+                    : requestedSpan.End);
+
+                var lineStart = startLine.Start.Position;
+                var lineEnd   = endLine.End.Position;
+                var lineSpan  = new SnapshotSpan(snapshot, lineStart, lineEnd - lineStart);
+                var text      = lineSpan.GetText();
+
+                var matches = _language.Pattern.Matches(text);
+                foreach (Match m in matches)
+                {
+                    if (!m.Success || m.Length == 0) continue;
+
+                    var classificationType = Classify(m);
+                    if (classificationType == null) continue;
+
+                    var tagSpan = new SnapshotSpan(snapshot, lineStart + m.Index, m.Length);
+                    // Only yield spans that actually overlap the requested span
+                    if (tagSpan.IntersectsWith(requestedSpan))
+                        yield return new TagSpan<ClassificationTag>(tagSpan, new ClassificationTag(classificationType));
+                }
+            }
+        }
+
+        private IClassificationType Classify(Match m)
+        {
+            if (m.Groups["comment"].Success) return _comment;
+            if (m.Groups["string"].Success)  return _string;
+            if (m.Groups["keyword"].Success) return _keyword;
+            if (m.Groups["type"].Success)    return _typeName;
+            if (m.Groups["number"].Success)  return _number;
+            return null;
+        }
+    }
+
+    // ────────────────────────────────────────────────────────────────────────────
+    // Per-language regex patterns
+    // ────────────────────────────────────────────────────────────────────────────
+
+    internal sealed class LanguagePattern
+    {
+        private static readonly Dictionary<string, LanguagePattern> _registry =
+            new Dictionary<string, LanguagePattern>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["csharp"]     = new LanguagePattern(BuildCSharp()),
+                ["c#"]         = new LanguagePattern(BuildCSharp()),
+                ["fsharp"]     = new LanguagePattern(BuildFSharp()),
+                ["f#"]         = new LanguagePattern(BuildFSharp()),
+                ["javascript"] = new LanguagePattern(BuildJavaScript()),
+                ["js"]         = new LanguagePattern(BuildJavaScript()),
+                ["typescript"] = new LanguagePattern(BuildTypeScript()),
+                ["ts"]         = new LanguagePattern(BuildTypeScript()),
+                ["python"]     = new LanguagePattern(BuildPython()),
+                ["powershell"] = new LanguagePattern(BuildPowerShell()),
+                ["pwsh"]       = new LanguagePattern(BuildPowerShell()),
+                ["sql"]        = new LanguagePattern(BuildSql()),
+                ["html"]       = new LanguagePattern(BuildHtml()),
+            };
+
+        public Regex Pattern { get; }
+
+        private LanguagePattern(Regex pattern) => Pattern = pattern;
+
+        public static LanguagePattern Get(string kernelName)
+        {
+            if (string.IsNullOrEmpty(kernelName)) return null;
+            _registry.TryGetValue(kernelName, out var lang);
+            return lang;
+        }
+
+        // ── C# ──────────────────────────────────────────────────────────────
+
+        private static Regex BuildCSharp() => new Regex(
+            @"(?<comment>//[^\n]*|/\*[\s\S]*?\*/)" +
+            @"|(?<string>@""(?:""""|[^""])*""|""(?:\\.|[^""\\])*""|'(?:\\.|[^'\\])')" +
+            @"|(?<type>\b(?:bool|byte|char|decimal|double|float|int|long|object|sbyte|short|string|uint|ulong|ushort|var|dynamic|nint|nuint)\b)" +
+            @"|(?<keyword>\b(?:abstract|as|async|await|base|break|case|catch|checked|class|const|continue|default|delegate|do|else|enum|event|explicit|extern|false|finally|fixed|for|foreach|goto|if|implicit|in|interface|internal|is|lock|namespace|new|null|operator|out|override|params|private|protected|public|readonly|record|ref|required|return|sealed|sizeof|stackalloc|static|struct|switch|this|throw|true|try|typeof|unchecked|unsafe|using|virtual|void|volatile|when|where|while|yield|global|init|nameof)\b)" +
+            @"|(?<number>\b(?:0[xX][0-9a-fA-F_]+[uUlL]{0,2}|0[bB][01_]+[uUlL]{0,2}|\d[\d_]*(?:\.[\d_]+)?(?:[eE][+-]?\d+)?[fFdDmMuUlL]{0,2})\b)",
+            RegexOptions.Compiled | RegexOptions.Multiline);
+
+        // ── F# ──────────────────────────────────────────────────────────────
+
+        private static Regex BuildFSharp() => new Regex(
+            @"(?<comment>//[^\n]*|\(\*[\s\S]*?\*\))" +
+            @"|(?<string>""""""[\s\S]*?""""""|""(?:\\.|[^""\\])*"")" +
+            @"|(?<type>\b(?:bool|byte|char|decimal|double|float|float32|int|int16|int32|int64|sbyte|single|string|uint|uint16|uint32|uint64|unit|bigint|nativeint|unativeint)\b)" +
+            @"|(?<keyword>\b(?:abstract|and|as|assert|base|begin|class|default|delegate|do|done|downcast|downto|elif|else|end|exception|extern|false|finally|for|fun|function|global|if|in|inherit|inline|interface|internal|lazy|let|match|member|module|mutable|namespace|new|not|null|of|open|or|override|private|public|rec|return|static|struct|then|to|true|try|type|upcast|use|val|void|when|while|with|yield)\b)" +
+            @"|(?<number>\b(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|\d[\d_]*(?:\.[\d_]+)?(?:[eE][+-]?\d+)?)[ysnlLfFmM]?\b)",
+            RegexOptions.Compiled | RegexOptions.Multiline);
+
+        // ── JavaScript ──────────────────────────────────────────────────────
+
+        private static Regex BuildJavaScript() => new Regex(
+            @"(?<comment>//[^\n]*|/\*[\s\S]*?\*/)" +
+            @"|(?<string>`(?:\\.|[^`\\])*`|""(?:\\.|[^""\\])*""|'(?:\\.|[^'\\])*')" +
+            @"|(?<keyword>\b(?:async|await|break|case|catch|class|const|continue|debugger|default|delete|do|else|export|extends|false|finally|for|from|function|get|if|import|in|instanceof|let|new|null|of|return|set|static|super|switch|this|throw|true|try|typeof|undefined|var|void|while|with|yield)\b)" +
+            @"|(?<number>\b(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|\d[\d_]*(?:\.[\d_]+)?(?:[eE][+-]?\d+)?n?)\b)",
+            RegexOptions.Compiled | RegexOptions.Multiline);
+
+        // ── TypeScript ──────────────────────────────────────────────────────
+
+        private static Regex BuildTypeScript() => new Regex(
+            @"(?<comment>//[^\n]*|/\*[\s\S]*?\*/)" +
+            @"|(?<string>`(?:\\.|[^`\\])*`|""(?:\\.|[^""\\])*""|'(?:\\.|[^'\\])*')" +
+            @"|(?<type>\b(?:any|boolean|never|number|object|string|symbol|unknown|bigint)\b)" +
+            @"|(?<keyword>\b(?:abstract|as|async|await|break|case|catch|class|const|continue|debugger|declare|default|delete|do|else|enum|export|extends|false|finally|for|from|function|get|if|implements|import|in|instanceof|interface|keyof|let|module|namespace|new|null|of|package|private|protected|public|readonly|require|return|set|static|super|switch|this|throw|true|try|type|typeof|undefined|var|void|while|with|yield)\b)" +
+            @"|(?<number>\b(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|\d[\d_]*(?:\.[\d_]+)?(?:[eE][+-]?\d+)?n?)\b)",
+            RegexOptions.Compiled | RegexOptions.Multiline);
+
+        // ── Python ──────────────────────────────────────────────────────────
+
+        private static Regex BuildPython() => new Regex(
+            @"(?<comment>#[^\n]*)" +
+            @"|(?<string>""""""[\s\S]*?""""""|'''[\s\S]*?'''|""(?:\\.|[^""\\])*""|'(?:\\.|[^'\\])*')" +
+            @"|(?<type>\b(?:bool|bytes|bytearray|complex|dict|float|frozenset|int|list|memoryview|object|range|set|str|tuple|type)\b)" +
+            @"|(?<keyword>\b(?:False|None|True|and|as|assert|async|await|break|class|continue|def|del|elif|else|except|finally|for|from|global|if|import|in|is|lambda|nonlocal|not|or|pass|raise|return|try|while|with|yield)\b)" +
+            @"|(?<number>\b(?:0[xX][0-9a-fA-F_]+|0[bB][01_]+|0[oO][0-7_]+|\d[\d_]*(?:\.[\d_]+)?(?:[eE][+-]?\d+)?j?)\b)",
+            RegexOptions.Compiled | RegexOptions.Multiline);
+
+        // ── PowerShell ──────────────────────────────────────────────────────
+
+        private static Regex BuildPowerShell() => new Regex(
+            @"(?<comment>#[^\n]*|<#[\s\S]*?#>)" +
+            @"|(?<string>@""[\s\S]*?""@|@'[\s\S]*?'@|""(?:`.|[^""`])*""|'[^']*')" +
+            @"|(?<type>\$[a-zA-Z_]\w*)" +
+            @"|(?<keyword>\b(?:begin|break|catch|class|continue|data|define|do|dynamicparam|else|elseif|end|enum|exit|filter|finally|for|foreach|from|function|hidden|if|in|param|process|return|static|switch|throw|trap|try|until|using|var|while)\b)" +
+            @"|(?<number>\b(?:0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?(?:[eE][+-]?\d+)?(?:kb|mb|gb|tb|pb)?)\b)",
+            RegexOptions.Compiled | RegexOptions.Multiline | RegexOptions.IgnoreCase);
+
+        // ── SQL ─────────────────────────────────────────────────────────────
+
+        private static Regex BuildSql() => new Regex(
+            @"(?<comment>--[^\n]*|/\*[\s\S]*?\*/)" +
+            @"|(?<string>'(?:''|[^'])*'|N'(?:''|[^'])*')" +
+            @"|(?<type>\b(?:INT|INTEGER|BIGINT|SMALLINT|TINYINT|BIT|DECIMAL|NUMERIC|FLOAT|REAL|MONEY|CHAR|VARCHAR|NCHAR|NVARCHAR|TEXT|NTEXT|DATE|DATETIME|DATETIME2|TIME|TIMESTAMP|BINARY|VARBINARY|IMAGE|XML|UNIQUEIDENTIFIER|SQL_VARIANT|CURSOR)\b)" +
+            @"|(?<keyword>\b(?:SELECT|FROM|WHERE|AND|OR|NOT|INSERT|INTO|VALUES|UPDATE|SET|DELETE|CREATE|TABLE|ALTER|DROP|INDEX|VIEW|JOIN|INNER|LEFT|RIGHT|OUTER|FULL|ON|AS|ORDER|BY|GROUP|HAVING|DISTINCT|UNION|ALL|EXISTS|IN|BETWEEN|LIKE|IS|NULL|COUNT|SUM|AVG|MIN|MAX|CASE|WHEN|THEN|ELSE|END|DECLARE|BEGIN|COMMIT|ROLLBACK|EXEC|EXECUTE|PROCEDURE|FUNCTION|TRIGGER|TOP|LIMIT|OFFSET|PRIMARY|KEY|FOREIGN|REFERENCES|CONSTRAINT|DEFAULT|CHECK|UNIQUE|IDENTITY|WITH|GO|USE|PRINT|IF|WHILE|RETURN|GRANT|REVOKE|DENY|CROSS|ASC|DESC|DATABASE|SCHEMA)\b)" +
+            @"|(?<number>\b\d+(?:\.\d+)?\b)",
+            RegexOptions.Compiled | RegexOptions.Multiline | RegexOptions.IgnoreCase);
+
+        // ── HTML ────────────────────────────────────────────────────────────
+
+        private static Regex BuildHtml() => new Regex(
+            @"(?<comment><!--[\s\S]*?-->)" +
+            @"|(?<string>""[^""]*""|'[^']*')" +
+            @"|(?<type>\b[a-zA-Z\-]+(?=\s*=))" +
+            @"|(?<keyword></?[a-zA-Z][a-zA-Z0-9]*\b|/?>)",
+            RegexOptions.Compiled | RegexOptions.Multiline);
+    }
+}

@@ -189,6 +189,9 @@ namespace PolyglotNotebooks.Editor
                 // Get the MEF ITextBuffer for event subscription and content type changes
                 var buffer = editorAdapterFactory.GetDataBuffer((IVsTextBuffer)bufferAdapter);
 
+                // Mark buffer as a notebook cell so the MEF classifier engages
+                buffer.Properties.AddProperty("PolyglotNotebook.KernelName", cell.KernelName ?? "text");
+
                 // Ensure the data buffer has the correct content type
                 // (CreateVsTextBufferAdapter may not always propagate to the data buffer)
                 if (buffer.ContentType.TypeName != contentType.TypeName)
