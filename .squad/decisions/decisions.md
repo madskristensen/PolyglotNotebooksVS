@@ -218,3 +218,152 @@ Three IWpfTextViewHost runtime issues were blocking editor usability:
 - P3 IntelliSense wiring (relies on ITextDocument for classification)
 
 *Decisions merged from inbox by Scribe, 2026-03-28T01:56:49Z*
+
+---
+
+## Decision 6: Performance & Reliability Audit Findings (Theo — Threading Specialist)
+
+**Date**: 2026-07-21  
+**Lead**: Theo (Threading & Reliability Engineer)  
+**Status**: AUDIT COMPLETE — Findings documented, no code changes made  
+**Type**: Quality Assurance / Audit Report
+
+### Context
+
+Full audit of the PolyglotNotebooksVS codebase covering async/threading patterns, timeout handling, error recovery, startup performance, runtime execution, and resource management. 48 hand-authored source files reviewed across 8 modules.
+
+### Summary
+
+Overall assessment: **The codebase is well-structured with strong threading discipline**. The `JoinableTaskFactory` patterns are correctly applied throughout. There are several issues of varying severity documented below.
+
+### Findings by Severity
+
+**🔴 CRITICAL (1)**
+- **C1**: `.Result` blocking call in `KernelNotInstalledDialog.cs:178` — violates Decision #2 (no `.Result`)
+
+**🟠 HIGH (5)**
+- **H1**: `JoinableTaskFactory.Run()` blocks UI thread during `LoadDocData` (installation check + process spawn)
+- **H2**: `CancellationTokenRegistration` leaks in `EventObserver.cs:143, 154` (not disposed)
+- **H3**: Missing `CancellationToken` parameter in `StopAsync` (`KernelProcessManager.cs`)
+- **H4**: Fire-and-forget `AutoRestartAsync` without `JoinableTaskFactory` (`KernelProcessManager.cs:296`)
+- **H5**: `Process` leak in `KernelInstallationDetector.cs:100-128` (not disposed)
+
+**🟡 MEDIUM (6)**
+- **M1**: Dual timeout inconsistency (30s KernelClient vs 60s EventObserver)
+- **M2**: Uncancelled `Task.Delay` timer on timeout path in `EventObserver.cs:157`
+- **M3**: `NotebookDocumentManager` not thread-safe (`_openDocuments` plain Dictionary)
+- **M4**: `VariableService` singleton initialization not synchronized
+- **M5**: `Subject<T>.OnNext` can throw, skipping remaining observers
+- **M6**: Full cell rebuild on every collection change (O(N) destruction)
+
+**🟢 LOW (4)**
+- **L1**: Sequential `JoinableTaskFactory.Run` calls in `LoadDocData` (lines 79, 104)
+- **L2**: `DispatcherTimer` not stopped during rapid document switches
+- **L3**: Hardcoded exponential backoff values (1s, 2s, 4s)
+- **L4**: `KernelInfoCache.KernelsChanged` uses `Action?` instead of `EventHandler`
+
+### Positive Patterns
+
+1. **JoinableTaskFactory used correctly** throughout; fire-and-forget via `JoinableTaskFactory.RunAsync()`
+2. **ConfigureAwait(false) consistently applied** after leaving UI thread
+3. **SemaphoreSlim(1,1) serialization** correct in KernelClient, ExecutionCoordinator, CellExecutionEngine
+4. **Proper disposal cascade** — event handlers unsubscribed in Close/Dispose
+5. **ExtensionLogger JIT-safety pattern** prevents JIT failures in test runner
+6. **Crash recovery with exponential backoff** well-implemented (1s → 2s → 4s)
+7. **Lock-free StdinPingTimer** uses Interlocked-based state correctly
+8. **Timeout protection** in both KernelClient (30s) and EventObserver (60s)
+
+### Recommendations (Priority Order)
+
+1. Fix **C1** — trivial `.Result` → already-awaited value (5-min fix)
+2. Fix **H1** — cache installation detection at package init to unblock LoadDocData
+3. Fix **H2** — dispose CancellationTokenRegistrations in EventObserver
+4. Fix **H5** — dispose Process in KernelInstallationDetector
+5. Address **M1** — unify timeout strategy between KernelClient and EventObserver
+6. Address **M5** — wrap observer.OnNext in try/catch in Subject<T>
+
+### Related Work
+
+- Decision 7: Loading & Execution Pipeline Architecture Audit (Vince)
+- Decision 2: Variable Explorer Architecture (threading implications)
+- All threading patterns follow VS SDK guidelines and Decision #2
+
+---
+
+## Decision 7: Loading & Execution Pipeline Architecture Audit (Vince — Architect)
+
+**Date**: 2026-07-15  
+**Lead**: Vince (Extension Architect)  
+**Requested by**: Brady Gaster  
+**Status**: AUDIT COMPLETE — Findings documented  
+**Type**: Architecture / Performance Analysis
+
+### Context
+
+Thorough source-level audit of the full loading → editing → execution pipeline. Reviewed all initialization paths, cell rendering, kernel lifecycle, and MEF composition. Identified **6 High-impact**, **4 Medium-impact**, and **4 Low-impact** findings.
+
+### Executive Summary
+
+**Biggest performance risks**:
+1. Aggressive package auto-load (loads on every VS startup)
+2. UI-thread-blocking installation detection during document load
+3. Non-virtualized cell rendering creating N HWNDs for N cells
+4. Full rebuild of all cells on any single cell collection change
+
+### Findings by Impact
+
+**HIGH-IMPACT BOTTLENECKS (6)**
+
+- **Finding 1**: Triple `[ProvideAutoLoad]` — package loads on NoSolution, SolutionExists, FolderOpened (should be removed; on-demand via ProvideEditorExtension)
+- **Finding 4**: Synchronous `dotnet tool list -g` blocks UI thread in `LoadDocData`
+- **Finding 7**: Per-cell `IVsCodeWindow` creation — N cells = N HWNDs, N MEF service lookups
+- **Finding 8**: Full cell rebuild on any collection change — adding one cell destroys/recreates all
+- **Finding 9**: `WebView2` instance per HTML output (expensive initialization per render)
+- **Finding 15**: No cell virtualization — `StackPanel` materializes all cells simultaneously
+
+**MEDIUM-IMPACT ISSUES (4)**
+
+- **Finding 2**: `VariableService` singleton created on every VS startup
+- **Finding 5**: File I/O on UI thread during document load (large .ipynb files hang)
+- **Finding 13**: Classifier provider fires for all text buffers in entire IDE
+- **Finding 16**: Temp file accumulation without cleanup
+
+**LOW-IMPACT (4)**
+
+- **Finding 6**: Eager infrastructure construction (acceptable pattern)
+- **Finding 12**: Lazy kernel start is POSITIVE — no process if user only views notebook
+- **Finding 17**: Regex recompilation in markdown formatting
+- **Finding 18**: Reflection usage for ReturnValueElement (fragile but one-time cost)
+
+### Positive Architecture Notes
+
+- **Kernel lifecycle**: Correctly lazy — process only starts on first execution
+- **Crash recovery**: Exponential backoff well-implemented (1s → 2s → 4s, 3 max attempts)
+- **Threading model**: Consistent `JoinableTaskFactory` throughout
+- **Protocol layer**: Clean stdin/stdout JSON-lines with proper event correlation via tokens
+- **MEF footprint**: Minimal — one export, no circular dependencies, no eager composition
+- **Model/view separation**: `NotebookDocument`/`NotebookCell` clean and independent from UI
+
+### Quick Wins (Easy, High/Medium Impact)
+
+1. Remove `[ProvideAutoLoad]` attributes (~5 min, HIGH impact)
+2. Defer `VariableService.Initialize()` to first notebook open (~5 min)
+3. Cache MEF services as statics in CellControl (~15 min)
+4. Cache Regex in `AddInlineFormatting` (~2 min)
+
+### Medium-Effort, High-Impact
+
+5. Defer installation detection to background task (~30 min)
+6. Incremental cell collection updates instead of full rebuild (~45 min)
+
+### Hard, Transformative
+
+7. Cell virtualization (2-3 days) — requires replacing `StackPanel` with virtualization-capable control
+8. WebView2 environment sharing (1 day) — pool `CoreWebView2Environment` across outputs
+
+### Related Work
+
+- Decision 6: Performance & Reliability Audit (Theo) — overlaps on H1/Finding 4 (LoadDocData blocking)
+- Decision 3: WebView2CompositionControl (airspace fix, separate initiative)
+
+*Audit findings merged from inbox by Scribe, 2026-03-28T14:26:00Z*

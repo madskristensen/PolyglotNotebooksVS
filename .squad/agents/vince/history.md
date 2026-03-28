@@ -229,6 +229,87 @@
 
 ---
 
+## Learnings (2026-07-15 — Loading & Execution Pipeline Audit)
+
+### Architecture Bottlenecks Identified
+- **ProvideAutoLoad triple-fire**: Package loads on NoSolution, SolutionExists, and FolderOpened — should be removed; editor factory registration auto-loads on .dib/.ipynb open.
+- **UI-thread blocking in LoadDocData**: `KernelInstallationDetector.IsInstalledAsync()` spawns `dotnet tool list -g` synchronously on UI thread via `JoinableTaskFactory.Run()`. Must be deferred.
+- **No cell virtualization**: `NotebookControl` uses `StackPanel` — all cells materialized simultaneously. N cells = N IVsCodeWindow HWNDs.
+- **Full rebuild on collection change**: `RebuildCells()` called on every `NotifyCollectionChangedEventArgs` — adding one cell destroys/recreates all.
+- **Per-cell temp files**: `CellControl.GetFakeFileName()` creates `%TEMP%\PolyglotNotebooks\cell_N.ext` but never cleans up.
+
+### Positive Architecture Patterns
+- Kernel lifecycle is correctly lazy — `EnsureKernelStartedAsync()` defers process start to first execution.
+- Crash recovery uses exponential backoff (1s/2s/4s) with 3 max attempts, reset on success.
+- Protocol layer (stdin/stdout JSON-lines) is clean with proper event correlation via token-based `EventObserver`.
+- MEF footprint is minimal — one export (`NotebookClassifierProvider`), no circular deps.
+- Model/view separation (`NotebookDocument`/`NotebookCell` vs UI controls) is clean.
+
+### Key File Paths for Performance Work
+- Package entry/auto-load: `src/PolyglotNotebooksPackage.cs:14-16`
+- Installation check (UI block): `src/Editor/NotebookEditorPane.cs:79-100`
+- Cell construction (HWND creation): `src/Editor/CellControl.cs:163-342`
+- Cell rebuild (full destroy/recreate): `src/Editor/NotebookControl.cs:289, 302-352`
+- WebView2 per-output: `src/Editor/OutputControl.cs:227-250`, `src/Editor/WebView2OutputHost.cs:65-101`
+- Classifier broad registration: `src/Editor/SyntaxHighlighting/NotebookClassifierProvider.cs:19`
+- Temp file accumulation: `src/Editor/CellControl.cs:389-391`
+
+### Priority Fixes (Ordered by Impact/Effort Ratio)
+1. Remove `[ProvideAutoLoad]` attributes (Easy, High impact)
+2. Defer `VariableService.Initialize()` to first notebook open (Easy, Medium impact)
+3. Cache MEF services as statics in CellControl (Easy, High impact)
+4. Defer installation detection to background/first-execution (Medium, High impact)
+5. Incremental cell collection updates instead of full rebuild (Medium, High impact)
+6. Cell virtualization (Hard, Transformative)
+
+### Decision Written
+- `.squad/decisions/inbox/vince-loading-architecture-audit.md` — full audit with 18 findings
+
+---
+
+## 2026-07-15 — Loading & Execution Pipeline Audit
+
+**Status**: COMPLETE ✅ — Report delivered, recommendations documented
+
+**What Was Done**: Thorough source-level audit of full loading → editing → execution pipeline. Reviewed all initialization paths, cell rendering, kernel lifecycle, and MEF composition.
+
+**Key Findings (18 total)**:
+- **6 High-impact**: Auto-load triple-fire, installation check blocks UI, per-cell HWNDs, full rebuild on collection change, WebView2 per output, no cell virtualization
+- **4 Medium-impact**: VariableService singleton creation, file I/O on UI thread, classifier broad registration, temp file accumulation
+- **4 Low-impact**: Eager infrastructure (acceptable), lazy kernel (POSITIVE), regex recompilation, reflection usage
+- **4 Positive patterns**: Lazy kernel, crash recovery, protocol layer, MEF simplicity
+
+**Quick Wins** (Easy, High/Medium Impact):
+1. Remove `[ProvideAutoLoad]` attributes (5 min, HIGH impact)
+2. Defer `VariableService.Initialize()` (5 min)
+3. Cache MEF services (15 min)
+4. Cache Regex (2 min)
+
+**Medium-Effort, High-Impact**:
+5. Defer installation detection to background (30 min)
+6. Incremental cell updates instead of full rebuild (45 min)
+
+**Hard, Transformative**:
+7. Cell virtualization (2-3 days)
+8. WebView2 environment sharing (1 day)
+
+**Architecture Insights**:
+- LoadDocData is the bottleneck — two sequential JTF.Run calls block UI thread
+- Installation check spawns `dotnet tool list -g` synchronously (can take seconds on cold start)
+- StackPanel materializes all cells — N cells = N HWNDs even if not visible
+- Every cell collection change (add/remove/move) destroys and recreates entire UI tree
+- WebView2 per output expensive (CoreWebView2Environment creation per host)
+- Classifier registration fires for all text buffers in entire IDE
+
+**Cross-Audit Synergy** (with Theo/Decision 6):
+- **H1 (Theo) + Finding 4 (Vince)** — LoadDocData blocking on installation check
+- Both recommend deferring detection and caching services
+- Unified remediation roadmap needed post-triage
+
+**Decision File**: Decision 7 merged to decisions.md
+
+---
+
 ## 2026-03-27 — Decision 10: View Code / View Designer Logical View Strategy
 
 **Context**: Ellie completed F7/Shift+F7 logical view switching feature for .dib/.ipynb files.

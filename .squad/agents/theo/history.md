@@ -218,3 +218,35 @@
 **Impact on Theo**: No new threading patterns required. PreProcessMessage is a synchronous VS framework call; no JoinableTaskFactory needed. ITextDocument creation is synchronous. Build verified clean with existing test suite; no test changes required.
 
 **Related Decision**: Decision 5 — Keyboard Input & Syntax Highlighting Fix (merged to decisions.md)
+
+---
+
+## 2026-07-21 — Performance & Reliability Audit
+
+**Status**: COMPLETE ✅ — Report delivered, no code changes made
+
+**What Was Done**: Full audit of 48 source files across all 8 modules. Reviewed every async/await pattern, timeout, error handler, disposal path, and initialization flow.
+
+**Key Findings (16 total)**:
+- 1 Critical: `.Result` in KernelNotInstalledDialog.cs:178 (safe but violates Decision #2)
+- 5 High: UI-blocking LoadDocData installation check, CancellationTokenRegistration leaks in EventObserver, missing CT in StopAsync, non-JTF fire-and-forget in AutoRestartAsync, Process leak in KernelInstallationDetector
+- 6 Medium: Dual timeout inconsistency (30s vs 60s), uncancelled Task.Delay, non-thread-safe NotebookDocumentManager, VariableService singleton race, Subject<T>.OnNext exception propagation, full UI rebuild on every cell change
+- 4 Low: Sequential JTF.Run in LoadDocData, DispatcherTimer not stopped during detach, hardcoded backoff, Action vs EventHandler convention
+
+**Positive Patterns Confirmed**:
+- JoinableTaskFactory used correctly across all fire-and-forget sites
+- ConfigureAwait(false) applied consistently after leaving UI thread
+- SemaphoreSlim(1,1) serialization pattern correct in KernelClient, ExecutionCoordinator, CellExecutionEngine
+- Disposal cascade properly unsubscribes all event handlers
+- ExtensionLogger JIT-safety pattern working as designed
+- Crash recovery with exponential backoff well-implemented
+
+**Architecture Insights**:
+- LoadDocData is the performance bottleneck — two sequential JTF.Run calls (installation detect + document parse) block the UI thread
+- EventObserver has its own 60s timeout independent of KernelClient's 30s CommandTimeoutMs — needs unification
+- NotebookControl.RebuildCells does full UI rebuild on every cell collection change — consider incremental updates for notebooks with many cells
+- CancellationToken propagation is good in execution paths but missing in StopAsync and some lifecycle methods
+
+**Decision File**: Decision 6 merged to decisions.md
+
+---
