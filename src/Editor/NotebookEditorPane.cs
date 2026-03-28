@@ -1,4 +1,5 @@
 using Microsoft.VisualStudio;
+using Microsoft.VisualStudio.OLE.Interop;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Text.Editor;
@@ -9,9 +10,6 @@ using PolyglotNotebooks.Kernel;
 using PolyglotNotebooks.Models;
 using System;
 using System.IO;
-using System.Runtime.InteropServices;
-using System.Windows.Input;
-using System.Windows.Interop;
 
 namespace PolyglotNotebooks.Editor
 {
@@ -19,13 +17,8 @@ namespace PolyglotNotebooks.Editor
     /// Custom editor pane that hosts the notebook WPF UI and manages document persistence.
     /// Serves as both the view (IVsWindowPane via WindowPane) and the document data (IVsPersistDocData).
     /// </summary>
-    public sealed class NotebookEditorPane : WindowPane, IVsPersistDocData
+    public sealed class NotebookEditorPane : WindowPane, IVsPersistDocData, IOleCommandTarget
     {
-        [DllImport("user32.dll")]
-        private static extern IntPtr GetFocus();
-
-        [DllImport("user32.dll")]
-        private static extern IntPtr SetFocus(IntPtr hWnd);
 
         // GUID of NotebookEditorFactory — returned by GetGuidEditorType.
         private static readonly Guid EditorFactoryGuid = new Guid("52746fdf-4a26-4633-a712-74470fe70bd4");
@@ -328,41 +321,84 @@ namespace PolyglotNotebooks.Editor
             return VSConstants.S_OK;
         }
 
+        // ── IOleCommandTarget ─────────────────────────────────────────────────────
+
+        int IOleCommandTarget.Exec(ref Guid pguidCmdGroup, uint nCmdID, uint nCmdexecopt, IntPtr pvaIn, IntPtr pvaOut)
+        {
+            if (_control != null && _control.IsKeyboardFocusWithin)
+            {
+                var cmdTarget = _control.GetFocusedCommandTarget();
+                if (cmdTarget != null)
+                    return cmdTarget.Exec(ref pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
+            }
+            return (int)Microsoft.VisualStudio.OLE.Interop.Constants.OLECMDERR_E_NOTSUPPORTED;
+        }
+
+        int IOleCommandTarget.QueryStatus(ref Guid pguidCmdGroup, uint cCmds, OLECMD[] prgCmds, IntPtr pCmdText)
+        {
+            if (_control != null && _control.IsKeyboardFocusWithin)
+            {
+                var cmdTarget = _control.GetFocusedCommandTarget();
+                if (cmdTarget != null)
+                    return cmdTarget.QueryStatus(ref pguidCmdGroup, cCmds, prgCmds, pCmdText);
+            }
+            return (int)Microsoft.VisualStudio.OLE.Interop.Constants.OLECMDERR_E_NOTSUPPORTED;
+        }
+
         // ── Keyboard routing ──────────────────────────────────────────────────────
 
         /// <summary>
-        /// Route keyboard messages to the hosted WPF text view when it has focus.
-        /// VS's default message loop intercepts keyboard messages for accelerator
-        /// pre-translation (global keybindings). We return false to let the message
-        /// flow through normal Win32 dispatch (TranslateMessage + DispatchMessage),
-        /// but we must first ensure Win32 focus is on the HwndSource that hosts the
-        /// text view — otherwise DispatchMessage sends the message to VS's frame HWND.
+        /// Translates keyboard messages using VS's accelerator service so that editor
+        /// key bindings (IntelliSense, navigation, etc.) are properly dispatched.
+        /// IVsCodeWindow manages its own HWND focus, so no manual Win32 SetFocus needed.
         /// </summary>
         protected override bool PreProcessMessage(ref System.Windows.Forms.Message m)
         {
             // WM_KEYDOWN (0x100) through WM_UNICHAR (0x109)
             if (m.Msg >= 0x0100 && m.Msg <= 0x0109)
             {
-                if (_control != null)
+                if (_control != null && _control.IsKeyboardFocusWithin)
                 {
-                    var textView = _control.GetFocusedTextView();
-                    if (textView != null)
+                    IVsFilterKeys2 filterKeys = (IVsFilterKeys2)GetService(typeof(SVsFilterKeys));
+                    if (filterKeys != null)
                     {
-                        // Ensure Win32 focus is on the HwndSource hosting the text view.
-                        // Without this, DispatchMessage sends the key to VS's frame.
-                        var hwndSource = System.Windows.PresentationSource.FromVisual(textView.VisualElement) as HwndSource;
-                        if (hwndSource != null && hwndSource.Handle != IntPtr.Zero)
+                        MSG oleMSG = new MSG()
                         {
-                            if (GetFocus() != hwndSource.Handle)
-                            {
-                                SetFocus(hwndSource.Handle);
-                                // Re-assert WPF focus since SetFocus may have moved it
-                                Keyboard.Focus(textView.VisualElement);
-                            }
-                        }
+                            hwnd = m.HWnd,
+                            message = (uint)m.Msg,
+                            wParam = m.WParam,
+                            lParam = m.LParam
+                        };
 
-                        // Don't pre-process — let VS call TranslateMessage + DispatchMessage
-                        return false;
+                        Guid cmdGuid;
+                        uint cmdId;
+                        int fTranslated;
+                        int fStartsMultiKeyChord;
+
+                        int res = filterKeys.TranslateAcceleratorEx(
+                            new MSG[] { oleMSG },
+                            (uint)__VSTRANSACCELEXFLAGS.VSTAEXF_UseTextEditorKBScope,
+                            0,
+                            new Guid[0],
+                            out cmdGuid,
+                            out cmdId,
+                            out fTranslated,
+                            out fStartsMultiKeyChord);
+
+                        if (fStartsMultiKeyChord == 0)
+                        {
+                            res = filterKeys.TranslateAcceleratorEx(
+                                new MSG[] { oleMSG },
+                                (uint)(__VSTRANSACCELEXFLAGS.VSTAEXF_NoFireCommand | __VSTRANSACCELEXFLAGS.VSTAEXF_UseTextEditorKBScope),
+                                0,
+                                new Guid[0],
+                                out cmdGuid,
+                                out cmdId,
+                                out fTranslated,
+                                out fStartsMultiKeyChord);
+                            return (res == VSConstants.S_OK);
+                        }
+                        return (res == VSConstants.S_OK) || (fStartsMultiKeyChord != 0);
                     }
                 }
             }

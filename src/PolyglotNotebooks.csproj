@@ -69,6 +69,9 @@
     <PackageReference Include="Community.VisualStudio.Toolkit.17" Version="17.0.549" ExcludeAssets="Runtime">
       <IncludeAssets>compile; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="Microsoft.VisualStudio.TextManager.Interop.8.0" Version="17.14.40260" ExcludeAssets="Runtime">
+      <IncludeAssets>compile; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
     <PackageReference Include="Microsoft.VSSDK.BuildTools" Version="17.14.2120">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
@@ -88,6 +91,8 @@
     <Compile Include="Editor\NotebookEditorFactory.cs" />
     <Compile Include="Editor\NotebookEditorPane.cs" />
     <Compile Include="Editor\NotebookToolbar.cs" />
+    <Compile Include="Editor\SyntaxHighlighting\SyntaxHighlightAdorner.cs" />
+    <Compile Include="Editor\SyntaxHighlighting\SyntaxTokenizer.cs" />
     <Compile Include="Editor\ThemedContextMenuHelper.cs" />
     <Compile Include="Editor\OutputControl.cs" />
     <Compile Include="Editor\WebView2OutputHost.cs" />

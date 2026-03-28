@@ -1,6 +1,9 @@
 using Microsoft.VisualStudio.ComponentModelHost;
+using Microsoft.VisualStudio.Editor;
+using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Editor;
+using Microsoft.VisualStudio.TextManager.Interop;
 using Microsoft.VisualStudio.Utilities;
 
 using PolyglotNotebooks.Diagnostics;
@@ -17,7 +20,6 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Input;
-using System.Windows.Interop;
 using System.Windows.Media;
 
 namespace PolyglotNotebooks.Editor
@@ -28,12 +30,11 @@ namespace PolyglotNotebooks.Editor
     /// </summary>
     internal sealed class CellControl : Border
     {
-        [DllImport("user32.dll")]
-        private static extern IntPtr SetFocus(IntPtr hWnd);
-
         private readonly NotebookCell _cell;
         private TextBox? _editor;
         private IWpfTextViewHost? _textViewHost;
+        private IVsTextView? _vsTextView;
+        private IVsCodeWindow? _codeWindow;
         private bool _suppressBufferSync;
 
         // Kernel name → VS content type mapping
@@ -124,6 +125,9 @@ namespace PolyglotNotebooks.Editor
         /// <summary>The hosted VS text view for code cells, or null for markdown cells.</summary>
         internal IWpfTextView? TextView { get; private set; }
 
+        /// <summary>The hosted IVsTextView for command forwarding, or null for markdown/fallback cells.</summary>
+        internal IVsTextView? VsTextView => _vsTextView;
+
         /// <summary>
         /// Returns true if this cell's hosted VS text view currently has aggregate keyboard focus.
         /// </summary>
@@ -160,17 +164,24 @@ namespace PolyglotNotebooks.Editor
             {
                 // Obtain MEF services for the VS editor
                 var componentModel = (IComponentModel)Package.GetGlobalService(typeof(SComponentModel));
-                var textEditorFactory = componentModel.GetService<ITextEditorFactoryService>();
-                var textBufferFactory = componentModel.GetService<ITextBufferFactoryService>();
+                var editorAdapterFactory = componentModel.GetService<IVsEditorAdaptersFactoryService>();
                 var contentTypeRegistry = componentModel.GetService<IContentTypeRegistryService>();
+
+                // Get OLE service provider (required by VS adapter factory)
+                var oleServiceProvider = GetOleServiceProvider();
 
                 // Resolve content type from kernel name
                 var contentType = ResolveContentType(contentTypeRegistry, cell.KernelName);
 
-                // Create text buffer and populate it
-                var buffer = textBufferFactory.CreateTextBuffer(cell.Contents ?? string.Empty, contentType);
+                // Create VS text buffer adapter (in-memory, no backing file needed)
+                var bufferAdapter = editorAdapterFactory.CreateVsTextBufferAdapter(oleServiceProvider, contentType);
+                var initialText = cell.Contents ?? string.Empty;
+                bufferAdapter.InitializeContent(initialText, initialText.Length);
 
-                // Associate a text document so language services (e.g. Roslyn) engage
+                // Get the MEF ITextBuffer for event subscription and content type changes
+                var buffer = editorAdapterFactory.GetDataBuffer((IVsTextBuffer)bufferAdapter);
+
+                // Associate a fake file document so Roslyn language services engage
                 var documentFactory = componentModel.GetService<ITextDocumentFactoryService>();
                 try
                 {
@@ -182,46 +193,47 @@ namespace PolyglotNotebooks.Editor
                         $"ITextDocument creation failed for kernel '{cell.KernelName}': {docEx.Message}");
                 }
 
-                // Create IWpfTextView with explicit roles to ensure editability
-                var roles = textEditorFactory.CreateTextViewRoleSet(
-                    PredefinedTextViewRoles.Editable,
-                    PredefinedTextViewRoles.Interactive,
-                    PredefinedTextViewRoles.Document,
-                    PredefinedTextViewRoles.Zoomable);
-                var textView = textEditorFactory.CreateTextView(buffer, roles);
+                // Create code window adapter — has its own HWND and IOleCommandTarget chain
+                var codeWindow = editorAdapterFactory.CreateVsCodeWindowAdapter(oleServiceProvider);
+
+                // Disable splitter bar (crashes in hosted/embedded scenarios)
+                var codeWindowEx = (IVsCodeWindowEx)codeWindow;
+                var initView = new INITVIEW[1];
+                codeWindowEx.Initialize(
+                    (uint)_codewindowbehaviorflags.CWB_DISABLESPLITTER,
+                    VSUSERCONTEXTATTRIBUTEUSAGE.VSUC_Usage_Filter,
+                    szNameAuxUserContext: "",
+                    szValueAuxUserContext: "",
+                    InitViewFlags: 0,
+                    pInitView: initView);
+
+                // Associate buffer with the code window
+                Microsoft.VisualStudio.ErrorHandler.ThrowOnFailure(
+                    codeWindow.SetBuffer((IVsTextLines)bufferAdapter));
+
+                // Get the primary text view (has its own HWND — keyboard input works natively)
+                IVsTextView vsTextView;
+                Microsoft.VisualStudio.ErrorHandler.ThrowOnFailure(
+                    codeWindow.GetPrimaryView(out vsTextView));
+
+                // Get the WPF host from the VS text view
+                var textViewHost = editorAdapterFactory.GetWpfTextViewHost(vsTextView);
+                var textView = textViewHost.TextView;
+
+                // Configure editor display options
                 textView.Options.SetOptionValue(DefaultTextViewOptions.WordWrapStyleId, WordWrapStyles.None);
                 textView.Options.SetOptionValue(DefaultTextViewHostOptions.LineNumberMarginId, false);
                 textView.Options.SetOptionValue(DefaultTextViewHostOptions.GlyphMarginId, false);
 
-                var host = textEditorFactory.CreateTextViewHost(textView, setFocus: false);
-                _textViewHost = host;
+                // Store references for cleanup and command forwarding
+                _textViewHost = textViewHost;
+                _vsTextView = vsTextView;
+                _codeWindow = codeWindow;
                 TextView = textView;
 
-                var hostControl = host.HostControl;
+                var hostControl = textViewHost.HostControl;
                 hostControl.MinHeight = minH;
                 hostControl.MaxHeight = maxH;
-                hostControl.Focusable = true;
-
-                // When the host or text view gets any kind of focus,
-                // ensure both Win32 and WPF focus are properly set.
-                // Order matters: Win32 SetFocus first, then WPF Keyboard.Focus.
-                hostControl.GotFocus += (s, e) =>
-                {
-                    var source = HwndSource.FromVisual(textView.VisualElement) as HwndSource;
-                    if (source != null)
-                        SetFocus(source.Handle);
-                    if (!textView.VisualElement.IsKeyboardFocusWithin)
-                        Keyboard.Focus(textView.VisualElement);
-                };
-
-                // On mouse click, grab focus immediately so keyboard input works
-                hostControl.PreviewMouseDown += (s, e) =>
-                {
-                    var source = HwndSource.FromVisual(textView.VisualElement) as HwndSource;
-                    if (source != null)
-                        SetFocus(source.Handle);
-                    Keyboard.Focus(textView.VisualElement);
-                };
 
                 // Two-way sync: Buffer → Model
                 buffer.Changed += (s, e) =>
@@ -256,7 +268,6 @@ namespace PolyglotNotebooks.Editor
                     }
                     else if (e.PropertyName == nameof(NotebookCell.KernelName))
                     {
-                        // Update content type when kernel changes
                         var newContentType = ResolveContentType(contentTypeRegistry, cell.KernelName);
                         if (buffer.ContentType != newContentType)
                             buffer.ChangeContentType(newContentType, editTag: null);
@@ -274,7 +285,10 @@ namespace PolyglotNotebooks.Editor
                 // Clean up when removed from visual tree
                 hostControl.Unloaded += (s, e) =>
                 {
-                    host.Close();
+                    _codeWindow?.Close();
+                    _codeWindow = null;
+                    _vsTextView?.CloseView();
+                    _vsTextView = null;
                 };
 
                 Grid.SetRow(hostControl, 1);
@@ -287,9 +301,9 @@ namespace PolyglotNotebooks.Editor
             catch (Exception ex)
             {
                 ExtensionLogger.LogException(nameof(CellControl),
-                    $"Failed to create IWpfTextViewHost for cell (kernel: {cell.KernelName})", ex);
+                    $"Failed to create IVsCodeWindow for cell (kernel: {cell.KernelName})", ex);
                 ActivityLog.LogError(nameof(CellControl),
-                    $"IWpfTextViewHost creation failed: {ex.Message}. Falling back to TextBox.");
+                    $"IVsCodeWindow creation failed: {ex.Message}. Falling back to TextBox.");
 
                 BuildCodeCellFallback(grid, cell, toolbar, fontFamily, fontSize, minH, maxH);
             }
@@ -346,8 +360,29 @@ namespace PolyglotNotebooks.Editor
         }
 
         /// <summary>
+        /// Retrieves the global OLE IServiceProvider, required by VS adapter factory methods.
+        /// </summary>
+        private static Microsoft.VisualStudio.OLE.Interop.IServiceProvider GetOleServiceProvider()
+        {
+            var objWithSite = (Microsoft.VisualStudio.OLE.Interop.IObjectWithSite)
+                Microsoft.VisualStudio.Shell.ServiceProvider.GlobalProvider;
+            Guid interfaceIID = typeof(Microsoft.VisualStudio.OLE.Interop.IServiceProvider).GUID;
+            IntPtr rawSP;
+            objWithSite.GetSite(ref interfaceIID, out rawSP);
+            try
+            {
+                return (Microsoft.VisualStudio.OLE.Interop.IServiceProvider)
+                    Marshal.GetObjectForIUnknown(rawSP);
+            }
+            finally
+            {
+                if (rawSP != IntPtr.Zero) Marshal.Release(rawSP);
+            }
+        }
+
+        /// <summary>
         /// Fallback code cell construction using a plain TextBox.
-        /// Used when IWpfTextViewHost creation fails at runtime.
+        /// Used when IVsCodeWindow creation fails at runtime.
         /// </summary>
         private void BuildCodeCellFallback(Grid grid, NotebookCell cell, CellToolbar toolbar,
             FontFamily fontFamily, double fontSize, double minH, double maxH)

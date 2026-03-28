@@ -1,5 +1,6 @@
 using Community.VisualStudio.Toolkit;
 using Microsoft.VisualStudio.Imaging;
+using Microsoft.VisualStudio.OLE.Interop;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Text.Editor;
 using PolyglotNotebooks.IntelliSense;
@@ -150,6 +151,20 @@ namespace PolyglotNotebooks.Editor
 
         /// <summary>Raised by the toolbar Clear All Outputs button.</summary>
         public event EventHandler? ClearAllOutputsRequested;
+
+        /// <summary>
+        /// Returns the IOleCommandTarget of the currently focused cell's IVsTextView,
+        /// or null if no cell has keyboard focus or no cell uses the IVsCodeWindow path.
+        /// </summary>
+        public IOleCommandTarget GetFocusedCommandTarget()
+        {
+            foreach (var child in _cellStack.Children)
+            {
+                if (child is CellControl cc && cc.HasFocusedTextView())
+                    return cc.VsTextView as IOleCommandTarget;
+            }
+            return null;
+        }
 
         /// <summary>
         /// Returns true if any hosted IWpfTextView currently has aggregate keyboard focus.
