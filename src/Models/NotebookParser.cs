@@ -24,6 +24,8 @@ namespace PolyglotNotebooks.Models
                 [".net-pwsh"]    = "pwsh",
                 [".net-javascript"] = "javascript",
                 [".net-sql"]     = "sql",
+                [".net-kql"]     = "kql",
+                ["kusto"]        = "kql",
                 ["c#"]           = "csharp",
                 ["f#"]           = "fsharp",
                 ["powershell"]   = "pwsh",
@@ -39,6 +41,7 @@ namespace PolyglotNotebooks.Models
             kernels.Add(new KernelInfo("javascript", "JavaScript", new[] { "js" }));
             kernels.Add(new KernelInfo("html", "HTML", Array.Empty<string>()));
             kernels.Add(new KernelInfo("sql", "SQL", Array.Empty<string>()));
+            kernels.Add(new KernelInfo("kql", "KQL", new[] { "kusto" }));
             kernels.Add(new KernelInfo("markdown", "Markdown", Array.Empty<string>()));
             return kernels;
         }

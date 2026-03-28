@@ -388,6 +388,9 @@ namespace PolyglotNotebooks.Execution
                     return "javascript";
                 case "sql":
                     return "sql";
+                case "kql":
+                case "kusto":
+                    return "kql";
                 case "pwsh":
                 case "powershell":
                     return "pwsh";

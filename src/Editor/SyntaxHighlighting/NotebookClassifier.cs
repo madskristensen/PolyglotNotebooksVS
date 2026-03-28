@@ -167,6 +167,8 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
                 ["powershell"] = new LanguagePattern(BuildPowerShell()),
                 ["pwsh"] = new LanguagePattern(BuildPowerShell()),
                 ["sql"] = new LanguagePattern(BuildSql()),
+                ["kql"] = new LanguagePattern(BuildKql()),
+                ["kusto"] = new LanguagePattern(BuildKql()),
                 ["html"] = new LanguagePattern(BuildHtml()),
             };
 
@@ -265,6 +267,17 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
             @"|(?<type>\b[a-zA-Z\-]+(?=\s*=))" +
             @"|(?<keyword></?[a-zA-Z][a-zA-Z0-9]*\b|/?>)",
             RegexOptions.Compiled | RegexOptions.Multiline,
+            TimeSpan.FromMilliseconds(250));
+
+        // ── KQL (Kusto Query Language) ──────────────────────────────────────
+
+        private static Regex BuildKql() => new Regex(
+            @"(?<comment>//[^\n]*)" +
+            @"|(?<string>""(?:\\.|[^""\\])*""|'(?:\\.|[^'\\])*'|@""(?:""""|[^""])*"")" +
+            @"|(?<type>\b(?:bool|datetime|decimal|dynamic|guid|int|long|real|string|timespan)\b)" +
+            @"|(?<keyword>\b(?:let|where|project|extend|summarize|count|sum|avg|min|max|take|limit|top|order|by|asc|desc|join|on|union|render|print|search|find|mv-expand|mv-apply|parse|evaluate|distinct|sort|as|between|contains|has|startswith|endswith|matches|regex|in|and|or|not|ago|now|bin|toscalar|datatable|range|materialize|externaldata|invoke|database|cluster|set|alias|restrict|access|pattern|declare|query_parameters|ingestion_time|pack|pack_all|bag_unpack|getschema|column_ifexists|iff|iif|case|coalesce|tostring|toint|tolong|todouble|todecimal|todatetime|totimespan|tobool|toguid|strlen|substring|trim|replace|split|strcat|strcat_delim|indexof|countof|extract|format_datetime|format_timespan|make_set|make_list|make_bag|arg_max|arg_min|any|dcount|dcountif|countif|sumif|avgif|percentile|percentiles|stdev|variance|hll|hll_merge|tdigest|tdigest_merge)\b)" +
+            @"|(?<number>\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)",
+            RegexOptions.Compiled | RegexOptions.Multiline | RegexOptions.IgnoreCase,
             TimeSpan.FromMilliseconds(250));
     }
 }

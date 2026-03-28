@@ -561,6 +561,7 @@ namespace PolyglotNotebooks.Editor
                 case "javascript": return "JS";
                 case "typescript": return "TS";
                 case "sql": return "SQL";
+                case "kql": return "KQL";
                 case "pwsh":
                 case "powershell": return "PS";
                 case "html": return "HTML";
@@ -577,6 +578,7 @@ namespace PolyglotNotebooks.Editor
             ("javascript", "JavaScript"),
             ("typescript", "TypeScript"),
             ("sql",        "SQL"),
+            ("kql",        "KQL"),
             ("pwsh",       "PowerShell"),
             ("python",     "Python")
         };

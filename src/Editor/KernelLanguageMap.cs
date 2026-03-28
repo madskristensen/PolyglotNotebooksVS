@@ -19,6 +19,7 @@ namespace PolyglotNotebooks.Editor
                 ["python"] = "Python",
                 ["powershell"] = "PowerShell",
                 ["sql"] = "SQL Server Tools",
+                ["kql"] = "plaintext",
                 ["html"] = "HTML",
                 ["markdown"] = "markdown"
             };
@@ -33,6 +34,7 @@ namespace PolyglotNotebooks.Editor
                 ["python"] = ".py",
                 ["powershell"] = ".ps1",
                 ["sql"] = ".sql",
+                ["kql"] = ".kql",
                 ["html"] = ".html",
                 ["markdown"] = ".md"
             };
