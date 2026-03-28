@@ -3,6 +3,7 @@ using Microsoft.VisualStudio.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using System;
+using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -112,6 +113,7 @@ namespace PolyglotNotebooks.Editor
 
             _isInitialized = true;
             _webView!.NavigationCompleted += OnNavigationCompleted;
+            _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
 
             if (_pendingContent != null)
                 NavigateToContent();
@@ -147,9 +149,50 @@ namespace PolyglotNotebooks.Editor
 
                     if (double.TryParse(result, out double contentHeight) && contentHeight > 0)
                         Height = Math.Min(contentHeight + 20, MaxContentHeight);
+
+                    // Inject overflow-aware wheel forwarding: only forward to notebook
+                    // when the WebView content can't scroll further in that direction.
+                    await _webView.CoreWebView2.ExecuteScriptAsync(@"
+                        if (!window.__polyglotWheelHooked) {
+                            window.__polyglotWheelHooked = true;
+                            document.addEventListener('wheel', function(e) {
+                                var el = document.documentElement;
+                                var canScrollDown = el.scrollTop + el.clientHeight < el.scrollHeight;
+                                var canScrollUp = el.scrollTop > 0;
+                                var scrollingDown = e.deltaY > 0;
+                                var scrollingUp = e.deltaY < 0;
+
+                                if ((scrollingDown && canScrollDown) || (scrollingUp && canScrollUp)) {
+                                    return;
+                                }
+                                window.chrome.webview.postMessage(JSON.stringify({ type: 'scroll', deltaY: e.deltaY }));
+                                e.preventDefault();
+                            }, { passive: false });
+                        }");
                 }
                 catch { /* non-critical — default height remains */ }
             }).FileAndForget(nameof(WebView2OutputHost));
+        }
+
+        private void OnWebMessageReceived(object sender, CoreWebView2WebMessageReceivedEventArgs e)
+        {
+            try
+            {
+                var json = e.WebMessageAsJson;
+                if (json == null) return;
+
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("type", out var typeEl)
+                    && typeEl.GetString() == "scroll"
+                    && doc.RootElement.TryGetProperty("deltaY", out var deltaEl))
+                {
+                    double deltaY = deltaEl.GetDouble();
+                    var scrollViewer = FindParentScrollViewer(this);
+                    if (scrollViewer != null)
+                        scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset + deltaY);
+                }
+            }
+            catch { /* non-critical */ }
         }
 
         // -----------------------------------------------------------------------
@@ -271,6 +314,18 @@ namespace PolyglotNotebooks.Editor
                 || trimmed.StartsWith("<html", StringComparison.OrdinalIgnoreCase);
         }
 
+        private static ScrollViewer FindParentScrollViewer(DependencyObject child)
+        {
+            var parent = VisualTreeHelper.GetParent(child);
+            while (parent != null)
+            {
+                if (parent is ScrollViewer sv)
+                    return sv;
+                parent = VisualTreeHelper.GetParent(parent);
+            }
+            return null;
+        }
+
         // -----------------------------------------------------------------------
         // IDisposable
         // -----------------------------------------------------------------------
@@ -284,7 +339,11 @@ namespace PolyglotNotebooks.Editor
             {
                 _webView.CoreWebView2InitializationCompleted -= OnWebViewInitialized;
                 if (_isInitialized)
+                {
                     _webView.NavigationCompleted -= OnNavigationCompleted;
+                    if (_webView.CoreWebView2 != null)
+                        _webView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
+                }
                 _webView.Dispose();
                 _webView = null;
             }

@@ -161,8 +161,8 @@ namespace PolyglotNotebooks.Editor
             double fontSize = 13;
             double lineHeight = fontFamily.LineSpacing * fontSize;
             double editorVerticalPadding = 4 + 4;
-            double minH = Math.Ceiling(lineHeight * 2 + editorVerticalPadding);
-            double maxH = Math.Ceiling(lineHeight * 20 + editorVerticalPadding);
+            double minH = Math.Ceiling(lineHeight * 1 + editorVerticalPadding);
+            double maxH = Math.Ceiling(lineHeight * 25 + editorVerticalPadding);
 
             try
             {
@@ -273,6 +273,55 @@ namespace PolyglotNotebooks.Editor
                 var hostControl = textViewHost.HostControl;
                 hostControl.MinHeight = minH;
                 hostControl.MaxHeight = maxH;
+
+                // Dynamically resize editor based on content line count.
+                // Deferred via Dispatcher to avoid layout reentrancy during LayoutChanged.
+                textView.LayoutChanged += (s, e) =>
+                {
+                    int lineCount = textView.TextSnapshot.LineCount;
+                    double desired = Math.Ceiling(lineCount * lineHeight + editorVerticalPadding);
+                    desired = Math.Max(minH, Math.Min(desired, maxH));
+
+                    if (Math.Abs(hostControl.Height - desired) > 0.5)
+                    {
+#pragma warning disable VSTHRD110, VSTHRD001 // Dispatcher.BeginInvoke is intentionally fire-and-forget
+                        hostControl.Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            hostControl.Height = desired;
+
+                            // Enable vertical scrollbar only when content overflows max height
+                            bool hasOverflow = desired >= maxH;
+                            textView.Options.SetOptionValue(DefaultTextViewHostOptions.VerticalScrollBarId, hasOverflow);
+                        }), System.Windows.Threading.DispatcherPriority.Render);
+#pragma warning restore VSTHRD110, VSTHRD001
+                    }
+                };
+
+                // Set initial height based on content
+                int initialLineCount = textView.TextSnapshot.LineCount;
+                double initialHeight = Math.Ceiling(initialLineCount * lineHeight + editorVerticalPadding);
+                hostControl.Height = Math.Max(minH, Math.Min(initialHeight, maxH));
+
+                // Enable vertical scrollbar only when content overflows at initial load
+                bool initialOverflow = hostControl.Height >= maxH;
+                textView.Options.SetOptionValue(DefaultTextViewHostOptions.VerticalScrollBarId, initialOverflow);
+
+                // Forward mouse wheel to notebook ScrollViewer only when cell has no overflow.
+                // When content overflows (at max height), let the native editor scroll internally.
+                textViewHost.HostControl.PreviewMouseWheel += (s, e) =>
+                {
+                    bool hasOverflow = hostControl.Height >= maxH;
+                    if (!hasOverflow)
+                    {
+                        var scrollViewer = FindParentScrollViewer(textViewHost.HostControl);
+                        if (scrollViewer != null)
+                        {
+                            scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset - e.Delta);
+                            e.Handled = true;
+                        }
+                    }
+                    // When hasOverflow, don't handle — let the native editor scroll
+                };
 
                 // Two-way sync: Buffer → Model
                 buffer.Changed += (s, e) =>
@@ -800,6 +849,18 @@ namespace PolyglotNotebooks.Editor
         private static void ParseMagicCommand(TextBox editor, NotebookCell cell)
         {
             ParseMagicCommand(editor.Text, cell);
+        }
+
+        private static ScrollViewer FindParentScrollViewer(DependencyObject child)
+        {
+            var parent = VisualTreeHelper.GetParent(child);
+            while (parent != null)
+            {
+                if (parent is ScrollViewer sv)
+                    return sv;
+                parent = VisualTreeHelper.GetParent(parent);
+            }
+            return null;
         }
 
         private static void AdjustEditorHeight(TextBox editor)

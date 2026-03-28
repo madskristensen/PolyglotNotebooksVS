@@ -171,6 +171,27 @@ namespace PolyglotNotebooks.Editor
                 HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
                 Content = _outputContainer,
             };
+
+            // Forward mouse wheel to notebook ScrollViewer only when output has no overflow.
+            // When content overflows, let the inner ScrollViewer handle scrolling naturally.
+            scroll.PreviewMouseWheel += (s, e) =>
+            {
+                bool hasOverflow = scroll.ScrollableHeight > 0;
+                if (hasOverflow)
+                {
+                    // Let the inner ScrollViewer handle it naturally
+                    return;
+                }
+
+                // No overflow — forward to notebook
+                var parentSv = FindParentScrollViewer(scroll);
+                if (parentSv != null)
+                {
+                    parentSv.ScrollToVerticalOffset(parentSv.VerticalOffset - e.Delta);
+                    e.Handled = true;
+                }
+            };
+
             _root.Children.Add(scroll);
         }
 
@@ -426,6 +447,18 @@ namespace PolyglotNotebooks.Editor
             }
             result.Add(current.ToString());
             return result.ToArray();
+        }
+
+        private static ScrollViewer FindParentScrollViewer(DependencyObject child)
+        {
+            var parent = VisualTreeHelper.GetParent(child);
+            while (parent != null)
+            {
+                if (parent is ScrollViewer sv)
+                    return sv;
+                parent = VisualTreeHelper.GetParent(parent);
+            }
+            return null;
         }
 
         // -----------------------------------------------------------------------
