@@ -1,0 +1,8 @@
+Session: IVsCodeWindow Refactor Task
+
+- Created session log: 2026-03-28T02-26-39Z-ivscodewindow-refactor.md
+- Reason: Keyboard input broken with pure WPF text views; IVsCodeWindow adapter needed
+- Reference: ryanmolden/ToolWindowHostedEditorExample (GitHub)
+- Background task spawned for Ellie-8
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>

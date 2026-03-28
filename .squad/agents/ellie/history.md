@@ -469,3 +469,21 @@ CellControl now branches on CellKind in constructor:
 - Mads prefers `base(null)` in NotebookEditorPane constructor (no automation object)
 - Build via MSBuild.exe directly, not `dotnet build`
 - Old-style csproj; no new files — modify existing only
+
+## Learnings — Win32 Focus Fix for Keyboard Input (2025-07-25)
+
+### Root Cause
+- `PreProcessMessage` alone does NOT fix keyboard input in hosted `IWpfTextView` cells. The real issue is that **Win32 focus stays on the parent frame HWND**, not the `ElementHost` HWND that contains WPF content. Even if `PreProcessMessage` returns false, keyboard messages dispatch to the frame's `WndProc`, never reaching the `ElementHost` for WPF translation.
+
+### Fix — Three Complementary Approaches
+1. **`GotAggregateFocus` → `SetFocus(HwndSource.Handle)`**: When the text view gets WPF focus, explicitly move Win32 keyboard focus to the hosting HWND via P/Invoke `user32.dll SetFocus`. This ensures `WM_KEYDOWN` etc. go to the right HWND.
+2. **`PreviewMouseDown` on hostControl**: Grab both WPF (`Keyboard.Focus`) and Win32 (`SetFocus`) focus on any mouse click, in case `GotAggregateFocus` doesn't fire.
+3. **Broadened `HasFocusedTextView()`**: Check `VisualElement.IsKeyboardFocusWithin` in addition to `HasAggregateFocus`, making the `PreProcessMessage` guard more robust.
+
+### Patterns
+- `HwndSource.FromVisual(textView.VisualElement)` returns the Win32 HWND hosting the WPF visual tree. `SetFocus(source.Handle)` moves Win32 keyboard focus there.
+- `[DllImport("user32.dll")] private static extern IntPtr SetFocus(IntPtr hWnd);` is placed on the `CellControl` class (already `internal sealed`).
+- The `hostControl.GotFocus` handler was enhanced to also call `SetFocus` after `Keyboard.Focus`, ensuring both WPF and Win32 focus are in sync.
+
+### Key Insight
+- In VS extensions hosting WPF inside Win32 frames, WPF mouse handling works independently of Win32 focus, but keyboard messages always follow Win32 focus. You must explicitly bridge the two focus systems.
