@@ -303,3 +303,32 @@
 **Status**: ACTIVE — Core capability for notebook file handling
 
 **Related Decision**: Decision 10 (decisions.md)
+
+### Syntax Highlighting — Adorner Overlay Pattern
+- **Approach chosen**: Adorner overlay (TextBox.Foreground=Transparent + SyntaxHighlightAdorner on adorner layer), NOT RichTextBox replacement.
+- **Why**: All 4 IntelliSense providers (CompletionProvider, HoverProvider, SignatureHelpProvider, DiagnosticsProvider) take `TextBox` in constructors and use `TextBox.Text`, `.CaretIndex`, `.GetRectFromCharacterIndex()`, `.GetCharacterIndexFromPoint()`. Switching to RichTextBox would break them all. The adorner approach preserves 100% backward compatibility — zero provider changes needed.
+- **TextBox.CaretBrush**: Must be set explicitly via `SetResourceReference(TextBox.CaretBrushProperty, VsBrushes.ToolWindowTextKey)` because `Foreground=Transparent` also hides the caret by default. `CaretBrush` overrides this.
+- **FormattedText alignment**: Uses same `Typeface`/`FontSize` as the TextBox, positioned at `Padding + BorderThickness + 2px` (TextBox internal margin), adjusted for scroll offset from the internal `ScrollViewer`.
+- **Scroll sync**: `FindChild<ScrollViewer>(_textBox)` walks visual tree to find the TextBox's internal ScrollViewer, subscribes to `ScrollChanged` for `InvalidateVisual()`.
+- **Tokenizer architecture**: Abstract `SyntaxTokenizer` base with `Regex Pattern` + `ClassifyMatch` per language. Static registry maps kernel names (csharp, fsharp, javascript, python, html, sql, pwsh) to tokenizer instances. Named regex groups (`comment`, `string`, `keyword`, `type`, `number`, `preproc`) provide clean token classification.
+- **Colors**: Frozen `SolidColorBrush` constants matching VS Dark theme palette (blue keywords, brown strings, green comments, teal types, light-green numbers, gray preprocessor). Default text color uses `VsBrushes.ToolWindowTextKey` for theme awareness.
+- **Key files**: `src/Editor/SyntaxHighlighting/SyntaxTokenizer.cs`, `src/Editor/SyntaxHighlighting/SyntaxHighlightAdorner.cs`. Wired in `CellControl.BuildCodeCellContent()`.
+- **Performance**: 50ms debounce on text change. `FormattedText.SetForegroundBrush()` applies colors in O(tokens). Clipping prevents off-screen rendering.
+- **Language switching**: `CellControl` subscribes to `NotebookCell.PropertyChanged` for `KernelName` changes; calls `_syntaxAdorner.SetLanguage()` which swaps the tokenizer and re-renders.
+- **VsBrushes limitation**: `VsBrushes` doesn't expose syntax-specific color keys (those live in the VS editor's classification format map, which requires ITextView). Used hardcoded frozen brushes matching VS Dark theme colors — acceptable for a custom WPF editor.
+
+### IWpfTextViewHost Integration (Code Cells)
+- **Date**: 2026-03-27
+- **Task**: Replaced WPF TextBox in code cells with hosted VS editor instance (IWpfTextViewHost)
+- **Key decisions**:
+  - Used MEF services (ITextEditorFactoryService, ITextBufferFactoryService, IContentTypeRegistryService) obtained via IComponentModel/SComponentModel
+  - Content type mapping: kernel names → VS content types (CSharp, F#, JavaScript, etc.) with "text" fallback
+  - Two-way sync pattern with _suppressBufferSync flag to prevent feedback loops between ITextBuffer.Changed and NotebookCell.PropertyChanged
+  - Kept _editor field nullable for code cells (markdown cells still use TextBox); added TextView property for IWpfTextView access
+  - SyntaxHighlightAdorner no longer attached for code cells — VS editor provides native syntax highlighting
+  - IWpfTextViewHost.Close() called on Unloaded event for proper cleanup
+  - Content type updated dynamically when KernelName changes via buffer.ChangeContentType()
+  - ParseMagicCommand refactored to accept string (for buffer) with TextBox overload kept for markdown cells
+  - Microsoft.VisualStudio.Text.Span fully qualified to avoid ambiguity with System.Windows.Documents.Span
+- **Key file**: src/Editor/CellControl.cs (BuildCodeCellContent method)
+- **Assembly references**: All needed assemblies (Text.Data, Text.UI.Wpf, Editor, ComponentModelHost) already available transitively via Community.VisualStudio.Toolkit.17
