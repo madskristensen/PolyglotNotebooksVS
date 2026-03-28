@@ -558,3 +558,28 @@ Fix MEF classifier engagement for syntax highlighting, and disable run buttons d
 - **Diagnostic logging in MEF providers**: Adding ExtensionLogger.LogInfo at the top of CreateTagger (before any early returns) lets you confirm via ActivityLog whether the provider is being invoked at all during debugging.
 - **Run button field promotion**: Promoting unBtn/unDropdownBtn/unAllBtn/estartRunAllBtn from constructor locals to class fields is the pattern for controlling button state from event handlers.
 - **SetExecuting pattern**: A SetExecuting(bool) method threading through NotebookControl → NotebookToolbar is the right extensibility hook for callers (e.g. NotebookEditorPane) to toggle toolbar button state.
+
+---
+
+## 2025 — Execution Freeze, Run Button Feedback & Classifier Fix
+
+See commit 000082f. Changes:
+- WaitForReadyAsync: 30s timeout (TimeoutException)
+- WaitForTerminalEventAsync: 60s timeout (TimeoutException)
+- EnsureKernelStartedAsync: cleanup on failure (dispose client/engine)
+- HandleCellRunRequested: sets Running immediately before kernel startup
+- HandleRunAll/Above/Below/Restart: sets relevant cells Running before fire-and-forget
+- ExecutionCompleted event: fired from HandleCellRunRequested finally and FireAndForget finally
+- NotebookEditorPane: SetExecuting(true) on RunAll/RestartRunAll; SetExecuting(false) on ExecutionCompleted
+- NotebookClassifierProvider: switched ITaggerProvider -> IClassifierProvider
+- NotebookClassifier: switched ITagger<ClassificationTag> -> IClassifier
+- Regex timeouts: 250ms on all 8 language patterns
+- CellControl: IClassifierAggregatorService.GetClassifier(buffer) forces MEF discovery
+- Button.BackgroundProperty removed from all toolbar buttons (lets VS theme handle hover)
+
+### Learnings
+- ITaggerProvider and IClassifierProvider are distinct MEF contracts; IClassifierProvider more reliable for embedded IVsCodeWindow hosts
+- IClassifierAggregatorService.GetClassifier(buffer) forces MEF lazy-load for that buffer
+- Setting Button.BackgroundProperty bypasses WPF ControlTemplate hover states - don't set it
+- ExecutionCompleted must fire from both single-cell and multi-cell paths
+
