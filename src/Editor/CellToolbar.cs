@@ -7,6 +7,7 @@ using PolyglotNotebooks.Models;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Media; // FontFamily
 
 namespace PolyglotNotebooks.Editor
@@ -23,8 +24,7 @@ namespace PolyglotNotebooks.Editor
         private readonly TextBlock _executionCounter;
         private readonly TextBlock _statusIndicator;
         private readonly CrispImage _statusIcon;
-        private Button? _runBtn;
-        private Button? _runDropdownBtn;
+        private Border? _splitRunButton;
 
         // Guard against re-entrant kernel combo ↔ cell property update loops.
         private bool _syncingKernelCombo;
@@ -109,7 +109,7 @@ namespace PolyglotNotebooks.Editor
 
             // ── Right-side controls (added right-to-left via Dock.Right) ──────
 
-            // Status indicator (rightmost) — code cells only
+            // Status indicator elements — code cells only
             _statusIndicator = new TextBlock
             {
                 FontSize = 11,
@@ -123,29 +123,32 @@ namespace PolyglotNotebooks.Editor
                 Width = 20,
                 Height = 20,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(4, 0, 0, 0),
+                Margin = new Thickness(0),
                 Visibility = Visibility.Collapsed
             };
-            if (!isMarkdown)
-            {
-                DockPanel.SetDock(_statusIcon, Dock.Right);
-                Children.Add(_statusIcon);
-                DockPanel.SetDock(_statusIndicator, Dock.Right);
-                Children.Add(_statusIndicator);
-            }
 
             // Cell menu (···)
             var menuBtn = isMarkdown ? BuildMarkdownMenuButton() : BuildMenuButton();
             DockPanel.SetDock(menuBtn, Dock.Right);
             Children.Add(menuBtn);
 
+            // Execution counter [N] — created for all cells, only added for code
+            _executionCounter = new TextBlock
+            {
+                FontFamily = new FontFamily("Consolas"),
+                FontSize = 11,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            _executionCounter.SetResourceReference(TextBlock.ForegroundProperty, VsBrushes.GrayTextKey);
+
             if (!isMarkdown)
             {
-                // Clear Output button
+                // Clear Output button — Dock.Right (2nd from right, after menu)
                 var clearBtn = new Button
                 {
                     Content = MakeCrispImage(KnownMonikers.ClearWindowContent),
-                    Padding = new Thickness(4, 2, 4, 2),
+                    Padding = new Thickness(4, 3, 4, 3),
                     BorderThickness = new Thickness(1),
                     VerticalAlignment = VerticalAlignment.Center,
                     Margin = new Thickness(0, 0, 4, 0),
@@ -157,42 +160,29 @@ namespace PolyglotNotebooks.Editor
                 DockPanel.SetDock(clearBtn, Dock.Right);
                 Children.Add(clearBtn);
 
-                // Run-mode dropdown button (▼) — opens run-mode context menu
-                _runDropdownBtn = BuildRunDropdownButton();
-                DockPanel.SetDock(_runDropdownBtn, Dock.Right);
-                Children.Add(_runDropdownBtn);
+                // Split button: ▶ Run | ▼ dropdown — Dock.Right (3rd from right)
+                var splitButton = BuildSplitRunButton();
+                DockPanel.SetDock(splitButton, Dock.Right);
+                Children.Add(splitButton);
 
-                // Run button
-                _runBtn = new Button
-                {
-                    Content = MakeCrispImage(KnownMonikers.Run),
-                    Padding = new Thickness(4, 2, 4, 2),
-                    BorderThickness = new Thickness(1, 1, 0, 1),
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(0, 0, 0, 0),
-                    ToolTip = "Run cell (Shift+Enter)"
-                };
-                _runBtn.SetResourceReference(Button.ForegroundProperty, VsBrushes.ToolWindowTextKey);
-                _runBtn.SetResourceReference(Button.BorderBrushProperty, VsBrushes.ToolWindowBorderKey);
-                _runBtn.Click += (s, e) => RunRequested?.Invoke(this, EventArgs.Empty);
-                DockPanel.SetDock(_runBtn, Dock.Right);
-                Children.Add(_runBtn);
-            }
-
-            // Execution counter [N] — code cells only
-            _executionCounter = new TextBlock
-            {
-                FontFamily = new FontFamily("Consolas"),
-                FontSize = 11,
-                VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 8, 0)
-            };
-            _executionCounter.SetResourceReference(TextBlock.ForegroundProperty, VsBrushes.GrayTextKey);
-            if (!isMarkdown)
-            {
+                // Execution counter [N] — Dock.Right (4th from right)
                 UpdateExecutionCounter();
                 DockPanel.SetDock(_executionCounter, Dock.Right);
                 Children.Add(_executionCounter);
+
+                // Status container — Dock.Right (leftmost of right-docked items)
+                var statusContainer = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    MinWidth = 80,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(4, 0, 0, 0),
+                };
+                statusContainer.Children.Add(_statusIcon);
+                statusContainer.Children.Add(_statusIndicator);
+                DockPanel.SetDock(statusContainer, Dock.Right);
+                Children.Add(statusContainer);
+
                 UpdateStatusIndicator();
             }
 
@@ -200,20 +190,51 @@ namespace PolyglotNotebooks.Editor
             Unloaded += (s, e) => _cell.PropertyChanged -= OnCellPropertyChanged;
         }
 
-        private Button BuildRunDropdownButton()
+        /// <summary>
+        /// Builds a VS-native split button: a single unified control with a ▶ Run
+        /// area and a tiny ▾ chevron that opens a dropdown — no visible separator.
+        /// </summary>
+        private Border BuildSplitRunButton()
         {
-            var btn = new Button
+            // Two-column grid: run icon area + narrow chevron area
+            var grid = new Grid();
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(14) });
+
+            // Run icon area
+            var runArea = new Border
             {
-                Content = MakeCrispImage(KnownMonikers.Expand),
-                Padding = new Thickness(2, 2, 2, 2),
-                BorderThickness = new Thickness(0, 1, 1, 1),
+                Background = Brushes.Transparent,
+                Padding = new Thickness(4, 3, 2, 3),
+                Child = MakeCrispImage(KnownMonikers.Run),
+                Cursor = Cursors.Hand,
+                ToolTip = "Run cell (Shift+Enter)"
+            };
+            Grid.SetColumn(runArea, 0);
+
+            // Chevron area
+            var chevron = new TextBlock
+            {
+                Text = "▾",
+                FontSize = 9,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 4, 0),
+                HorizontalAlignment = HorizontalAlignment.Center,
+            };
+            chevron.SetResourceReference(TextBlock.ForegroundProperty, VsBrushes.ToolWindowTextKey);
+
+            var chevronArea = new Border
+            {
+                Background = Brushes.Transparent,
+                Child = chevron,
+                Cursor = Cursors.Hand,
                 ToolTip = "Run options"
             };
-            btn.SetResourceReference(Button.ForegroundProperty, VsBrushes.ToolWindowTextKey);
-            btn.SetResourceReference(Button.BorderBrushProperty, VsBrushes.ToolWindowBorderKey);
+            Grid.SetColumn(chevronArea, 1);
 
+            grid.Children.Add(runArea);
+            grid.Children.Add(chevronArea);
+
+            // Context menu for the chevron dropdown
             var menu = new ContextMenu();
             ThemedContextMenuHelper.ApplyVsTheme(menu);
             menu.Items.Add(MakeMenuItem("Run Cell", () => RunRequested?.Invoke(this, EventArgs.Empty), KnownMonikers.Run));
@@ -222,14 +243,48 @@ namespace PolyglotNotebooks.Editor
             menu.Items.Add(new Separator());
             menu.Items.Add(MakeMenuItem("Run Selection", () => RunSelectionRequested?.Invoke(this, EventArgs.Empty), KnownMonikers.RunOutline));
 
-            btn.Click += (s, e) =>
+            // Wire mouse handlers
+            runArea.MouseLeftButtonDown += (s, e) =>
             {
-                menu.PlacementTarget = btn;
-                menu.Placement = PlacementMode.Bottom;
-                menu.IsOpen = true;
+                RunRequested?.Invoke(this, EventArgs.Empty);
+                e.Handled = true;
             };
 
-            return btn;
+            chevronArea.MouseLeftButtonDown += (s, e) =>
+            {
+                menu.PlacementTarget = _splitRunButton;
+                menu.Placement = PlacementMode.Bottom;
+                menu.IsOpen = true;
+                e.Handled = true;
+            };
+
+            // Hover feedback: highlight the whole button on mouse enter/leave
+            void SetHoverBackground(bool hovering)
+            {
+                if (hovering)
+                    grid.SetResourceReference(Grid.BackgroundProperty, VsBrushes.CommandBarMouseOverBackgroundGradientKey);
+                else
+                    grid.Background = Brushes.Transparent;
+            }
+
+            grid.MouseEnter += (s, e) => SetHoverBackground(true);
+            grid.MouseLeave += (s, e) => SetHoverBackground(false);
+
+            // Outer border — single unified control with rounded corners
+            var splitBorder = new Border
+            {
+                Child = grid,
+                BorderThickness = new Thickness(1),
+                CornerRadius = new CornerRadius(2),
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0, 0, 4, 0),
+                UseLayoutRounding = true,
+            };
+            splitBorder.SetResourceReference(Border.BorderBrushProperty, VsBrushes.ToolWindowBorderKey);
+            splitBorder.SetResourceReference(Border.BackgroundProperty, VsBrushes.ButtonFaceKey);
+
+            _splitRunButton = splitBorder;
+            return splitBorder;
         }
 
         private Button BuildMenuButton()
@@ -237,7 +292,7 @@ namespace PolyglotNotebooks.Editor
             var btn = new Button
             {
                 Content = MakeCrispImage(KnownMonikers.Ellipsis),
-                Padding = new Thickness(4, 2, 4, 2),
+                Padding = new Thickness(4, 3, 4, 3),
                 BorderThickness = new Thickness(1),
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 4, 0),
@@ -289,7 +344,7 @@ namespace PolyglotNotebooks.Editor
             var btn = new Button
             {
                 Content = MakeCrispImage(KnownMonikers.Ellipsis),
-                Padding = new Thickness(4, 2, 4, 2),
+                Padding = new Thickness(4, 3, 4, 3),
                 BorderThickness = new Thickness(1),
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 4, 0),
@@ -418,32 +473,28 @@ namespace PolyglotNotebooks.Editor
                 case CellExecutionStatus.Running:
                     _statusIcon.Visibility = Visibility.Collapsed;
                     _statusIndicator.Text = "⟳ Running";
-                    _statusIndicator.SetResourceReference(TextBlock.ForegroundProperty, VsBrushes.VizSurfaceGoldMediumKey);
+                    _statusIndicator.SetResourceReference(TextBlock.ForegroundProperty, VsBrushes.ToolWindowTextKey);
                     _statusIndicator.Visibility = Visibility.Visible;
-                    if (_runBtn != null) _runBtn.IsEnabled = false;
-                    if (_runDropdownBtn != null) _runDropdownBtn.IsEnabled = false;
+                    if (_splitRunButton != null) _splitRunButton.IsEnabled = false;
                     break;
                 case CellExecutionStatus.Succeeded:
                     _statusIndicator.Visibility = Visibility.Collapsed;
                     _statusIcon.Moniker = KnownMonikers.TestCoveredPassing;
                     _statusIcon.Visibility = Visibility.Visible;
-                    if (_runBtn != null) _runBtn.IsEnabled = true;
-                    if (_runDropdownBtn != null) _runDropdownBtn.IsEnabled = true;
+                    if (_splitRunButton != null) _splitRunButton.IsEnabled = true;
                     break;
                 case CellExecutionStatus.Failed:
                     _statusIcon.Visibility = Visibility.Collapsed;
                     _statusIndicator.Text = "✗ Error";
-                    _statusIndicator.SetResourceReference(TextBlock.ForegroundProperty, VsBrushes.VizSurfaceRedMediumKey);
+                    _statusIndicator.SetResourceReference(TextBlock.ForegroundProperty, VsBrushes.ToolWindowTextKey);
                     _statusIndicator.Visibility = Visibility.Visible;
-                    if (_runBtn != null) _runBtn.IsEnabled = true;
-                    if (_runDropdownBtn != null) _runDropdownBtn.IsEnabled = true;
+                    if (_splitRunButton != null) _splitRunButton.IsEnabled = true;
                     break;
                 default:
                     _statusIcon.Visibility = Visibility.Collapsed;
                     _statusIndicator.Text = string.Empty;
                     _statusIndicator.Visibility = Visibility.Collapsed;
-                    if (_runBtn != null) _runBtn.IsEnabled = true;
-                    if (_runDropdownBtn != null) _runDropdownBtn.IsEnabled = true;
+                    if (_splitRunButton != null) _splitRunButton.IsEnabled = true;
                     break;
             }
         }

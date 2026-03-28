@@ -14,7 +14,7 @@ namespace PolyglotNotebooks.IntelliSense
         // Must be declared BEFORE Default so it's initialized first
         private static readonly IReadOnlyList<string> _fallbackKernels = new[]
         {
-            "csharp", "fsharp", "javascript", "typescript", "sql", "pwsh", "html", "markdown"
+            "csharp", "fsharp", "pwsh", "html"
         };
 
         public static readonly KernelInfoCache Default = new KernelInfoCache();

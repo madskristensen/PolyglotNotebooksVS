@@ -7,6 +7,7 @@ using Microsoft.VisualStudio.TextManager.Interop;
 using Microsoft.VisualStudio.Utilities;
 
 using PolyglotNotebooks.Diagnostics;
+using PolyglotNotebooks.Editor.SyntaxHighlighting;
 using PolyglotNotebooks.Models;
 
 using System.Collections.Generic;
@@ -36,20 +37,10 @@ namespace PolyglotNotebooks.Editor
         private IVsTextView? _vsTextView;
         private IVsCodeWindow? _codeWindow;
         private bool _suppressBufferSync;
+        private IVsRunningDocumentTable? _rdt;
+        private uint _rdtCookie;
 
-        // Kernel name → VS content type mapping
-        private static readonly Dictionary<string, string> _kernelContentTypeMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["csharp"] = "CSharp",
-            ["fsharp"] = "F#",
-            ["javascript"] = "JavaScript",
-            ["typescript"] = "TypeScript",
-            ["python"] = "Python",
-            ["powershell"] = "PowerShell",
-            ["sql"] = "SQL",
-            ["html"] = "html",
-            ["markdown"] = "markdown"
-        };
+        // Kernel name → VS content type mapping (delegated to KernelLanguageMap)
 
         // Cached regex for inline markdown formatting (bold, code, italic)
         private static readonly Regex _inlineFormattingRegex =
@@ -133,6 +124,26 @@ namespace PolyglotNotebooks.Editor
         internal IVsTextView? VsTextView => _vsTextView;
 
         /// <summary>
+        /// Releases COM resources (invisible editor, code window, RDT lock).
+        /// Called explicitly by <see cref="NotebookControl"/> when the cell is permanently
+        /// removed from the document — NOT on WPF Unloaded (which also fires on tab switch).
+        /// </summary>
+        internal void Cleanup()
+        {
+            if (_rdt != null && _rdtCookie != 0)
+            {
+                try { _rdt.UnlockDocument((uint)_VSRDTFLAGS.RDT_ReadLock, _rdtCookie); }
+                catch { }
+                _rdtCookie = 0;
+            }
+
+            _codeWindow?.Close();
+            _codeWindow = null;
+            _vsTextView?.CloseView();
+            _vsTextView = null;
+        }
+
+        /// <summary>
         /// Returns true if this cell's hosted VS text view currently has aggregate keyboard focus.
         /// </summary>
         internal bool HasFocusedTextView()
@@ -160,7 +171,7 @@ namespace PolyglotNotebooks.Editor
             var fontFamily = new FontFamily("Consolas, Courier New");
             double fontSize = 13;
             double lineHeight = fontFamily.LineSpacing * fontSize;
-            double editorVerticalPadding = 4 + 4;
+            double editorVerticalPadding = 6 + 6;
             double minH = Math.Ceiling(lineHeight * 1 + editorVerticalPadding);
             double maxH = Math.Ceiling(lineHeight * 25 + editorVerticalPadding);
 
@@ -177,13 +188,17 @@ namespace PolyglotNotebooks.Editor
                 // Resolve content type from kernel name
                 var contentType = ResolveContentType(contentTypeRegistry, cell.KernelName);
 
-                // Create VS text buffer adapter with the resolved content type
-                var bufferAdapter = editorAdapterFactory.CreateVsTextBufferAdapter(oleServiceProvider, contentType);
                 var initialText = cell.Contents ?? string.Empty;
-                bufferAdapter.InitializeContent(initialText, initialText.Length);
 
-                // Set language service ID on the COM buffer so VS's language
-                // service infrastructure (classifiers, colorizers) engages
+                // Write temp file to disk so language services can find it
+                var fakePath = GetFakeFileName(cell.KernelName);
+                File.WriteAllText(fakePath, initialText, Encoding.UTF8);
+
+                // Create VS text buffer with the correct content type
+                var bufferAdapter = (IVsTextLines)editorAdapterFactory.CreateVsTextBufferAdapter(oleServiceProvider, contentType);
+                ((IVsTextBuffer)bufferAdapter).InitializeContent(initialText, initialText.Length);
+
+                // Set language service GUID for syntax coloring (C#, F#, JS, HTML, SQL)
                 Guid langServiceId = GetLanguageServiceGuid(cell.KernelName);
                 if (langServiceId != Guid.Empty)
                 {
@@ -194,10 +209,10 @@ namespace PolyglotNotebooks.Editor
                 var buffer = editorAdapterFactory.GetDataBuffer((IVsTextBuffer)bufferAdapter);
 
                 // Mark buffer as a notebook cell so the MEF classifier engages
-                buffer.Properties.AddProperty("PolyglotNotebook.KernelName", cell.KernelName ?? "text");
+                if (!buffer.Properties.ContainsProperty("PolyglotNotebook.KernelName"))
+                    buffer.Properties.AddProperty("PolyglotNotebook.KernelName", cell.KernelName ?? "text");
 
                 // Ensure the data buffer has the correct content type
-                // (CreateVsTextBufferAdapter may not always propagate to the data buffer)
                 if (buffer.ContentType.TypeName != contentType.TypeName)
                 {
                     ExtensionLogger.LogInfo(nameof(CellControl),
@@ -205,20 +220,61 @@ namespace PolyglotNotebooks.Editor
                     buffer.ChangeContentType(contentType, null);
                 }
 
-                // Write temp file to disk so language services can find it
-                var fakePath = GetFakeFileName(cell.KernelName);
-                File.WriteAllText(fakePath, initialText, Encoding.UTF8);
-
-                // Associate a file document so Roslyn/language services engage
+                // Associate a file document so language services engage
                 var documentFactory = componentModel.GetService<ITextDocumentFactoryService>();
                 try
                 {
-                    documentFactory.CreateTextDocument(buffer, fakePath);
+                    if (documentFactory.TryGetTextDocument(buffer, out var existingDoc))
+                    {
+                        ExtensionLogger.LogInfo(nameof(CellControl),
+                            $"Renaming pre-existing ITextDocument from '{existingDoc.FilePath}' to '{fakePath}' for kernel '{cell.KernelName}'");
+                        existingDoc.Rename(fakePath);
+                    }
+                    else
+                    {
+                        if (buffer.Properties.ContainsProperty(typeof(ITextDocument)))
+                            buffer.Properties.RemoveProperty(typeof(ITextDocument));
+                        if (buffer.Properties.ContainsProperty("WasAssociatedWithTextDocument"))
+                            buffer.Properties.RemoveProperty("WasAssociatedWithTextDocument");
+
+                        documentFactory.CreateTextDocument(buffer, fakePath);
+                    }
                 }
                 catch (Exception docEx)
                 {
                     ExtensionLogger.LogWarning(nameof(CellControl),
                         $"ITextDocument creation failed for kernel '{cell.KernelName}': {docEx.Message}");
+                }
+
+                // Register in the Running Document Table
+                try
+                {
+                    _rdt = (IVsRunningDocumentTable)Package.GetGlobalService(typeof(SVsRunningDocumentTable));
+                    if (_rdt != null)
+                    {
+                        IntPtr pDocData = Marshal.GetIUnknownForObject((IVsTextBuffer)bufferAdapter);
+                        try
+                        {
+                            Microsoft.VisualStudio.ErrorHandler.ThrowOnFailure(
+                                _rdt.RegisterAndLockDocument(
+                                    (uint)(_VSRDTFLAGS.RDT_ReadLock | _VSRDTFLAGS.RDT_DontAddToMRU),
+                                    fakePath,
+                                    null,
+                                    (uint)Microsoft.VisualStudio.VSConstants.VSITEMID_NIL,
+                                    pDocData,
+                                    out _rdtCookie));
+                        }
+                        finally
+                        {
+                            if (pDocData != IntPtr.Zero)
+                                Marshal.Release(pDocData);
+                        }
+                    }
+                }
+                catch (Exception rdtEx)
+                {
+                    ExtensionLogger.LogWarning(nameof(CellControl),
+                        $"RDT registration failed for '{fakePath}': {rdtEx.Message}");
                 }
 
                 // Create code window adapter — has its own HWND and IOleCommandTarget chain
@@ -238,7 +294,7 @@ namespace PolyglotNotebooks.Editor
 
                 // Associate buffer with the code window
                 Microsoft.VisualStudio.ErrorHandler.ThrowOnFailure(
-                    codeWindow.SetBuffer((IVsTextLines)bufferAdapter));
+                    codeWindow.SetBuffer(bufferAdapter));
 
                 // Get the primary text view (has its own HWND — keyboard input works natively)
                 IVsTextView vsTextView;
@@ -254,7 +310,7 @@ namespace PolyglotNotebooks.Editor
                 textView.Options.SetOptionValue(DefaultTextViewHostOptions.LineNumberMarginId, false);
                 textView.Options.SetOptionValue(DefaultTextViewHostOptions.GlyphMarginId, false);
                 textView.Options.SetOptionValue(DefaultTextViewHostOptions.HorizontalScrollBarId, false);
-                textView.Options.SetOptionValue(DefaultTextViewHostOptions.VerticalScrollBarId, false);
+                textView.Options.SetOptionValue(DefaultTextViewHostOptions.VerticalScrollBarId, true);
                 textView.Options.SetOptionValue(DefaultTextViewHostOptions.ZoomControlId, false);
                 textView.Options.SetOptionValue(DefaultTextViewHostOptions.SelectionMarginId, false);
                 textView.Options.SetOptionValue(DefaultTextViewHostOptions.ChangeTrackingId, false);
@@ -269,6 +325,12 @@ namespace PolyglotNotebooks.Editor
                 if (leftMargin?.VisualElement != null)
                     leftMargin.VisualElement.Visibility = Visibility.Collapsed;
 
+                // Disable suggested actions (lightbulb / code fixes) — not useful in notebook cells
+                try { textView.Options.SetOptionValue("TextViewHost/SuggestionMargin", false); } catch { }
+                try { textView.Options.SetOptionValue("Adornments/SuggestedActionsEnabled", false); } catch { }
+
+                CollapseSuggestionMargins(textViewHost);
+
                 // Store references for cleanup and command forwarding
                 _textViewHost = textViewHost;
                 _vsTextView = vsTextView;
@@ -280,31 +342,45 @@ namespace PolyglotNotebooks.Editor
                 hostControl.MaxHeight = maxH;
 
                 // Dynamically resize editor based on content line count.
+                // Uses textView.LineHeight (actual VS editor metric) instead of WPF font estimate.
                 // Deferred via Dispatcher to avoid layout reentrancy during LayoutChanged.
                 textView.LayoutChanged += (s, e) =>
                 {
-                    int lineCount = textView.TextSnapshot.LineCount;
-                    double desired = Math.Ceiling(lineCount * lineHeight + editorVerticalPadding);
-                    desired = Math.Max(minH, Math.Min(desired, maxH));
+                    double actualLineH = textView.LineHeight;
+                    double actualMinH = Math.Ceiling(actualLineH * 1 + editorVerticalPadding);
+                    double actualMaxH = Math.Ceiling(actualLineH * 25 + editorVerticalPadding);
+
+                    int lineCount = Math.Max(1, textView.TextSnapshot.LineCount);
+                    double desired = Math.Ceiling(lineCount * actualLineH + editorVerticalPadding);
+                    desired = Math.Max(actualMinH, Math.Min(desired, actualMaxH));
 
                     if (Math.Abs(hostControl.Height - desired) > 0.5)
                     {
 #pragma warning disable VSTHRD110, VSTHRD001 // Dispatcher.BeginInvoke is intentionally fire-and-forget
                         hostControl.Dispatcher.BeginInvoke(new Action(() =>
                         {
+                            hostControl.MinHeight = actualMinH;
+                            hostControl.MaxHeight = actualMaxH;
                             hostControl.Height = desired;
 
                             // Enable vertical scrollbar only when content overflows max height
-                            bool hasOverflow = desired >= maxH;
+                            bool hasOverflow = desired >= actualMaxH;
                             textView.Options.SetOptionValue(DefaultTextViewHostOptions.VerticalScrollBarId, hasOverflow);
                         }), System.Windows.Threading.DispatcherPriority.Render);
 #pragma warning restore VSTHRD110, VSTHRD001
                     }
                 };
 
-                // Set initial height based on content
-                int initialLineCount = textView.TextSnapshot.LineCount;
-                double initialHeight = Math.Ceiling(initialLineCount * lineHeight + editorVerticalPadding);
+                // Use actual VS editor line height if available, fall back to WPF estimate
+                double effectiveLineHeight = textView.LineHeight > 0 ? textView.LineHeight : lineHeight;
+                minH = Math.Ceiling(effectiveLineHeight * 1 + editorVerticalPadding);
+                maxH = Math.Ceiling(effectiveLineHeight * 25 + editorVerticalPadding);
+                hostControl.MinHeight = minH;
+                hostControl.MaxHeight = maxH;
+
+                // Set initial height based on content (clamp to at least 1 line)
+                int initialLineCount = Math.Max(1, textView.TextSnapshot.LineCount);
+                double initialHeight = Math.Ceiling(initialLineCount * effectiveLineHeight + editorVerticalPadding);
                 hostControl.Height = Math.Max(minH, Math.Min(initialHeight, maxH));
 
                 // Enable vertical scrollbar only when content overflows at initial load
@@ -315,7 +391,7 @@ namespace PolyglotNotebooks.Editor
                 // When content overflows (at max height), let the native editor scroll internally.
                 textViewHost.HostControl.PreviewMouseWheel += (s, e) =>
                 {
-                    bool hasOverflow = hostControl.Height >= maxH;
+                    bool hasOverflow = hostControl.Height >= hostControl.MaxHeight;
                     if (!hasOverflow)
                     {
                         var scrollViewer = FindParentScrollViewer(textViewHost.HostControl);
@@ -361,9 +437,36 @@ namespace PolyglotNotebooks.Editor
                     }
                     else if (e.PropertyName == nameof(NotebookCell.KernelName))
                     {
+                        // Update the buffer property so the classifier reads the new kernel name
+                        buffer.Properties.RemoveProperty("PolyglotNotebook.KernelName");
+                        buffer.Properties.AddProperty("PolyglotNotebook.KernelName", cell.KernelName ?? "text");
+
+                        // Update the cached classifier's language pattern
+                        if (buffer.Properties.TryGetProperty(typeof(NotebookClassifier), out NotebookClassifier classifier))
+                        {
+                            classifier.UpdateLanguage(cell.KernelName);
+                        }
+
                         var newContentType = ResolveContentType(contentTypeRegistry, cell.KernelName);
                         if (buffer.ContentType != newContentType)
+                        {
                             buffer.ChangeContentType(newContentType, editTag: null);
+
+                            // Content type changes can cause VS to rebuild margin containers,
+                            // re-showing previously collapsed margins. Re-hide them.
+                            hostControl.Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                var bm = textViewHost.GetTextViewMargin("bottom") as IWpfTextViewMargin;
+                                if (bm?.VisualElement != null)
+                                    bm.VisualElement.Visibility = Visibility.Collapsed;
+
+                                var lm = textViewHost.GetTextViewMargin("left") as IWpfTextViewMargin;
+                                if (lm?.VisualElement != null)
+                                    lm.VisualElement.Visibility = Visibility.Collapsed;
+
+                                CollapseSuggestionMargins(textViewHost);
+                            }), System.Windows.Threading.DispatcherPriority.Render);
+                        }
                     }
                 };
 
@@ -375,14 +478,10 @@ namespace PolyglotNotebooks.Editor
                         RunSelectionRequested?.Invoke(this, new RunSelectionEventArgs(selected));
                 };
 
-                // Clean up when removed from visual tree
-                hostControl.Unloaded += (s, e) =>
-                {
-                    _codeWindow?.Close();
-                    _codeWindow = null;
-                    _vsTextView?.CloseView();
-                    _vsTextView = null;
-                };
+                // NOTE: Do NOT clean up COM resources in hostControl.Unloaded.
+                // WPF fires Unloaded when VS hides the tab (switching files), not just
+                // on permanent removal. Cleanup() is called explicitly by NotebookControl
+                // when the cell is actually removed from the document.
 
                 // The IVsCodeWindow may internally parent the HostControl.
                 // Disconnect it before re-parenting to our Grid.
@@ -411,9 +510,33 @@ namespace PolyglotNotebooks.Editor
             }
         }
 
+        /// <summary>
+        /// Collapses suggestion/lightbulb margins that may appear in notebook code cells.
+        /// </summary>
+        private static void CollapseSuggestionMargins(IWpfTextViewHost textViewHost)
+        {
+            string[] marginNames =
+            {
+                "TextViewHost/SuggestionMargin",
+                "TextViewHost/SuggestionMarginProvider",
+            };
+
+            foreach (var name in marginNames)
+            {
+                try
+                {
+                    var margin = textViewHost.GetTextViewMargin(name) as IWpfTextViewMargin;
+                    if (margin?.VisualElement != null)
+                        margin.VisualElement.Visibility = Visibility.Collapsed;
+                }
+                catch { }
+            }
+        }
+
         private static IContentType ResolveContentType(IContentTypeRegistryService registry, string? kernelName)
         {
-            if (kernelName != null && _kernelContentTypeMap.TryGetValue(kernelName, out var vsContentType))
+            var vsContentType = kernelName != null ? KernelLanguageMap.GetContentTypeName(kernelName) : null;
+            if (vsContentType != null)
             {
                 var ct = registry.GetContentType(vsContentType);
                 if (ct != null)
@@ -435,30 +558,10 @@ namespace PolyglotNotebooks.Editor
         /// Maps a kernel name to a fake file path with the right extension,
         /// used to associate an <see cref="ITextDocument"/> with the buffer
         /// so that language services (Roslyn, etc.) engage properly.
-        /// Uses a full temp path so Roslyn's MiscellaneousFilesWorkspace picks it up.
+        /// Uses a full temp path so language services engage properly.
         /// </summary>
-        private static int _fakeFileCounter;
         private static string GetFakeFileName(string? kernelName)
-        {
-            var id = System.Threading.Interlocked.Increment(ref _fakeFileCounter);
-            string ext;
-            switch (kernelName?.ToLowerInvariant())
-            {
-                case "csharp": ext = ".cs"; break;
-                case "fsharp": ext = ".fs"; break;
-                case "javascript": ext = ".js"; break;
-                case "typescript": ext = ".ts"; break;
-                case "python": ext = ".py"; break;
-                case "powershell": ext = ".ps1"; break;
-                case "sql": ext = ".sql"; break;
-                case "html": ext = ".html"; break;
-                case "markdown": ext = ".md"; break;
-                default: ext = ".txt"; break;
-            }
-            var dir = Path.Combine(Path.GetTempPath(), "PolyglotNotebooks");
-            Directory.CreateDirectory(dir);
-            return Path.Combine(dir, $"cell_{id}{ext}");
-        }
+            => KernelLanguageMap.GetFakeFileName(kernelName);
 
         /// <summary>
         /// Retrieves the global OLE IServiceProvider, required by VS adapter factory methods.
@@ -497,6 +600,8 @@ namespace PolyglotNotebooks.Editor
                 default: return Guid.Empty;
             }
         }
+
+
 
         /// <summary>
         /// Fallback code cell construction using a plain TextBox.
@@ -595,6 +700,14 @@ namespace PolyglotNotebooks.Editor
 
             editor.TextChanged += (s, e) => AdjustEditorHeight(editor);
             editor.LostFocus += (s, e) => ExitMarkdownEditMode();
+            editor.PreviewKeyDown += (s, e) =>
+            {
+                if (e.Key == Key.Escape)
+                {
+                    ExitMarkdownEditMode();
+                    e.Handled = true;
+                }
+            };
 
             _editor = editor;
 
@@ -603,7 +716,7 @@ namespace PolyglotNotebooks.Editor
 
             // Rendered markdown display (initially visible)
             _markdownDisplay = RenderMarkdownToPanel(cell.Contents);
-            _markdownDisplay.MouseLeftButtonDown += OnMarkdownDisplayClicked;
+            _markdownDisplay.PreviewMouseLeftButtonDown += OnMarkdownDisplayClicked;
             Grid.SetRow(_markdownDisplay, 1);
             grid.Children.Add(_markdownDisplay);
 
@@ -619,7 +732,10 @@ namespace PolyglotNotebooks.Editor
         {
             Focus();
             if (e.ClickCount >= 2)
+            {
                 EnterMarkdownEditMode();
+                e.Handled = true;
+            }
         }
 
         private void EnterMarkdownEditMode()
@@ -629,8 +745,12 @@ namespace PolyglotNotebooks.Editor
             _markdownDisplay.Visibility = Visibility.Collapsed;
             _editor.Visibility = Visibility.Visible;
             AdjustEditorHeight(_editor);
-            _editor.Focus();
-            _editor.CaretIndex = _editor.Text?.Length ?? 0;
+            // Defer focus until after WPF completes the layout pass for the newly-visible editor
+            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, new Action(() =>
+            {
+                _editor.Focus();
+                _editor.CaretIndex = _editor.Text?.Length ?? 0;
+            }));
         }
 
         private void ExitMarkdownEditMode()
@@ -648,7 +768,7 @@ namespace PolyglotNotebooks.Editor
             var row = Grid.GetRow(_markdownDisplay);
             _contentGrid.Children.Remove(_markdownDisplay);
             _markdownDisplay = RenderMarkdownToPanel(_cell.Contents);
-            _markdownDisplay.MouseLeftButtonDown += OnMarkdownDisplayClicked;
+            _markdownDisplay.PreviewMouseLeftButtonDown += OnMarkdownDisplayClicked;
             Grid.SetRow(_markdownDisplay, row);
             _contentGrid.Children.Add(_markdownDisplay);
         }
@@ -662,7 +782,8 @@ namespace PolyglotNotebooks.Editor
                 Orientation = Orientation.Vertical,
                 Margin = new Thickness(4),
                 Cursor = Cursors.Hand,
-                MinHeight = 30
+                MinHeight = 30,
+                Background = Brushes.Transparent
             };
             panel.ToolTip = "Double-click to edit";
 

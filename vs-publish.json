@@ -1,0 +1,22 @@
+{
+  "$schema": "http://json.schemastore.org/vsix-publish",
+  "categories": [ "other" ],
+  "private": false,
+  "identity": {
+    "internalName": "PolyglotNotebooks",
+    "tags": [ "notebook", "interactive", "polyglot", "csharp", "javascript", "sql", "repl" ]
+  },
+  "assetFiles": [
+    {
+      "pathOnDisk": "art/notebook-editor.png",
+      "targetPath": "art/notebook-editor.png"
+    },
+    {
+      "pathOnDisk": "art/cell-execution.png",
+      "targetPath": "art/cell-execution.png"
+    }
+  ],
+  "overview": "README.md",
+  "publisher": "MadsKristensen",
+  "repo": "https://github.com/madskristensen/PolyglotNotebooksVS"
+}

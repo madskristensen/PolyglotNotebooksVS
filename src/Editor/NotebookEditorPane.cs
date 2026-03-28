@@ -334,7 +334,9 @@ namespace PolyglotNotebooks.Editor
         /// <summary>
         /// Translates keyboard messages using VS's accelerator service so that editor
         /// key bindings (IntelliSense, navigation, etc.) are properly dispatched.
-        /// IVsCodeWindow manages its own HWND focus, so no manual Win32 SetFocus needed.
+        /// The command flows through IVsTextView's IOleCommandTarget filter chain,
+        /// which includes the CommandHandlerServiceAdapter that bridges to MEF
+        /// ICommandHandler&lt;T&gt; (e.g. Copilot's ICommandHandler&lt;TabKeyCommandArgs&gt;).
         /// </summary>
         protected override bool PreProcessMessage(ref System.Windows.Forms.Message m)
         {

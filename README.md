@@ -38,9 +38,6 @@ Write and run C#, JavaScript, SQL, and more — right inside Visual Studio. Poly
 
 Double-click any `.dib` or `.ipynb` file in Solution Explorer, or use **File > Open > File** to open one from disk. The notebook editor opens with your cells ready to run.
 
-<!-- TODO: capture screenshot of opening a .dib file -->
-![Opening a notebook](art/open-notebook.png)
-
 ### Write and Run Code
 
 Type code in any cell and press **Shift+Enter** to execute. Output appears directly below the cell. Use the **▶** button or the run dropdown for more options like **Run Cells Above** and **Run Cell and Below**.
@@ -56,15 +53,9 @@ Each cell has a language selector in its toolbar. Pick **C#**, **JavaScript**, *
 
 Open **View > Variable Explorer** to see every variable across all kernels. Click any row to see its full value in the detail pane. Hit **Refresh** after running cells to update.
 
-<!-- TODO: capture screenshot of Variable Explorer tool window -->
-![Variable Explorer](art/variable-explorer.png)
-
 ### Manage the Notebook
 
 The toolbar at the top of the editor gives you quick access to common actions:
-
-<!-- TODO: capture screenshot of notebook toolbar -->
-![Notebook toolbar](art/notebook-toolbar.png)
 
 - **Run All** - Execute every cell from top to bottom
 - **Restart + Run All** - Restart the kernel and re-run everything

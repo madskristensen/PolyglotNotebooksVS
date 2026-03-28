@@ -23,7 +23,7 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
         private readonly IClassificationType _comment;
         private readonly IClassificationType _number;
         private readonly IClassificationType _typeName;
-        private readonly LanguagePattern _language;
+        private LanguagePattern _language;
 
         public event EventHandler<ClassificationChangedEventArgs> ClassificationChanged;
 
@@ -67,6 +67,22 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
             }
         }
 
+        /// <summary>
+        /// Updates the cached language pattern when the cell's kernel name changes.
+        /// Raises <see cref="ClassificationChanged"/> to force a full re-classify.
+        /// </summary>
+        internal void UpdateLanguage(string kernelName)
+        {
+            _language = LanguagePattern.Get(kernelName);
+            var snapshot = _buffer.CurrentSnapshot;
+            if (snapshot.Length > 0)
+            {
+                ClassificationChanged?.Invoke(this,
+                    new ClassificationChangedEventArgs(
+                        new SnapshotSpan(snapshot, 0, snapshot.Length)));
+            }
+        }
+
         public IList<ClassificationSpan> GetClassificationSpans(SnapshotSpan span)
         {
             var result = new List<ClassificationSpan>();
@@ -74,16 +90,19 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
                 return result;
 
             var snapshot = span.Snapshot;
-            var startLine = snapshot.GetLineFromPosition(span.Start);
-            var endLine = snapshot.GetLineFromPosition(span.End > 0 ? span.End - 1 : span.End);
-
-            var lineStart = startLine.Start.Position;
-            var lineEnd = endLine.End.Position;
-            var lineSpan = new SnapshotSpan(snapshot, lineStart, lineEnd - lineStart);
-            var text = lineSpan.GetText();
 
             try
             {
+                var startLine = snapshot.GetLineFromPosition(span.Start);
+                var endLine = snapshot.GetLineFromPosition(span.End > 0 ? span.End - 1 : span.End);
+
+                var lineStart = startLine.Start.Position;
+                var lineEnd = endLine.End.Position;
+                if (lineEnd < lineStart || lineEnd > snapshot.Length)
+                    return result;
+
+                var lineSpan = new SnapshotSpan(snapshot, lineStart, lineEnd - lineStart);
+                var text = lineSpan.GetText();
                 var matches = _language.Pattern.Matches(text);
                 foreach (Match m in matches)
                 {

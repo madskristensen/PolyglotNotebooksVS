@@ -85,6 +85,7 @@
   <ItemGroup>
     <Compile Include="Diagnostics\ExtensionLogger.cs" />
     <Compile Include="Editor\CellControl.cs" />
+    <Compile Include="Editor\KernelLanguageMap.cs" />
     <Compile Include="Editor\CellToolbar.cs" />
     <Compile Include="Editor\ImageOutputControl.cs" />
     <Compile Include="Editor\NotebookControl.cs" />

@@ -321,11 +321,14 @@ namespace PolyglotNotebooks.Editor
 
         private void RebuildCells()
         {
-            // Detach IntelliSense from existing cells before clearing
+            // Detach IntelliSense and clean up COM resources from existing cells before clearing
             foreach (var child in _cellStack.Children)
             {
                 if (child is CellControl cc)
+                {
                     _intelliSenseManager?.DetachFromCell(cc);
+                    cc.Cleanup();
+                }
             }
 
             _cellStack.Children.Clear();
@@ -413,6 +416,7 @@ namespace PolyglotNotebooks.Editor
                     _intelliSenseManager?.DetachFromCell(cc);
                     if (ReferenceEquals(_focusedCell, cc))
                         _focusedCell = null;
+                    cc.Cleanup();
                 }
 
                 // Remove the trailing AddButtons panel, then the CellControl
@@ -438,13 +442,14 @@ namespace PolyglotNotebooks.Editor
 
             int oldCellStackPos = 2 * e.OldStartingIndex + 1;
 
-            // Detach IntelliSense from the cell being moved
+            // Detach IntelliSense from the cell being moved and clean up COM resources
             if (oldCellStackPos < _cellStack.Children.Count &&
                 _cellStack.Children[oldCellStackPos] is CellControl cc)
             {
                 _intelliSenseManager?.DetachFromCell(cc);
                 if (ReferenceEquals(_focusedCell, cc))
                     _focusedCell = null;
+                cc.Cleanup();
             }
 
             // Remove old CellControl and its trailing AddButtons panel
@@ -479,6 +484,7 @@ namespace PolyglotNotebooks.Editor
                     _intelliSenseManager?.DetachFromCell(oldCc);
                     if (ReferenceEquals(_focusedCell, oldCc))
                         _focusedCell = null;
+                    oldCc.Cleanup();
                 }
 
                 // Remove old CellControl, insert new one at the same position

@@ -182,7 +182,7 @@ namespace PolyglotNotebooks.Editor
             {
                 Content = new CrispImage { Moniker = moniker, Width = 16, Height = 16 },
                 ToolTip = tooltip,
-                Padding = new Thickness(4, 2, 4, 2),
+                Padding = new Thickness(4, 3, 4, 3),
                 BorderThickness = new Thickness(1),
                 Margin = new Thickness(0, 0, 4, 0),
                 VerticalAlignment = VerticalAlignment.Center
