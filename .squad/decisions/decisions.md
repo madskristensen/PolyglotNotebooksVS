@@ -550,3 +550,29 @@ Extension-installed kernels (JavaScript, SQL, etc.) will appear dynamically once
 ### Team Note
 
 If a new kernel is added to dotnet-interactive as a built-in default in the future, it should be added to `_fallbackKernels` in `KernelInfoCache.cs`.
+
+---
+
+## Decision 12: BaseToolWindow<T> requires explicit Initialize() call
+
+**Date**: 2025-07-16
+**Author**: Wendy (UI & Tool Window Specialist)
+**Status**: APPLIED
+
+### Context
+
+The "Polyglot Variables" command under View > Other Windows did nothing when clicked. The command, tool window, and VSCT were all wired up correctly, but the tool window never appeared.
+
+### Root Cause
+
+Community.VisualStudio.Toolkit's BaseToolWindow<T>.Initialize(ToolkitPackage) **must** be called during InitializeAsync — the toolkit does NOT auto-discover tool windows. Without this call, ShowAsync() throws InvalidOperationException("has not been initialized"), which the command infrastructure silently swallows.
+
+RegisterCommandsAsync() only scans for BaseCommand<T> subclasses. There is no RegisterToolWindowsAsync() equivalent — each tool window must be initialized individually.
+
+### Fix
+
+Added VariableExplorerToolWindow.Initialize(this) to PolyglotNotebooksPackage.InitializeAsync(), plus diagnostic logging in the command and tool window CreateAsync.
+
+### Rule for Future Tool Windows
+
+Any new BaseToolWindow<T> subclass must have a corresponding MyToolWindow.Initialize(this) call in the package's InitializeAsync.

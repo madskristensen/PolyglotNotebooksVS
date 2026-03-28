@@ -603,3 +603,19 @@ CellControl now branches on CellKind in constructor:
 **Build Status**: ✅ Clean (0 errors), VSIX produced
 
 **Related Decision**: Decision 9 (Variable Explorer Menu Command Registration)
+
+
+## 2025-03-28 — Variable Explorer Tool Window Command Fixed
+
+**What Changed**: Fixed "Polyglot Variables" command (View > Other Windows) which was unresponsive.
+
+**Why**: BaseToolWindow<T> from Community.VisualStudio.Toolkit requires explicit Initialize(this) call in package initialization. No auto-discovery mechanism exists.
+
+**Affected Areas**: 
+- PolyglotNotebooksPackage.InitializeAsync() — added Initialize call
+- VariableExplorerCommand — added diagnostic logging
+- VariableExplorerToolWindow — added diagnostic logging
+
+**Status**: ACTIVE — All future tool windows must follow this pattern
+
+**Rule Established**: Any new BaseToolWindow<T> subclass requires a corresponding Initialize(this) call in the package's InitializeAsync, or ShowAsync() will fail silently.

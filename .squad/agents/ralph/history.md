@@ -46,3 +46,13 @@
 - Proactive capacity planning
 - Reactive escalation when needed
 - Regular handoffs to lead specialists
+
+
+## 2025-03-28 — Cross-Agent Update: BaseToolWindow<T> Pattern from Wendy
+
+**From**: Wendy (UI & Tool Window Specialist)  
+**Topic**: Tool Window Initialization Pattern
+
+PolyglotNotebooksPackage.InitializeAsync() now calls VariableExplorerToolWindow.Initialize(this) to satisfy a Community.VisualStudio.Toolkit requirement. All future tool windows must follow this pattern, or ShowAsync() fails silently.
+
+**Your Action**: When adding new BaseToolWindow<T> subclasses, ensure they're initialized during InitializeAsync. This is NOT optional—the toolkit has no auto-discovery mechanism.
