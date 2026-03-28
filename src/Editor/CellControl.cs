@@ -173,19 +173,40 @@ namespace PolyglotNotebooks.Editor
                 // Resolve content type from kernel name
                 var contentType = ResolveContentType(contentTypeRegistry, cell.KernelName);
 
-                // Create VS text buffer adapter (in-memory, no backing file needed)
+                // Create VS text buffer adapter with the resolved content type
                 var bufferAdapter = editorAdapterFactory.CreateVsTextBufferAdapter(oleServiceProvider, contentType);
                 var initialText = cell.Contents ?? string.Empty;
                 bufferAdapter.InitializeContent(initialText, initialText.Length);
 
+                // Set language service ID on the COM buffer so VS's language
+                // service infrastructure (classifiers, colorizers) engages
+                Guid langServiceId = GetLanguageServiceGuid(cell.KernelName);
+                if (langServiceId != Guid.Empty)
+                {
+                    ((IVsTextBuffer)bufferAdapter).SetLanguageServiceID(ref langServiceId);
+                }
+
                 // Get the MEF ITextBuffer for event subscription and content type changes
                 var buffer = editorAdapterFactory.GetDataBuffer((IVsTextBuffer)bufferAdapter);
 
-                // Associate a fake file document so Roslyn language services engage
+                // Ensure the data buffer has the correct content type
+                // (CreateVsTextBufferAdapter may not always propagate to the data buffer)
+                if (buffer.ContentType.TypeName != contentType.TypeName)
+                {
+                    ExtensionLogger.LogInfo(nameof(CellControl),
+                        $"Data buffer content type mismatch: got '{buffer.ContentType.TypeName}', expected '{contentType.TypeName}'; forcing change");
+                    buffer.ChangeContentType(contentType, null);
+                }
+
+                // Write temp file to disk so language services can find it
+                var fakePath = GetFakeFileName(cell.KernelName);
+                File.WriteAllText(fakePath, initialText, Encoding.UTF8);
+
+                // Associate a file document so Roslyn/language services engage
                 var documentFactory = componentModel.GetService<ITextDocumentFactoryService>();
                 try
                 {
-                    documentFactory.CreateTextDocument(buffer, GetFakeFileName(cell.KernelName));
+                    documentFactory.CreateTextDocument(buffer, fakePath);
                 }
                 catch (Exception docEx)
                 {
@@ -377,6 +398,23 @@ namespace PolyglotNotebooks.Editor
             finally
             {
                 if (rawSP != IntPtr.Zero) Marshal.Release(rawSP);
+            }
+        }
+
+        /// <summary>
+        /// Returns the VS language service GUID for a given kernel name.
+        /// This enables COM-level classifiers/colorizers for the buffer.
+        /// </summary>
+        private static Guid GetLanguageServiceGuid(string kernelName)
+        {
+            switch (kernelName?.ToLowerInvariant())
+            {
+                case "csharp": return new Guid("a6c744a8-0e4a-4fc6-886a-064283054674"); // Roslyn C#
+                case "fsharp": return new Guid("BC6DD5A5-D4D6-4dab-A00D-A51242DBAF1B"); // F#
+                case "javascript": return new Guid("71d61d27-9011-4b17-9469-d20f798fb5c0"); // JavaScript
+                case "html": return new Guid("58e975a0-f8fe-11d2-a6ae-00104bcc7269"); // HTML
+                case "sql": return new Guid("fa6e5f20-7e40-11d1-b60e-00a0c9083275"); // T-SQL
+                default: return Guid.Empty;
             }
         }
 

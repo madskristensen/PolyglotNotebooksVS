@@ -325,8 +325,10 @@ namespace PolyglotNotebooks.Editor
 
         int IOleCommandTarget.Exec(ref Guid pguidCmdGroup, uint nCmdID, uint nCmdexecopt, IntPtr pvaIn, IntPtr pvaOut)
         {
-            if (_control != null && _control.IsKeyboardFocusWithin)
+            if (_control != null)
             {
+                // Use HasFocusedTextView (checks IWpfTextView.HasAggregateFocus)
+                // instead of IsKeyboardFocusWithin (WPF-only, misses IVsCodeWindow's HWND)
                 var cmdTarget = _control.GetFocusedCommandTarget();
                 if (cmdTarget != null)
                     return cmdTarget.Exec(ref pguidCmdGroup, nCmdID, nCmdexecopt, pvaIn, pvaOut);
@@ -336,7 +338,7 @@ namespace PolyglotNotebooks.Editor
 
         int IOleCommandTarget.QueryStatus(ref Guid pguidCmdGroup, uint cCmds, OLECMD[] prgCmds, IntPtr pCmdText)
         {
-            if (_control != null && _control.IsKeyboardFocusWithin)
+            if (_control != null)
             {
                 var cmdTarget = _control.GetFocusedCommandTarget();
                 if (cmdTarget != null)
@@ -357,7 +359,7 @@ namespace PolyglotNotebooks.Editor
             // WM_KEYDOWN (0x100) through WM_UNICHAR (0x109)
             if (m.Msg >= 0x0100 && m.Msg <= 0x0109)
             {
-                if (_control != null && _control.IsKeyboardFocusWithin)
+                if (_control != null && _control.HasFocusedTextView())
                 {
                     IVsFilterKeys2 filterKeys = (IVsFilterKeys2)GetService(typeof(SVsFilterKeys));
                     if (filterKeys != null)
