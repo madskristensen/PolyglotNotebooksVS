@@ -320,6 +320,17 @@
 
 **Status**: ACTIVE — Logged as Decision 10. Integration points verified.
 
+## Learnings (Defer Installation Check from LoadDocData)
+
+### UI Thread Blocking Fix
+- `NotebookEditorPane.LoadDocData` previously had **two** sequential `JoinableTaskFactory.Run()` calls: one for `KernelInstallationDetector.IsInstalledAsync()` (spawns `dotnet tool list -g`) and one for `NotebookDocumentManager.OpenAsync()`.
+- The installation check blocked the UI thread for seconds on cold .NET SDK, antivirus scans, or slow PATH resolution.
+- **Fix**: Removed the installation check entirely from `LoadDocData`. Moved it into `ExecutionCoordinator.EnsureKernelStartedAsync()`, which runs lazily on first cell execution and is already fully async.
+- `LoadDocData` now has a single `JoinableTaskFactory.Run()` for document parsing only (fast file I/O).
+- The `KernelInstallationDetector` instance lives as a field on `ExecutionCoordinator` so its cache persists across calls.
+- `KernelNotInstalledDialog.ShowAsync()` is called from the async context inside `EnsureKernelStartedAsync` — no UI thread blocking.
+- If installation fails or is declined, an `InvalidOperationException` is thrown, caught by the fire-and-forget handlers, and logged via `ExtensionLogger`.
+
 ## 2026-03-28 — Quick-Win Fixes: Startup Performance (ProvideAutoLoad + VariableService)
 
 **Event**: Implemented two low-risk, high-impact startup optimizations from prior architecture audit.
@@ -341,3 +352,34 @@
 **Status**: IMPLEMENTED — Decision merged to decisions.md as "Quick-Win Performance Fixes (AutoLoad + VariableService)"
 
 **Coordination**: Three-agent quick-wins session (Vince + Theo + Ellie, parallel) — orchestration logs at .squad/orchestration-log/2026-03-28T1435-*.md
+
+---
+
+## 2026-03-28 — Decision 17: Defer dotnet-interactive Installation Check to First Execution
+
+**Session**: 2026-03-28T1439 (Medium-effort perf fixes)
+**Lead**: Vince (Extension Architect)
+**Status**: ACTIVE
+
+### Context
+The performance audit (prior sessions) identified NotebookEditorPane.LoadDocData as a bottleneck. It contained a JoinableTaskFactory.Run() that spawned dotnet tool list -g to check if dotnet-interactive is installed. This blocked the UI thread for seconds on cold SDK, antivirus interference, or slow PATH resolution.
+
+### Decision
+Move installation check from LoadDocData → ExecutionCoordinator.EnsureKernelStartedAsync():
+- LoadDocData: file I/O + parsing only (single JoinableTaskFactory.Run for OpenAsync)
+- EnsureKernelStartedAsync: lazy install check on first cell execution
+- KernelNotInstalledDialog shows from async context (no UI thread blocking)
+- KernelInstallationDetector instance lives on ExecutionCoordinator (cache persists)
+
+### Files Modified
+- src/Editor/NotebookEditorPane.cs — Removed installation check from LoadDocData
+- src/Execution/ExecutionCoordinator.cs — Added KernelInstallationDetector field, check in EnsureKernelStartedAsync
+
+### Implications
+1. Notebook opens instantly (no subprocess spawn on UI thread)
+2. Content visible even without dotnet-interactive installed
+3. Dialog appears naturally at first execution (when tool is needed)
+4. LoadDocData remains synchronous (VS API contract)
+
+### Coordination
+Parallel session with Ellie (incremental cells). Both address startup/edit latency independently.

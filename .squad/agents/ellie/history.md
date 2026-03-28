@@ -628,3 +628,52 @@ See commit 000082f. Changes:
 **Status**: IMPLEMENTED
 
 **Coordination**: Part of three-agent quick-wins session (Vince + Theo + Ellie, parallel) — orchestration log at .squad/orchestration-log/2026-03-28T1435-ellie.md
+
+### Incremental Cell Collection Updates (2026)
+
+- **Problem**: `OnCellsChanged` called `RebuildCells()` on every `NotifyCollectionChangedEventArgs`, destroying and recreating ALL `CellControl` instances (and their IVsCodeWindow HWNDs) even for a single add/remove.
+- **Fix**: Replaced with a `switch` on `e.Action` dispatching to `HandleCellsAdded`, `HandleCellsRemoved`, `HandleCellsMoved`, `HandleCellsReplaced`. Only `Reset` still calls `RebuildCells()`.
+- **Add-cell button index fix**: Buttons previously captured a fixed `insertIndex` at creation time, which went stale after incremental changes. Now compute index dynamically from `_cellStack.Children.IndexOf(parentPanel) / 2` at click time.
+- **Layout invariant**: `_cellStack` children follow `[AddBtn, Cell, AddBtn, Cell, …, AddBtn]` — AddButtons at even positions (0, 2, 4, …), CellControls at odd positions (1, 3, 5, …). Cell at document index N is at stack position 2*N+1.
+- **Move limitation**: WPF `Unloaded` fires on visual tree removal, which triggers CellControl's `_codeWindow?.Close()`. Can't reparent without destroying the HWND. Move handler creates one new CellControl (destroys 1 HWND) instead of rebuilding all.
+- **Extracted helper**: `CreateWiredCellControl(NotebookCell)` encapsulates CellControl creation, event wiring (Run/RunAbove/RunBelow/RunSelection/Focus), and IntelliSense attachment — used by both `RebuildCells` and incremental handlers.
+
+---
+
+## 2026-03-28 — Decision 18: Incremental Cell Collection Change Handling
+
+**Session**: 2026-03-28T1439 (Medium-effort perf fixes)
+**Lead**: Ellie (Editor Extension Specialist)
+**Status**: ACTIVE
+
+### Context
+The incremental cell changes work from earlier phases (2026-03-27) laid the groundwork but the handlers were stubs. Full implementation completed: OnCellsChanged no longer calls RebuildCells() for every collection change. Prior implementation was O(N) HWNDs destroyed/created even for single add/remove (5-10s lag on 50-cell notebooks).
+
+### Decision
+Replace full-rebuild handler with incremental dispatches by NotifyCollectionChangedAction:
+- Add: HandleCellsAdded() — insert new CellControl + AddButtons at position
+- Remove: HandleCellsRemoved() — detach IntelliSense, remove affected control
+- Move: HandleCellsMoved() — create 1 new CellControl (1 HWND recycled vs all)
+- Replace: HandleCellsReplaced() — swap control at position
+- Reset: RebuildCells() — only for clear-all/document swap
+
+### Add-Cell Button Index Strategy
+Buttons now compute insertion index **at click time** from _cellStack.Children position rather than capturing fixed index at creation. Eliminates stale-index bugs after incremental changes.
+
+### Layout Invariant
+_cellStack.Children pattern: [AddBtn, Cell, AddBtn, Cell, ..., AddBtn]
+- Even indices: AddButton panels (0, 2, 4, ...)
+- Odd indices: CellControl instances (1, 3, 5, ...)
+- Cell at document index N → stack position 2*N+1
+
+### Files Modified
+- src/Editor/NotebookControl.cs — All changes (new handlers, CreateWiredCellControl extraction)
+
+### Implications
+1. Add/remove/move cells now O(1) HWND ops instead of O(N)
+2. CreateWiredCellControl(NotebookCell) is single source of truth for cell creation + wiring + IntelliSense attachment
+3. Any new cell lifecycle must go through CreateWiredCellControl (not just RebuildCells)
+4. Move limitation persists: WPF Unloaded fires on visual tree removal, destroying HWND. True reparenting blocked until CellControl uses explicit Dispose pattern.
+
+### Coordination
+Parallel session with Vince (defer install check). Both address startup/edit latency independently. No blocking dependencies.

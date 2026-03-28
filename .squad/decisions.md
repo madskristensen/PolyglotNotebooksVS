@@ -1148,3 +1148,95 @@ Add `Microsoft.VisualStudio.TextManager.Interop.8.0` v17.14.40260 as ExcludeAsse
 - `src/Editor/NotebookControl.cs` — focused cell lookup
 - `src/PolyglotNotebooks.csproj` — assembly reference
 
+---
+
+## Decision 17: Defer dotnet-interactive Installation Check to First Execution
+
+**Date**: 2026-03-28
+**Lead**: Vince (Extension Architect)
+**Status**: ACTIVE
+**Participants**: Vince
+
+### Rationale
+
+`NotebookEditorPane.LoadDocData` is called synchronously by VS when a notebook file is opened. It previously contained a `JoinableTaskFactory.Run()` block that spawned `dotnet tool list -g` to check if dotnet-interactive is installed. This blocked the UI thread for seconds on cold SDK startup, antivirus interference, or slow PATH resolution.
+
+### Decision
+
+Move the installation check from `LoadDocData` into `ExecutionCoordinator.EnsureKernelStartedAsync()`:
+
+- **LoadDocData** now only does file I/O + parsing (single `JoinableTaskFactory.Run` for `OpenAsync`)
+- **EnsureKernelStartedAsync** checks installation lazily on first cell execution
+- If not installed, shows `KernelNotInstalledDialog` from an async context
+- If the user declines, throws `InvalidOperationException` (caught by fire-and-forget handlers)
+- The `KernelInstallationDetector` instance lives as a field on `ExecutionCoordinator` for per-instance cache persistence
+
+### Rationale
+
+1. **Notebook opens instantly** — no child process spawn on the UI thread
+2. **Content is always visible** — users can read/edit notebooks even without dotnet-interactive
+3. **Natural prompt point** — the dialog appears when the user first tries to execute, which is when the tool is actually needed
+4. **Existing error handling** — `EnsureKernelStartedAsync` already has try/catch for kernel failures; installation check fits naturally
+
+### Files Changed
+
+- `src/Editor/NotebookEditorPane.cs` — Removed installation check block from `LoadDocData`
+- `src/Execution/ExecutionCoordinator.cs` — Added `KernelInstallationDetector` field; added check in `EnsureKernelStartedAsync` before `StartAsync`
+
+### Constraints Respected
+
+- `LoadDocData` still returns `VSConstants.S_OK` synchronously (VS API contract)
+- Notebooks open and display content even without dotnet-interactive installed
+- Installation dialog appears at first execution attempt, not at file open
+
+---
+
+## Decision 18: Incremental Cell Collection Change Handling
+
+**Date**: 2026-03-28
+**Lead**: Ellie (Editor Extension Specialist)
+**Status**: ACTIVE
+**Participants**: Ellie
+
+### Rationale
+
+`NotebookControl.OnCellsChanged` previously called `RebuildCells()` on every `NotifyCollectionChangedEventArgs`. This destroyed and recreated ALL CellControl instances — including their IVsCodeWindow HWNDs — even when only a single cell was added or removed. In a 50-cell notebook, adding one cell would tear down and rebuild all 50 embedded editors (~5-10 seconds of visible lag).
+
+### Decision
+
+Replace the full-rebuild handler with incremental handlers dispatched by `NotifyCollectionChangedAction`:
+
+| Action | Handler | Behavior |
+|--------|---------|----------|
+| Add | `HandleCellsAdded` | Insert only the new CellControl(s) + AddButtons at the correct stack position |
+| Remove | `HandleCellsRemoved` | Detach IntelliSense, remove only the affected CellControl + trailing AddButtons |
+| Move | `HandleCellsMoved` | Remove at old position, create new CellControl at new position (1 HWND recycled) |
+| Replace | `HandleCellsReplaced` | Swap the CellControl at the replaced position |
+| Reset | `RebuildCells()` | Full rebuild (correct for clear-all / document swap) |
+
+### Add-Cell Button Index Strategy
+
+Add-cell buttons now compute their insertion index **dynamically at click time** from their position in `_cellStack.Children`, rather than capturing a fixed index at creation. This eliminates stale-index bugs after incremental insertions/removals.
+
+### Layout Invariant
+
+`_cellStack` children follow the pattern `[AddBtn, Cell, AddBtn, Cell, …, AddBtn]`:
+- AddButtons panels at even indices (0, 2, 4, …)
+- CellControls at odd indices (1, 3, 5, …)
+- Cell at document index N → stack position `2*N + 1`
+
+### Move Limitation
+
+WPF fires `Unloaded` when a control is removed from the visual tree, which triggers `CellControl`'s cleanup handler (`_codeWindow?.Close()`). True reparenting without HWND destruction is not possible with the current CellControl teardown pattern. The Move handler creates one new CellControl (1 HWND destroyed + 1 created) — still far better than rebuilding all cells.
+
+### Implications
+
+1. Adding/removing cells is now O(1) in HWND operations instead of O(N)
+2. `CreateWiredCellControl(NotebookCell)` is the single source of truth for cell creation + event wiring + IntelliSense attachment
+3. Any new cell lifecycle setup must go through `CreateWiredCellControl` (not just `RebuildCells`)
+4. If CellControl ever changes its `Unloaded` cleanup to an explicit `Dispose()`, Move could be optimized to true reparenting
+
+### Files Changed
+
+- `src/Editor/NotebookControl.cs` — All changes in this file
+
