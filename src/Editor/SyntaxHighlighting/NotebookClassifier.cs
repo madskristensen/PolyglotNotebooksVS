@@ -1,11 +1,10 @@
-using System;
-using System.Collections.Generic;
-using System.Text.RegularExpressions;
-
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Classification;
 
 using PolyglotNotebooks.Diagnostics;
+
+using System.Collections.Generic;
+using System.Text.RegularExpressions;
 
 namespace PolyglotNotebooks.Editor.SyntaxHighlighting
 {
@@ -29,32 +28,17 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
 
         internal NotebookClassifier(ITextBuffer buffer, IClassificationTypeRegistryService registry)
         {
-            _buffer   = buffer;
-            _keyword  = registry.GetClassificationType("keyword");
-            _string   = registry.GetClassificationType("string");
-            _comment  = registry.GetClassificationType("comment");
-            _number   = registry.GetClassificationType("number");
-            _typeName = registry.GetClassificationType("class name")
-                     ?? registry.GetClassificationType("type");
+            _buffer = buffer;
+            _keyword = registry.GetClassificationType("keyword");
+            _string = registry.GetClassificationType("string");
+            _comment = registry.GetClassificationType("comment");
+            _number = registry.GetClassificationType("number");
+            _typeName = registry.GetClassificationType("class name");
 
             var kernelName = buffer.Properties.GetProperty<string>("PolyglotNotebook.KernelName");
             _language = LanguagePattern.Get(kernelName);
 
-            ExtensionLogger.LogInfo("NotebookClassifier",
-                $"Created for kernel '{kernelName}', language patterns found: {_language != null}, " +
-                $"keyword={_keyword != null}, string={_string != null}, comment={_comment != null}, " +
-                $"number={_number != null}, typeName={_typeName != null}");
-
             _buffer.Changed += OnBufferChanged;
-
-            // Force initial classification after a short delay to ensure the view has loaded
-            System.Threading.Tasks.Task.Delay(100).ContinueWith(_ =>
-            {
-                var snapshot = _buffer.CurrentSnapshot;
-                ClassificationChanged?.Invoke(this,
-                    new ClassificationChangedEventArgs(
-                        new SnapshotSpan(snapshot, 0, snapshot.Length)));
-            }, System.Threading.Tasks.TaskScheduler.Default);
         }
 
         private void OnBufferChanged(object sender, TextContentChangedEventArgs e)
@@ -71,21 +55,16 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
         {
             var result = new List<ClassificationSpan>();
             if (_language == null)
-            {
-                var kernelName = _buffer.Properties.TryGetProperty<string>("PolyglotNotebook.KernelName", out var kn) ? kn : "(unknown)";
-                ExtensionLogger.LogInfo("NotebookClassifier",
-                    $"GetClassificationSpans: kernel={kernelName}, _language is null — returning empty");
                 return result;
-            }
 
             var snapshot = span.Snapshot;
             var startLine = snapshot.GetLineFromPosition(span.Start);
-            var endLine   = snapshot.GetLineFromPosition(span.End > 0 ? span.End - 1 : span.End);
+            var endLine = snapshot.GetLineFromPosition(span.End > 0 ? span.End - 1 : span.End);
 
             var lineStart = startLine.Start.Position;
-            var lineEnd   = endLine.End.Position;
-            var lineSpan  = new SnapshotSpan(snapshot, lineStart, lineEnd - lineStart);
-            var text      = lineSpan.GetText();
+            var lineEnd = endLine.End.Position;
+            var lineSpan = new SnapshotSpan(snapshot, lineStart, lineEnd - lineStart);
+            var text = lineSpan.GetText();
 
             try
             {
@@ -97,7 +76,14 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
                     var classificationType = Classify(m);
                     if (classificationType == null) continue;
 
-                    var tagSpan = new SnapshotSpan(snapshot, lineStart + m.Index, m.Length);
+                    int spanStart = lineStart + m.Index;
+                    int spanLength = m.Length;
+
+                    // Guard against stale snapshot or out-of-bounds regex match
+                    if (spanStart < 0 || spanLength <= 0 || spanStart + spanLength > snapshot.Length)
+                        continue;
+
+                    var tagSpan = new SnapshotSpan(snapshot, spanStart, spanLength);
                     if (tagSpan.IntersectsWith(span))
                         result.Add(new ClassificationSpan(tagSpan, classificationType));
                 }
@@ -106,11 +92,10 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
             {
                 ExtensionLogger.LogWarning("NotebookClassifier", "Regex timed out during classification.");
             }
-
-            ExtensionLogger.LogInfo("NotebookClassifier",
-                $"GetClassificationSpans: text length={text.Length}, " +
-                $"text preview=\"{(text.Length > 100 ? text.Substring(0, 100) + "..." : text)}\", " +
-                $"spans found={result.Count}");
+            catch (ArgumentOutOfRangeException)
+            {
+                // Buffer changed between getting text and creating spans — safe to ignore
+            }
 
             return result;
         }
@@ -118,10 +103,10 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
         private IClassificationType Classify(Match m)
         {
             if (m.Groups["comment"].Success) return _comment;
-            if (m.Groups["string"].Success)  return _string;
+            if (m.Groups["string"].Success) return _string;
             if (m.Groups["keyword"].Success) return _keyword;
-            if (m.Groups["type"].Success)    return _typeName;
-            if (m.Groups["number"].Success)  return _number;
+            if (m.Groups["type"].Success) return _typeName;
+            if (m.Groups["number"].Success) return _number;
             return null;
         }
     }
@@ -135,19 +120,19 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
         private static readonly Dictionary<string, LanguagePattern> _registry =
             new Dictionary<string, LanguagePattern>(StringComparer.OrdinalIgnoreCase)
             {
-                ["csharp"]     = new LanguagePattern(BuildCSharp()),
-                ["c#"]         = new LanguagePattern(BuildCSharp()),
-                ["fsharp"]     = new LanguagePattern(BuildFSharp()),
-                ["f#"]         = new LanguagePattern(BuildFSharp()),
+                ["csharp"] = new LanguagePattern(BuildCSharp()),
+                ["c#"] = new LanguagePattern(BuildCSharp()),
+                ["fsharp"] = new LanguagePattern(BuildFSharp()),
+                ["f#"] = new LanguagePattern(BuildFSharp()),
                 ["javascript"] = new LanguagePattern(BuildJavaScript()),
-                ["js"]         = new LanguagePattern(BuildJavaScript()),
+                ["js"] = new LanguagePattern(BuildJavaScript()),
                 ["typescript"] = new LanguagePattern(BuildTypeScript()),
-                ["ts"]         = new LanguagePattern(BuildTypeScript()),
-                ["python"]     = new LanguagePattern(BuildPython()),
+                ["ts"] = new LanguagePattern(BuildTypeScript()),
+                ["python"] = new LanguagePattern(BuildPython()),
                 ["powershell"] = new LanguagePattern(BuildPowerShell()),
-                ["pwsh"]       = new LanguagePattern(BuildPowerShell()),
-                ["sql"]        = new LanguagePattern(BuildSql()),
-                ["html"]       = new LanguagePattern(BuildHtml()),
+                ["pwsh"] = new LanguagePattern(BuildPowerShell()),
+                ["sql"] = new LanguagePattern(BuildSql()),
+                ["html"] = new LanguagePattern(BuildHtml()),
             };
 
         public Regex Pattern { get; }

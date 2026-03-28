@@ -1,10 +1,8 @@
-using System.ComponentModel.Composition;
-
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Classification;
 using Microsoft.VisualStudio.Utilities;
 
-using PolyglotNotebooks.Diagnostics;
+using System.ComponentModel.Composition;
 
 namespace PolyglotNotebooks.Editor.SyntaxHighlighting
 {
@@ -26,14 +24,8 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
 
         public IClassifier GetClassifier(ITextBuffer buffer)
         {
-            ExtensionLogger.LogInfo("NotebookClassifierProvider",
-                $"GetClassifier called for buffer with content type '{buffer?.ContentType.TypeName}'");
-
             if (buffer == null)
                 return null;
-
-            ExtensionLogger.LogInfo("NotebookClassifierProvider",
-                $"Buffer has PolyglotNotebook.KernelName property: {buffer.Properties.ContainsProperty("PolyglotNotebook.KernelName")}");
 
             if (!buffer.Properties.ContainsProperty("PolyglotNotebook.KernelName"))
                 return null;

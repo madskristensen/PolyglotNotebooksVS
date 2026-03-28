@@ -37,9 +37,6 @@ namespace PolyglotNotebooks.Editor
         private IVsTextView? _vsTextView;
         private IVsCodeWindow? _codeWindow;
         private bool _suppressBufferSync;
-        private bool _codeWindowCreated;
-        private UIElement? _placeholder;
-        private CellToolbar? _toolbar;
 
         // Kernel name → VS content type mapping
         private static readonly Dictionary<string, string> _kernelContentTypeMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -116,99 +113,13 @@ namespace PolyglotNotebooks.Editor
             }
             else
             {
-                _toolbar = toolbar;
-                BuildCodeCellPlaceholder(grid, cell);
+                BuildCodeCellContent(grid, cell, toolbar);
             }
 
             Child = grid;
         }
 
         public NotebookCell Cell => _cell;
-
-        // ── Deferred code window loading ──────────────────────────────────────
-
-        /// <summary>
-        /// Builds a lightweight read-only placeholder for code cells that renders instantly.
-        /// The real IVsCodeWindow is created later via <see cref="UpgradeToCodeWindow"/>.
-        /// </summary>
-        private void BuildCodeCellPlaceholder(Grid grid, NotebookCell cell)
-        {
-            var fontFamily = new FontFamily("Consolas, Courier New");
-            double fontSize = 13;
-            double lineHeight = fontFamily.LineSpacing * fontSize;
-            double editorVerticalPadding = 4 + 4;
-            double minH = Math.Ceiling(lineHeight * 2 + editorVerticalPadding);
-            double maxH = Math.Ceiling(lineHeight * 20 + editorVerticalPadding);
-
-            var placeholder = new TextBox
-            {
-                FontFamily = fontFamily,
-                FontSize = fontSize,
-                Text = cell.Contents ?? string.Empty,
-                IsReadOnly = true,
-                AcceptsReturn = true,
-                TextWrapping = TextWrapping.NoWrap,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                MinHeight = minH,
-                MaxHeight = maxH,
-                BorderThickness = new Thickness(0),
-                Padding = new Thickness(4),
-                Cursor = Cursors.IBeam,
-            };
-            placeholder.SetResourceReference(TextBox.BackgroundProperty, VsBrushes.ToolWindowBackgroundKey);
-            placeholder.SetResourceReference(TextBox.ForegroundProperty, VsBrushes.ToolWindowTextKey);
-
-            _placeholder = placeholder;
-
-            Grid.SetRow(placeholder, 1);
-            grid.Children.Add(placeholder);
-
-            var output = new OutputControl { Cell = cell };
-            Grid.SetRow(output, 2);
-            grid.Children.Add(output);
-
-            Loaded += OnLoadedUpgradeCodeWindow;
-        }
-
-        private void OnLoadedUpgradeCodeWindow(object sender, RoutedEventArgs e)
-        {
-            Loaded -= OnLoadedUpgradeCodeWindow;
-#pragma warning disable VSTHRD110, VSTHRD001
-            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background,
-                new System.Action(() => UpgradeToCodeWindow()));
-#pragma warning restore VSTHRD110, VSTHRD001
-        }
-
-        /// <summary>
-        /// Replaces the lightweight placeholder with a full IVsCodeWindow.
-        /// Called asynchronously via Dispatcher after the control is loaded.
-        /// </summary>
-        private void UpgradeToCodeWindow()
-        {
-            if (_codeWindowCreated || _contentGrid == null || _toolbar == null || !IsLoaded)
-                return;
-
-            _codeWindowCreated = true;
-
-            if (_placeholder != null)
-            {
-                _contentGrid.Children.Remove(_placeholder);
-                _placeholder = null;
-            }
-
-            // Remove the placeholder OutputControl so BuildCodeCellContent can add a fresh one
-            for (int i = _contentGrid.Children.Count - 1; i >= 0; i--)
-            {
-                if (_contentGrid.Children[i] is OutputControl)
-                {
-                    _contentGrid.Children.RemoveAt(i);
-                    break;
-                }
-            }
-
-            BuildCodeCellContent(_contentGrid, _cell, _toolbar);
-        }
 
         internal TextBox? CodeEditor => _editor;
 
