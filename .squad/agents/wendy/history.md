@@ -556,3 +556,50 @@ CellControl now branches on CellKind in constructor:
 
 ---
 
+
+## Session: Variable Explorer Menu Command Wiring
+
+### Learnings
+
+- **VSCT convention**: Community.VisualStudio.Toolkit expects `VSCommandTable.vsct` (not a package-named .vsct). The VSIX Synchronizer auto-generates `VSCommandTable.cs` with `PackageGuids` and `PackageIds` classes.
+- **No manual PackageGuids needed**: When using a .vsct file, the auto-generated `PackageGuids` class replaces any hand-written one. The `[Guid]` attribute on the package can use a string literal directly.
+- **Command placement**: `IDG_VS_WNDO_OTRWNDWS1` in `guidSHLMainMenu` places commands under **View > Other Windows**.
+- **Icon monikers**: Use `ImageCatalogGuid` + `VariableProperty` with `IconIsMoniker` flag; requires `<Include href="KnownImageIds.vsct"/>` in the .vsct.
+- **Key files**:
+  - `src/VSCommandTable.vsct` — VSCT command table (declares menu commands)
+  - `src/VSCommandTable.cs` — auto-generated PackageIds/PackageGuids
+  - `src/Variables/ShowVariableExplorerCommand.cs` — BaseCommand<T> wiring
+  - `src/PolyglotNotebooksPackage.cs` — package class (calls RegisterCommandsAsync)
+  - Command set GUID: `{b527f541-fc5c-46c9-bc61-e063648877f0}`
+
+---
+
+## 2026-03-28T21:54:09Z — Variable Explorer Menu Command Wiring Complete
+
+**Status**: COMPLETE ✅ — Menu command registration and BaseCommand<T> conversion deployed
+
+**What Changed**:
+- **VSCommandTable.vsct** (new) — VSCT command table declaring "Polyglot Variables" command under View > Other Windows
+  - Command set GUID: `{b527f541-fc5c-46c9-bc61-e063648877f0}` (separate from package GUID)
+  - Menu placement: `IDG_VS_WNDO_OTRWNDWS1` in `guidSHLMainMenu`
+
+---
+
+## 2026-03-28T21:54:09Z — Variable Explorer Menu Command Wiring Complete
+
+**Status**: COMPLETE ✅ — Menu command registration and BaseCommand<T> conversion deployed
+
+**What Changed**:
+- **VSCommandTable.vsct** (new) — VSCT command table declaring "Polyglot Variables" command under View > Other Windows
+  - Command set GUID: {b527f541-fc5c-46c9-bc61-e063648877f0} (separate from package GUID)
+  - Menu placement: IDG_VS_WNDO_OTRWNDWS1 in guidSHLMainMenu
+  - Icon: ImageCatalogGuid="ImageCatalog" + VariableProperty with IconIsMoniker="true"
+- **.csproj** — Added VSCTCompile build item for VSCommandTable.vsct
+- **ShowVariableExplorerCommand.cs** — Converted from static helper to BaseCommand<ShowVariableExplorerCommand>
+  - Now references auto-generated PackageIds.ShowVariableExplorer
+- **PolyglotNotebooksPackage.cs** — Updated [Guid] to use string literal (removed PackageGuids constant reference)
+- **Auto-generated files** — VSCommandTable.cs provides PackageGuids and PackageIds classes
+
+**Build Status**: ✅ Clean (0 errors), VSIX produced
+
+**Related Decision**: Decision 9 (Variable Explorer Menu Command Registration)

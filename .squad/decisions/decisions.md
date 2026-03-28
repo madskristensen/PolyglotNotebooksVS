@@ -344,6 +344,33 @@ Overall assessment: **The codebase is well-structured with strong threading disc
 
 ---
 
+## Decision 9: Variable Explorer Menu Command Registration
+
+**Date**: 2026-07-18  
+**Author**: Wendy (UI & Tool Window Specialist)  
+**Status**: ACTIVE  
+**Type**: UI / Command Registration
+
+### Context
+
+The Variable Explorer tool window existed but had no VS menu command registration — no `.vsct` file, no proper `BaseCommand<T>` class. The package already had `[ProvideMenuResource]`, `[ProvideToolWindow]`, and `RegisterCommandsAsync()` in place.
+
+### Decision
+
+- Created `VSCommandTable.vsct` declaring a "Polyglot Variables" button under **View > Other Windows** using `IDG_VS_WNDO_OTRWNDWS1`.
+- Used a new command set GUID (`{b527f541-fc5c-46c9-bc61-e063648877f0}`) separate from the package GUID.
+- Used `ImageCatalogGuid`/`VariableProperty` with `IconIsMoniker` for the icon (no custom image needed).
+- Rewrote `ShowVariableExplorerCommand` from a static helper to a proper `BaseCommand<ShowVariableExplorerCommand>` referencing auto-generated `PackageIds.ShowVariableExplorer`.
+- Removed the hand-written `PackageGuids` class; the auto-generated `VSCommandTable.cs` now provides it.
+
+### Impact
+
+- The "Polyglot Variables" command now appears in the View > Other Windows menu.
+- Future commands can be added to the same .vsct file and command set.
+- The package class uses a string literal GUID instead of the removed `PackageGuids` constant.
+
+---
+
 ## Decision 8: Loading & Execution Pipeline Architecture Audit (Vince — Architect)
 
 **Date**: 2026-07-15  
