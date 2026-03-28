@@ -546,6 +546,32 @@ Replaced the dead WPF adorner-based syntax highlighting (SyntaxHighlightAdorner.
 #### Build Note
 Warnings about nullable reference types (CS8603, CS8618) are pre-existing in the project; the new files produce the same pattern of nullable warnings, which is acceptable.
 
+## 2026-03-28T15:29:45Z — Overflow-Aware Scroll + Deferred Height Render
+
+**Status**: COMPLETE ✅
+
+**What Changed**: Implemented scroll event isolation (inner vs. outer) and deferred height rendering to eliminate viewport jitter on Enter key and output growth.
+
+**Why**: Cell output overflow handling leaked scroll events to notebook level, causing unintended document scrolling. Direct height changes during output streaming caused viewport reflow churn.
+
+**Implementation**:
+- **CellControl.cs**: Added `OnPreviewMouseWheel()` interception; routes scroll to OutputControl if `HasVerticalOverflow`, else bubbles to notebook.
+- **OutputControl.cs**: New `HasVerticalOverflow` property (`ScrollViewer.ExtentHeight > ScrollViewer.ViewportHeight`); added `RenderAsync()` method using `Dispatcher.BeginInvoke()` for deferred layout.
+- **WebView2OutputHost.cs**: Updated height binding to use deferred render pattern for smooth resizing.
+
+**Affected Areas**:
+- Cell scroll behavior (isolated to output viewer when overflow present)
+- Enter key / output streaming (smooth, no jitter)
+- Variable Explorer scroll isolation (Wendy)
+- UI trace cleanliness (Theo)
+- Toolbar command responsiveness (Vince)
+
+**Status**: ACTIVE — Scroll pattern now standard for all OutputControl instances; deferred render extends to any height-changing operation.
+
+**Related Decisions**:
+- Decision 2: Async-First Threading (Dispatcher aligns with ThreadHelper)
+- Decision 8: Cell UI Code-Only WPF
+
 ## Session: Ellie — Classifier Fix + Run Button UX (2026-03-27)
 
 ### Task
@@ -723,3 +749,28 @@ Parallel session with Vince (defer install check). Both address startup/edit lat
 - src/Editor/CellControl.cs — dynamic sizing, PreviewMouseWheel, FindParentScrollViewer
 - src/Editor/WebView2OutputHost.cs — JS wheel injection, WebMessageReceived, FindParentScrollViewer, updated Dispose
 - src/Editor/OutputControl.cs — PreviewMouseWheel on inner ScrollViewer, FindParentScrollViewer
+
+## Learnings — Scroll/Resize Fix (2025-07-25)
+
+**Problem 1: Mouse wheel always forwarded to notebook (too aggressive)**
+The original PreviewMouseWheel handlers in CellControl, OutputControl, and WebView2OutputHost unconditionally intercepted wheel events and forwarded them to the notebook ScrollViewer. This prevented scrolling inside code cells or outputs with overflow content.
+
+**Fix**: Overflow-aware wheel forwarding pattern:
+- **CellControl**: Check `hostControl.Height >= maxH`. If overflow → don't handle (let native editor scroll). If no overflow → forward to notebook. Also toggle `VerticalScrollBarId` option so the editor scrollbar appears when content overflows.
+- **OutputControl**: Check `scroll.ScrollableHeight > 0`. If overflow → `return` (let inner ScrollViewer handle). If no overflow → forward to notebook.
+- **WebView2OutputHost**: JS-side check: compare `scrollTop + clientHeight < scrollHeight` and `scrollTop > 0`. Only `postMessage` + `preventDefault` when content can't scroll further in the wheel direction.
+
+**Problem 2: Enter key pushes content above out of view**
+Setting `hostControl.Height` inside the `LayoutChanged` handler caused layout reentrancy — WPF re-laid out during the text view's own layout pass, causing visual glitches.
+
+**Fix**: Deferred height update via `Dispatcher.BeginInvoke` at `DispatcherPriority.Render`. Added a 0.5px threshold to avoid unnecessary dispatches. Suppressed VSTHRD110/VSTHRD001 with pragma (intentional fire-and-forget Dispatcher usage, same pattern used elsewhere in the codebase).
+
+**Key Pattern**: For WPF controls hosted inside a ScrollViewer, the standard notebook scroll pattern is:
+1. Inner content has overflow → let it scroll internally (don't mark `Handled`)
+2. Inner content fits → forward wheel to parent ScrollViewer (`e.Handled = true`)
+3. Never set `hostControl.Height` inside `LayoutChanged` synchronously — always defer via Dispatcher to avoid layout reentrancy
+
+**Files Modified**:
+- src/Editor/CellControl.cs — overflow-aware PreviewMouseWheel, deferred LayoutChanged resize, dynamic VerticalScrollBarId toggle
+- src/Editor/OutputControl.cs — overflow-aware PreviewMouseWheel
+- src/Editor/WebView2OutputHost.cs — overflow-aware JS wheel injection

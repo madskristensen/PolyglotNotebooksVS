@@ -1240,3 +1240,32 @@ WPF fires `Unloaded` when a control is removed from the visual tree, which trigg
 
 - `src/Editor/NotebookControl.cs` — All changes in this file
 
+
+---
+
+## Decision 10: Execution Counter Display Kept As-Is
+
+**Date**: 2026-03-28
+**Lead**: Ellie (Editor Specialist)
+**Status**: ACTIVE
+**Participants**: Ellie, User
+
+### Rationale
+
+During output overflow handling audit, discovered execution counter [0] display in CellToolbar.cs. Options considered:
+1. Remove counter (simplify toolbar)
+2. Rename to [N] per Jupyter convention
+3. Keep as [0] (current implementation)
+
+User decided to keep the [0] counter as-is. Rationale: Consistent with early-phase Polyglot design where cell execution numbering is not yet wired. Counter serves as visual placeholder; when execution modes mature, counter will auto-increment per execution flow.
+
+### Implications
+
+1. CellToolbar.cs execution counter remains as [0]
+2. Future execution numbering updates will replace this placeholder without breaking changes
+3. Variable Explorer, outline, and search don't depend on counter formatting
+4. Deferred execution number binding can wire counter to NotebookCell.ExecutionOrder when ready
+
+### Related Decisions
+
+- Decision 9: Markdown Cell Rendering Pattern (toolbar branching applies to counter display too)
