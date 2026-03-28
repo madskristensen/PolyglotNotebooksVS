@@ -1,6 +1,7 @@
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
+using Microsoft.VisualStudio.Text.Editor;
 using PolyglotNotebooks.Diagnostics;
 using PolyglotNotebooks.Execution;
 using PolyglotNotebooks.IntelliSense;
@@ -9,6 +10,8 @@ using PolyglotNotebooks.Models;
 using System;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Windows.Input;
+using System.Windows.Interop;
 
 namespace PolyglotNotebooks.Editor
 {
@@ -18,6 +21,12 @@ namespace PolyglotNotebooks.Editor
     /// </summary>
     public sealed class NotebookEditorPane : WindowPane, IVsPersistDocData
     {
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetFocus();
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SetFocus(IntPtr hWnd);
+
         // GUID of NotebookEditorFactory — returned by GetGuidEditorType.
         private static readonly Guid EditorFactoryGuid = new Guid("52746fdf-4a26-4633-a712-74470fe70bd4");
 
@@ -317,6 +326,48 @@ namespace PolyglotNotebooks.Editor
             _documentManager.RegisterDocument(pszMkDocumentNew, _document);
 
             return VSConstants.S_OK;
+        }
+
+        // ── Keyboard routing ──────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Route keyboard messages to the hosted WPF text view when it has focus.
+        /// VS's default message loop intercepts keyboard messages for accelerator
+        /// pre-translation (global keybindings). We return false to let the message
+        /// flow through normal Win32 dispatch (TranslateMessage + DispatchMessage),
+        /// but we must first ensure Win32 focus is on the HwndSource that hosts the
+        /// text view — otherwise DispatchMessage sends the message to VS's frame HWND.
+        /// </summary>
+        protected override bool PreProcessMessage(ref System.Windows.Forms.Message m)
+        {
+            // WM_KEYDOWN (0x100) through WM_UNICHAR (0x109)
+            if (m.Msg >= 0x0100 && m.Msg <= 0x0109)
+            {
+                if (_control != null)
+                {
+                    var textView = _control.GetFocusedTextView();
+                    if (textView != null)
+                    {
+                        // Ensure Win32 focus is on the HwndSource hosting the text view.
+                        // Without this, DispatchMessage sends the key to VS's frame.
+                        var hwndSource = System.Windows.PresentationSource.FromVisual(textView.VisualElement) as HwndSource;
+                        if (hwndSource != null && hwndSource.Handle != IntPtr.Zero)
+                        {
+                            if (GetFocus() != hwndSource.Handle)
+                            {
+                                SetFocus(hwndSource.Handle);
+                                // Re-assert WPF focus since SetFocus may have moved it
+                                Keyboard.Focus(textView.VisualElement);
+                            }
+                        }
+
+                        // Don't pre-process — let VS call TranslateMessage + DispatchMessage
+                        return false;
+                    }
+                }
+            }
+
+            return base.PreProcessMessage(ref m);
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────────

@@ -1,6 +1,7 @@
 using Community.VisualStudio.Toolkit;
 using Microsoft.VisualStudio.Imaging;
 using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.Text.Editor;
 using PolyglotNotebooks.IntelliSense;
 using PolyglotNotebooks.Kernel;
 using PolyglotNotebooks.Models;
@@ -151,6 +152,37 @@ namespace PolyglotNotebooks.Editor
         public event EventHandler? ClearAllOutputsRequested;
 
         /// <summary>
+        /// Returns true if any hosted IWpfTextView currently has aggregate keyboard focus.
+        /// Used by <see cref="NotebookEditorPane"/> to bypass VS accelerator pre-translation.
+        /// </summary>
+        public bool HasFocusedTextView()
+        {
+            foreach (var child in _cellStack.Children)
+            {
+                if (child is CellControl cc && cc.HasFocusedTextView())
+                    return true;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Returns the IWpfTextView that currently has WPF keyboard focus, or null.
+        /// </summary>
+        public IWpfTextView GetFocusedTextView()
+        {
+            foreach (var child in _cellStack.Children)
+            {
+                if (child is CellControl cc)
+                {
+                    var view = cc.GetFocusedIWpfTextView();
+                    if (view != null)
+                        return view;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
         /// Updates the kernel status indicator in the toolbar.
         /// Safe to call only from the UI thread.
         /// </summary>
@@ -172,10 +204,11 @@ namespace PolyglotNotebooks.Editor
             }
             else if (mods == ModifierKeys.Shift && e.Key == Key.Enter)
             {
-                // Shift+Enter → Run current cell and advance focus to next cell
+                // Shift+Enter → Run current cell (code only) and advance focus to next cell
                 if (_focusedCell != null)
                 {
-                    CellRunRequested?.Invoke(this, new CellRunEventArgs(_focusedCell.Cell));
+                    if (_focusedCell.Cell.Kind == CellKind.Code)
+                        CellRunRequested?.Invoke(this, new CellRunEventArgs(_focusedCell.Cell));
                     AdvanceFocusToNextCell(_focusedCell);
                     e.Handled = true;
                 }
@@ -201,7 +234,22 @@ namespace PolyglotNotebooks.Editor
             {
                 if (found && child is CellControl next)
                 {
-                    next.CodeEditor.Focus();
+                    if (next.Cell.Kind == CellKind.Markdown)
+                    {
+                        next.Focus();
+                    }
+                    else if (next.TextView != null)
+                    {
+                        Keyboard.Focus(next.TextView.VisualElement);
+                    }
+                    else if (next.CodeEditor != null)
+                    {
+                        next.CodeEditor.Focus();
+                    }
+                    else
+                    {
+                        next.Focus();
+                    }
                     return;
                 }
                 if (ReferenceEquals(child, current))
@@ -246,7 +294,7 @@ namespace PolyglotNotebooks.Editor
 
             if (_document.Cells.Count == 0)
             {
-                _cellStack.Children.Add(MakeAddCellButton(0));
+                _cellStack.Children.Add(MakeAddCellButtons(0));
                 return;
             }
 
@@ -254,7 +302,7 @@ namespace PolyglotNotebooks.Editor
             {
                 // Insert button above first cell
                 if (i == 0)
-                    _cellStack.Children.Add(MakeAddCellButton(0));
+                    _cellStack.Children.Add(MakeAddCellButtons(0));
 
                 var cell = _document.Cells[i];
                 var cellControl = new CellControl(_document, cell);
@@ -270,15 +318,31 @@ namespace PolyglotNotebooks.Editor
                 cellControl.GotFocus  += (s, e) => _focusedCell = cellControl;
                 cellControl.LostFocus += (s, e) => { if (ReferenceEquals(_focusedCell, cellControl)) _focusedCell = null; };
 
-                _intelliSenseManager?.AttachToCell(cellControl);
+                // Only attach IntelliSense to code cells
+                if (cell.Kind == CellKind.Code)
+                    _intelliSenseManager?.AttachToCell(cellControl);
+
                 _cellStack.Children.Add(cellControl);
 
                 // Insert button below every cell
-                _cellStack.Children.Add(MakeAddCellButton(i + 1));
+                _cellStack.Children.Add(MakeAddCellButtons(i + 1));
             }
         }
 
-        private Button MakeAddCellButton(int insertIndex)
+        private UIElement MakeAddCellButtons(int insertIndex)
+        {
+            var panel = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                Margin = new Thickness(0, 2, 0, 2),
+            };
+            panel.Children.Add(MakeAddCellButton(insertIndex, CellKind.Code, "\uFF0B Code", "Insert a new code cell"));
+            panel.Children.Add(MakeAddCellButton(insertIndex, CellKind.Markdown, "\uFF0B Markdown", "Insert a new markdown cell"));
+            return panel;
+        }
+
+        private Button MakeAddCellButton(int insertIndex, CellKind kind, string label, string tooltip)
         {
             var icon = new CrispImage
             {
@@ -287,21 +351,21 @@ namespace PolyglotNotebooks.Editor
                 Height = 14,
                 Margin = new Thickness(0, 0, 4, 0)
             };
-            var label = new System.Windows.Controls.TextBlock { Text = "Add Cell", VerticalAlignment = VerticalAlignment.Center };
-            var panel = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
-            panel.Children.Add(icon);
-            panel.Children.Add(label);
+            var labelTb = new System.Windows.Controls.TextBlock { Text = label, VerticalAlignment = VerticalAlignment.Center };
+            var btnPanel = new System.Windows.Controls.StackPanel { Orientation = System.Windows.Controls.Orientation.Horizontal };
+            btnPanel.Children.Add(icon);
+            btnPanel.Children.Add(labelTb);
 
             var btn = new Button
             {
-                Content = panel,
+                Content = btnPanel,
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Padding = new Thickness(6, 3, 8, 3),
-                Margin = new Thickness(0, 2, 0, 2),
+                Margin = new Thickness(0, 0, 4, 0),
                 FontSize = 11,
                 BorderThickness = new Thickness(1),
                 Opacity = 0.5,
-                ToolTip = "Insert a new code cell"
+                ToolTip = tooltip
             };
             btn.SetResourceReference(Button.BackgroundProperty, VsBrushes.ButtonFaceKey);
             btn.SetResourceReference(Button.ForegroundProperty, VsBrushes.ToolWindowTextKey);
@@ -310,10 +374,11 @@ namespace PolyglotNotebooks.Editor
             btn.MouseLeave += (s, e) => btn.Opacity = 0.5;
 
             var capturedIndex = insertIndex;
+            var kernelName = kind == CellKind.Markdown ? "markdown" : (_document?.DefaultKernelName ?? "csharp");
             btn.Click += (s, e) =>
             {
                 if (_document == null) return;
-                _document.AddCell(CellKind.Code, _document.DefaultKernelName, capturedIndex);
+                _document.AddCell(kind, kernelName, capturedIndex);
             };
 
             return btn;
