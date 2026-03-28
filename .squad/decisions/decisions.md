@@ -469,3 +469,57 @@ Suppress `VSTHRD110` and `VSSDK007` with `#pragma warning disable` and a comment
 ## Impact
 - All agents: Follow these patterns when creating new async code that uses CancellationToken, Process, or fire-and-forget
 - Applies to any future kernel management, protocol, or lifecycle code
+
+---
+
+## Decision 10: Use ToolWindowTextKey for Status Text Colors
+
+**Date**: 2025-07-18  
+**Author**: Wendy (UI & Tool Window Specialist)  
+**Status**: IMPLEMENTED  
+
+### Context
+
+The cell toolbar status text ("⟳ Running", "✗ Error") used `VsBrushes.VizSurfaceGoldMediumKey` and `VsBrushes.VizSurfaceRedMediumKey`. These are data visualization colors — not designed for text — and are invisible on light VS themes.
+
+### Decision
+
+Use `VsBrushes.ToolWindowTextKey` for all status text. The Unicode symbols (⟳, ✗) and the green checkmark icon already convey state visually. Colored text that might be invisible is worse than readable neutral text.
+
+### Rule
+
+**Never use `VsBrushes.VizSurface*` keys for text.** These are chart/graph fill colors with no contrast guarantees against tool window backgrounds. For text, use `ToolWindowTextKey`, `GrayTextKey`, or `InfoTextKey`.
+
+### Implications
+
+- Status indicator repositioned left of execution counter for improved information grouping
+- All status states (Running, Error, Completed) now use consistent, readable color
+- Applies to all future status/state indicators in toolbar
+
+---
+
+## Decision 11: Kernel Fallback List — Only Built-in Kernels
+
+**Date**: 2025-07-26  
+**Author**: Ellie (Editor Extension Specialist)  
+**Status**: IMPLEMENTED  
+
+### Context
+
+`KernelInfoCache._fallbackKernels` is the list of kernels shown in the kernel dropdown **before** dotnet-interactive starts and reports its actual kernels via `KernelReady`. The previous list included `javascript`, `typescript`, `sql`, and `markdown` — none of which are built-in dotnet-interactive kernels. Users who selected these got `NoSuitableKernelException`.
+
+### Decision
+
+The fallback list now contains only the four guaranteed built-in kernels: `csharp`, `fsharp`, `pwsh`, `html`.
+
+Extension-installed kernels (JavaScript, SQL, etc.) will appear dynamically once the kernel starts and sends `KernelReady`, which triggers `Populate()` and replaces the fallback.
+
+### Impact
+
+- **Kernel selector**: Fewer entries before kernel startup; accurate entries after startup.
+- **Existing notebooks**: No breakage. `SyncKernelComboSelection()` in `CellToolbar.cs` adds ad-hoc entries for any kernel name found in a file but missing from the dropdown.
+- **Markdown**: Not affected. Markdown cells use `CellKind.Markdown` and bypass the kernel entirely.
+
+### Team Note
+
+If a new kernel is added to dotnet-interactive as a built-in default in the future, it should be added to `_fallbackKernels` in `KernelInfoCache.cs`.

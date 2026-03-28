@@ -71,3 +71,34 @@
 - decisions.md structure and examples
 - ceremonies.md templates
 - team.md and routing.md format
+## 2026-03-28T21:20Z — Toolbar & Kernel Fixes Orchestration
+
+**Status**: COMPLETE ✅ — Both fixes applied, decisions merged, documentation logged
+
+**What Was Done**:
+1. ✅ Orchestration logs written: 2026-03-28T2120-wendy.md, 2026-03-28T2120-ellie.md
+2. ✅ Session log: .squad/log/2026-03-28T2120-toolbar-kernel-fixes.md
+3. ✅ Decision inbox merged: Decisions 10–11 appended to decisions.md, inbox files deleted
+4. ✅ Agent history entries appended: Wendy (color fix), Ellie (kernel fallback)
+5. ✅ Documentation complete, ready for git commit
+
+**Decisions Merged**:
+- **Decision 10**: Use ToolWindowTextKey for Status Text Colors (Wendy)
+- **Decision 11**: Kernel Fallback List — Only Built-in Kernels (Ellie)
+
+**Build Status**: 0 errors, 309 tests passing
+
+**Cross-Agent Outcome**:
+- **Wendy**: Status text now visible on all themes; toolbar reordered for better information flow
+- **Ellie**: Kernel selection stable on startup; no more user-facing NoSuitableKernelException
+
+**Documentation Artifacts**:
+- Orchestration logs: 2 files in .squad/orchestration-log/
+- Session log: .squad/log/2026-03-28T2120-toolbar-kernel-fixes.md
+- Decisions: .squad/decisions/decisions.md (Decisions 10–11 merged from inbox)
+- Agent histories: Wendy and Ellie updated with completion entries
+
+**Status**: DOCUMENTATION COMPLETE — Ready for git commit
+
+---
+

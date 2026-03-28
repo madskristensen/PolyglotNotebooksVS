@@ -30,6 +30,9 @@
 - Split button pattern: Border(StackPanel(Button, Border-separator, Button)) — outer Border gives unified frame, inner buttons have BorderThickness=0, separator is 1px Border with VsBrushes.ToolWindowBorderKey
 - `_runBtn` and `_runDropdownBtn` fields preserved inside the split button so `UpdateStatusIndicator()` enable/disable still works
 - `BuildSplitRunButton()` returns a Border (not a Button) — DockPanel.SetDock works on any UIElement
+- Status text colors: use `VsBrushes.ToolWindowTextKey` (not VizSurface* keys) so text is readable on all VS themes. The ⟳/✗ symbols already convey state visually.
+- DockPanel Dock.Right ordering: items added LAST appear LEFTMOST. To put status indicator left of execution counter, add statusContainer after _executionCounter.
+- `_executionCounter` TextBlock must be created before the `if (!isMarkdown)` block since it's used inside it for DockPanel.SetDock/Children.Add.
 
 ## 2026-03-27T23:02:37Z — Cell Auto-Sizing Implementation Complete
 
@@ -512,3 +515,44 @@ CellControl now branches on CellKind in constructor:
 **Impact on Wendy**: Rich output rendering (WebView2OutputHost) remains orthogonal. Cell UI keyboard events now properly routed. Markdown cell rendering unaffected.
 
 **Related Decision**: Decision 5 — Keyboard Input & Syntax Highlighting Fix (merged to decisions.md)
+
+## Learnings
+
+### Split Button Refactoring (CellToolbar)
+- VS-native split buttons use a single Border > Grid with two columns, NOT two separate Button controls
+- Mouse events (MouseLeftButtonDown) on Border hit-test areas replace Button.Click for unified appearance
+- Use Brushes.Transparent background on inner areas to ensure proper hit-testing while remaining visually seamless
+- Chevron uses a TextBlock with '▾' at 9px font size (was 7px, too small to see/click)
+- Hover feedback applied to the grid level via MouseEnter/MouseLeave gives whole-button highlight behavior
+- Enable/disable logic consolidated to single _splitRunButton Border field instead of two Button fields
+- VsBrushes.CommandBarMouseOverBackgroundGradientKey is the correct VS theme brush for toolbar hover state
+- Toolbar button padding: use 3px top/bottom (not 2px) to prevent icon clipping from CornerRadius eating into content area
+- Split run button: runArea uses Thickness(4,3,2,3) (right=2 because chevron is adjacent); other buttons use Thickness(4,3,4,3)
+- UseLayoutRounding=true on splitBorder ensures pixel-perfect alignment and prevents sub-pixel rendering artifacts
+
+## Status Indicator Repositioning
+
+- Moved status indicator (_statusIcon + _statusIndicator) from the far-right end of the cell toolbar to right after the play/split-run button
+- New visual order: [exec counter] [play▾] [status ✓/Running/Error] [clear output] [··· menu]
+- Wrapped both status elements in a StackPanel container with MinWidth=80 to prevent action buttons from shifting when status text changes width
+- Status icon margin changed from Thickness(4,0,0,0) to Thickness(0) since the container handles outer spacing
+- DockPanel Dock.Right add order matters: items added first are rightmost; reordered to menu → clear → statusContainer → splitRun → execCounter
+## 2026-03-28T21:20Z — Toolbar Color Fix & Reorder
+
+**Status**: COMPLETE ✅ — Status text colors fixed (ToolWindowTextKey), toolbar reordered (status left of counter)
+
+**What Changed**:
+- **CellToolbar.cs**: Replaced VizSurfaceGoldMediumKey and VizSurfaceRedMediumKey with ToolWindowTextKey for status text rendering. Status indicator repositioned left of execution counter.
+- **Theme Safety**: Status text now guaranteed readable on light/dark themes using Windows-standard ToolWindowTextKey.
+- **Toolbar Layout**: Status group (⟳/✗ + text) now appears before execution counter, improving information flow.
+
+**Rationale**: Visualization colors (VizSurface*) are designed for chart fill, not text contrast. Unicode symbols and icons convey state visually; readable neutral text is preferable. Reordering groups related information for better left-to-right scanning.
+
+**Build Status**: ✅ Clean (0 errors, 309 tests passing)
+
+**Cross-Agent**: Integrates cleanly with Ellie's kernel fallback fix (cell can run with any kernel in fallback list).
+
+**Related Decision**: Decision 10 (Use ToolWindowTextKey for Status Text Colors)
+
+---
+

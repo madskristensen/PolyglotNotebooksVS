@@ -838,3 +838,96 @@ Setting `hostControl.Height` inside the `LayoutChanged` handler caused layout re
 **Key Insight**: RDT_VirtualDocument prevents Roslyn's MiscellaneousFilesWorkspace from discovering the document. For notebook cell buffers backed by real files on disk, omit this flag so language services that rely on workspace document tracking (like Roslyn C#) can provide hover, completion, and diagnostics.
 
 **Files Modified**: src/Editor/CellControl.cs — line 247 (RDT flags).
+
+## Learnings — DataTip Diagnostic Logging (2026-07-25)
+
+**Task**: Add comprehensive `[DIAG]`-prefixed diagnostic logging to `BuildCodeCellContent` in CellControl.cs to investigate C# DataTip error ("Document is null when it was required for textdocument/_vs_dataTipRange").
+
+**What was added** (4 diagnostic points, all wrapped in try/catch to never crash main flow):
+
+1. **After ITextDocument Rename** (line ~219): Logs FilePath, IsDirty, FileExists after rename — verifies the fake path is properly set.
+2. **After RDT registration** (line ~280): Logs cookie and moniker, then calls `FindAndLockDocument` with `RDT_NoLock` to verify the RDT can find the document by moniker. Logs HRESULT and returned cookie.
+3. **Buffer properties** (line ~372): Logs `PolyglotNotebook.KernelName`, `WasAssociatedWithTextDocument`, and `ITextDocument` property presence/values on the buffer.
+4. **Roslyn workspace check** (line ~398): Uses reflection to call `Microsoft.CodeAnalysis.Text.Extensions.AsTextContainer(buffer)` → `Workspace.TryGetWorkspace()` → `Solution.GetDocumentIdsWithFilePath(fakePath)`. Reports workspace type and document count. Gracefully degrades if Roslyn assemblies aren't loaded.
+
+**Key decisions**:
+- `IVsRunningDocumentTable4.IsMonikerRegistered` is not available in our SDK version — used `FindAndLockDocument` with `RDT_NoLock` flag instead (read-only probe).
+- `Microsoft.CodeAnalysis.Workspaces` is not directly referenced — used reflection via `AppDomain.CurrentDomain.GetAssemblies()` to find Roslyn assemblies at runtime.
+- All logging uses `ExtensionLogger.LogInfo` (not Warning/Error) with `[DIAG]` prefix for easy ActivityLog filtering.
+
+**Files Modified**: src/Editor/CellControl.cs — 4 diagnostic blocks added to BuildCodeCellContent.
+
+## Learnings — IVsInvisibleEditorManager for Roslyn Integration (2026-07-25)
+
+**Problem**: C# cells had syntax highlighting but NOT Roslyn semantic colorization, IntelliSense, or QuickInfo. Despite setting content type to "CSharp", setting language service GUID, writing fake .cs files, renaming ITextDocument, and registering in RDT — Roslyn never engaged. HTML/JS worked because their language services activate by content type alone.
+
+**Root cause**: Roslyn's MiscellaneousFilesWorkspace subscribes to RDT *events* (specifically `OnAfterFirstDocumentLock`). Our direct `RegisterAndLockDocument` call may not fire the same events that Roslyn is listening for. Roslyn needs documents to be opened through VS's standard document pipeline.
+
+**Solution**: Implemented `IVsInvisibleEditorManager.RegisterInvisibleEditor()` approach for C#/F# kernels:
+1. Write fake `.cs` file to disk (already done)
+2. Call `RegisterInvisibleEditor()` with the fake path — this opens the file through VS's full document pipeline, triggering all RDT events Roslyn subscribes to
+3. Extract the `IVsTextLines` buffer from the invisible editor via `GetDocData()`
+4. Use THAT buffer as our code window's buffer instead of creating a new one via `CreateVsTextBufferAdapter`
+5. This means one buffer, one document — Roslyn sees it natively
+
+**Key architecture decisions**:
+- `NeedsRoslynWorkspace()` helper gates the invisible editor path — only C# and F# use it; HTML/JS/etc. keep the existing `CreateVsTextBufferAdapter` path
+- Invisible editor's buffer already has correct content type and language service — no need to call `SetLanguageServiceID` or `ChangeContentType` for these kernels
+- Buffer content is synced: if cell content differs from disk content, we replace the invisible editor's buffer text
+- `_invisibleEditor` COM reference stored for cleanup; released via `Marshal.ReleaseComObject` in Unloaded handler
+- For non-Roslyn kernels, all existing behavior (CreateVsTextBufferAdapter, ITextDocument, RDT registration) is preserved unchanged
+
+**Files Modified**: src/Editor/CellControl.cs — BuildCodeCellContent refactored with dual-path buffer creation, NeedsRoslynWorkspace helper added, cleanup handler updated.
+
+## Learnings
+
+### Invisible Editor Approach Reverted (Roslyn Integration)
+- IVsInvisibleEditorManager caused DataTipServiceImpl errors when hovering over C# code cells
+- All languages now use standard CreateVsTextBufferAdapter + SetLanguageServiceID path
+- GetLanguageServiceGuid() provides colorization GUIDs for C#, F#, JS, HTML, SQL
+- RDT registration and ITextDocument creation run uniformly for all languages
+- Removed: NeedsRoslynWorkspace(), _invisibleEditor field, invisible editor path, all [DIAG] logging
+
+### Markdown Double-Click Fix
+- WPF StackPanel without Background is transparent to hit-testing
+- Fix: Background = Brushes.Transparent on RenderMarkdownToPanel StackPanel
+- Background = Transparent alone was insufficient — WPF's MouseLeftButtonDown is a Direct routed event and doesn't reliably bubble from child TextBlocks/Borders to the parent StackPanel
+- Fix: Switched to PreviewMouseLeftButtonDown (tunneling) which fires on the StackPanel before children, guaranteeing double-click detection
+- Also set e.Handled = true on double-click to prevent further tunneling after entering edit mode
+- Added PreviewKeyDown handler on the editor TextBox for Escape key to exit edit mode
+- Deferred _editor.Focus() via Dispatcher.BeginInvoke(DispatcherPriority.Input) to ensure WPF layout pass completes before focusing the newly-visible TextBox
+
+### Key File Paths
+- src/Editor/CellControl.cs: buffer creation, language service wiring, markdown edit toggle
+- Activity log: %APPDATA%\Microsoft\VisualStudio\18.0_*Exp\ActivityLog.xml
+
+### Learnings — Kernel Fallback List Fix (2026-03-28)
+
+- **Problem**: `KernelInfoCache._fallbackKernels` included `javascript`, `typescript`, `sql`, and `markdown` which are NOT built-in dotnet-interactive kernels. Users selecting these before kernel startup got `NoSuitableKernelException`.
+- **Fix**: Trimmed fallback list to only guaranteed built-in kernels: `csharp`, `fsharp`, `pwsh`, `html`. Removed `javascript`, `typescript`, `sql`, `markdown`.
+- **Why markdown is safe to remove from fallback**: Markdown cells use `CellKind.Markdown` and are handled by the editor directly, not dispatched to the kernel. They don't need to appear in the kernel dropdown.
+- **Dynamic kernels still work**: When the kernel starts and sends `KernelReady`, `Populate()` replaces the fallback with the real kernel list. Extension-installed kernels (JS, SQL, etc.) appear automatically.
+- **Existing notebooks safe**: `SyncKernelComboSelection()` in `CellToolbar.cs` adds ad-hoc dropdown entries for any kernel name found in a notebook file but not in the current list.
+- **Key file**: `src/IntelliSense/KernelInfoCache.cs`
+## 2026-03-28T21:20Z — Kernel Fallback List Fix
+
+**Status**: COMPLETE ✅ — Trimmed _fallbackKernels to only built-in kernels (csharp, fsharp, pwsh, html)
+
+**What Changed**:
+- **KernelInfoCache.cs**: Removed javascript, 	ypescript, sql, markdown from fallback list. These are not guaranteed built-in kernels and caused NoSuitableKernelException when selected before kernel startup.
+- **Dynamic Population**: Extension-installed kernels now populate correctly after KernelReady event triggers Populate().
+- **Markdown Handling**: Markdown cells use CellKind.Markdown and bypass kernel selection entirely — not affected.
+- **Backward Compatibility**: SyncKernelComboSelection() in CellToolbar.cs adds ad-hoc entries for any kernel name in existing notebooks but missing from dropdown.
+
+**Rationale**: Fallback list is displayed before dotnet-interactive starts and reports actual available kernels. Including non-built-in kernels in the fallback was misleading and caused errors. Dynamic population via KernelReady ensures accuracy after startup.
+
+**Build Status**: ✅ Clean (0 errors, 309 tests passing)
+
+**Cross-Agent**: Works seamlessly with Wendy's toolbar color fix (status text now clearly visible for any kernel in fallback).
+
+**Related Decision**: Decision 11 (Kernel Fallback List — Only Built-in Kernels)
+
+**Future Notes**: If dotnet-interactive adds new built-in default kernels, update _fallbackKernels accordingly.
+
+---
+
