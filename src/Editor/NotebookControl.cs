@@ -204,6 +204,13 @@ namespace PolyglotNotebooks.Editor
         public void UpdateKernelStatus(KernelStatus status)
             => _toolbar.UpdateKernelStatus(status);
 
+        /// <summary>
+        /// Disables or re-enables notebook-level run buttons during execution.
+        /// Safe to call only from the UI thread.
+        /// </summary>
+        public void SetExecuting(bool executing)
+            => _toolbar.SetExecuting(executing);
+
         // Keyboard shortcuts
         protected override void OnPreviewKeyDown(KeyEventArgs e)
         {

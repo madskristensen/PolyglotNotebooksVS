@@ -17,6 +17,8 @@ namespace PolyglotNotebooks.Editor
     {
         private readonly TextBlock _statusDot;
         private readonly TextBlock _kernelLabel;
+        private Button _runAllBtn;
+        private Button _restartRunAllBtn;
 
         /// <summary>Raised when the user clicks Run All or presses Ctrl+Shift+Enter.</summary>
         public event EventHandler? RunAllRequested;
@@ -90,15 +92,15 @@ namespace PolyglotNotebooks.Editor
             layout.Children.Add(sep);
 
             // ── Action buttons (left) ──────────────────────────────────────────
-            var runAllBtn = MakeButton(KnownMonikers.RunAll, "Run All (Ctrl+Shift+Enter)");
-            runAllBtn.Click += (s, e) => RunAllRequested?.Invoke(this, EventArgs.Empty);
-            DockPanel.SetDock(runAllBtn, Dock.Left);
-            layout.Children.Add(runAllBtn);
+            _runAllBtn = MakeButton(KnownMonikers.RunAll, "Run All (Ctrl+Shift+Enter)");
+            _runAllBtn.Click += (s, e) => RunAllRequested?.Invoke(this, EventArgs.Empty);
+            DockPanel.SetDock(_runAllBtn, Dock.Left);
+            layout.Children.Add(_runAllBtn);
 
-            var restartRunAllBtn = MakeButton(KnownMonikers.Rerun, "Restart Kernel and Run All");
-            restartRunAllBtn.Click += (s, e) => RestartAndRunAllRequested?.Invoke(this, EventArgs.Empty);
-            DockPanel.SetDock(restartRunAllBtn, Dock.Left);
-            layout.Children.Add(restartRunAllBtn);
+            _restartRunAllBtn = MakeButton(KnownMonikers.Rerun, "Restart Kernel and Run All");
+            _restartRunAllBtn.Click += (s, e) => RestartAndRunAllRequested?.Invoke(this, EventArgs.Empty);
+            DockPanel.SetDock(_restartRunAllBtn, Dock.Left);
+            layout.Children.Add(_restartRunAllBtn);
 
             var interruptBtn = MakeButton(KnownMonikers.Stop, "Interrupt (Ctrl+.)");
             interruptBtn.Click += (s, e) => InterruptRequested?.Invoke(this, EventArgs.Empty);
@@ -119,6 +121,15 @@ namespace PolyglotNotebooks.Editor
 
             // Show initial grey / not-started state
             UpdateKernelStatus(KernelStatus.NotStarted);
+        }
+
+        /// <summary>
+        /// Disables or re-enables the Run All and Restart+Run All buttons during execution.
+        /// </summary>
+        public void SetExecuting(bool executing)
+        {
+            _runAllBtn.IsEnabled = !executing;
+            _restartRunAllBtn.IsEnabled = !executing;
         }
 
         /// <summary>

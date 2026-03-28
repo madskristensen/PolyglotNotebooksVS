@@ -22,6 +22,8 @@ namespace PolyglotNotebooks.Editor
         private readonly ComboBox _kernelCombo;
         private readonly TextBlock _executionCounter;
         private readonly TextBlock _statusIndicator;
+        private Button? _runBtn;
+        private Button? _runDropdownBtn;
 
         // Guard against re-entrant kernel combo ↔ cell property update loops.
         private bool _syncingKernelCombo;
@@ -145,12 +147,12 @@ namespace PolyglotNotebooks.Editor
                 Children.Add(clearBtn);
 
                 // Run-mode dropdown button (▼) — opens run-mode context menu
-                var runDropdownBtn = BuildRunDropdownButton();
-                DockPanel.SetDock(runDropdownBtn, Dock.Right);
-                Children.Add(runDropdownBtn);
+                _runDropdownBtn = BuildRunDropdownButton();
+                DockPanel.SetDock(_runDropdownBtn, Dock.Right);
+                Children.Add(_runDropdownBtn);
 
                 // Run button
-                var runBtn = new Button
+                _runBtn = new Button
                 {
                     Content = MakeCrispImage(KnownMonikers.Run),
                     Padding = new Thickness(4, 2, 4, 2),
@@ -159,12 +161,12 @@ namespace PolyglotNotebooks.Editor
                     Margin = new Thickness(0, 0, 0, 0),
                     ToolTip = "Run cell (Shift+Enter)"
                 };
-                runBtn.SetResourceReference(Button.BackgroundProperty, VsBrushes.ButtonFaceKey);
-                runBtn.SetResourceReference(Button.ForegroundProperty, VsBrushes.ToolWindowTextKey);
-                runBtn.SetResourceReference(Button.BorderBrushProperty, VsBrushes.ToolWindowBorderKey);
-                runBtn.Click += (s, e) => RunRequested?.Invoke(this, EventArgs.Empty);
-                DockPanel.SetDock(runBtn, Dock.Right);
-                Children.Add(runBtn);
+                _runBtn.SetResourceReference(Button.BackgroundProperty, VsBrushes.ButtonFaceKey);
+                _runBtn.SetResourceReference(Button.ForegroundProperty, VsBrushes.ToolWindowTextKey);
+                _runBtn.SetResourceReference(Button.BorderBrushProperty, VsBrushes.ToolWindowBorderKey);
+                _runBtn.Click += (s, e) => RunRequested?.Invoke(this, EventArgs.Empty);
+                DockPanel.SetDock(_runBtn, Dock.Right);
+                Children.Add(_runBtn);
             }
 
             // Execution counter [N] — code cells only
@@ -410,20 +412,28 @@ namespace PolyglotNotebooks.Editor
                     _statusIndicator.Text = "⟳ Running";
                     _statusIndicator.SetResourceReference(TextBlock.ForegroundProperty, VsBrushes.VizSurfaceGoldMediumKey);
                     _statusIndicator.Visibility = Visibility.Visible;
+                    if (_runBtn != null) _runBtn.IsEnabled = false;
+                    if (_runDropdownBtn != null) _runDropdownBtn.IsEnabled = false;
                     break;
                 case CellExecutionStatus.Succeeded:
                     _statusIndicator.Text = "✓";
                     _statusIndicator.SetResourceReference(TextBlock.ForegroundProperty, VsBrushes.VizSurfaceGreenMediumKey);
                     _statusIndicator.Visibility = Visibility.Visible;
+                    if (_runBtn != null) _runBtn.IsEnabled = true;
+                    if (_runDropdownBtn != null) _runDropdownBtn.IsEnabled = true;
                     break;
                 case CellExecutionStatus.Failed:
                     _statusIndicator.Text = "✗ Error";
                     _statusIndicator.SetResourceReference(TextBlock.ForegroundProperty, VsBrushes.VizSurfaceRedMediumKey);
                     _statusIndicator.Visibility = Visibility.Visible;
+                    if (_runBtn != null) _runBtn.IsEnabled = true;
+                    if (_runDropdownBtn != null) _runDropdownBtn.IsEnabled = true;
                     break;
                 default:
                     _statusIndicator.Text = string.Empty;
                     _statusIndicator.Visibility = Visibility.Collapsed;
+                    if (_runBtn != null) _runBtn.IsEnabled = true;
+                    if (_runDropdownBtn != null) _runDropdownBtn.IsEnabled = true;
                     break;
             }
         }
