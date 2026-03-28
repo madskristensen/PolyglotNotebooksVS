@@ -175,4 +175,46 @@ Implementation in `CellControl.cs` leverages existing `AdjustEditorHeight()` met
 
 ---
 
-*Decisions merged from inbox by Scribe, 2026-03-27T23:02:37Z*
+---
+
+## Decision 5: Keyboard Input & Syntax Highlighting Fix
+
+**Date**: 2026-03-28  
+**Lead**: Ellie (Editor Extension Specialist)  
+**Status**: ACTIVE  
+**Type**: Bug Fix / Runtime Behavior
+
+### Context
+
+Three IWpfTextViewHost runtime issues were blocking editor usability:
+1. Keystrokes not reaching hosted `IWpfTextView` instances in cells — VS accelerator pre-translation consumed all input
+2. C# syntax highlighting failing to activate — Roslyn classifiers require `ITextDocument` association, not just buffer
+3. HTML QuickInfo crashing on hover — exception raised when processing formatted output
+
+### Decision
+
+**Keyboard Input**: Override `PreProcessMessage` in `NotebookEditorPane` to check aggregate focus via `HasFocusedTextView()` up the control tree. When a text view has focus, bypass VS accelerator table and let WPF routing handle the keystroke.
+
+**C# Highlighting**: Create `ITextDocument` via `ITextDocumentFactoryService.CreateTextDocument(buffer, fakeFileName)` in `BuildCodeCellContent` immediately after buffer initialization. Store reference in `_textDocument` field.
+
+**HTML Crash**: Leave non-fatal exception alone — it is caught by VS infrastructure and does not impede execution.
+
+### Rationale
+
+- `PreProcessMessage` fires before accelerator processing; checking text view focus allows selective bypass
+- `ITextDocument` is a required companion to `ITextBuffer` for Roslyn classification; creating it post-buffer fixes the dependency ordering
+- HTML QuickInfo crash is handled gracefully by the runtime; fixing it requires HTML parser changes outside Ellie's scope
+
+### Implications
+
+- Keyboard focus propagation now depends on `HasFocusedTextView()` chain: CellControl → NotebookControl → NotebookEditorPane
+- All cell text views must use the same `ITextDocumentFactoryService` instance (injected singleton)
+- No breaking changes; existing cell lifecycle and rendering unaffected
+- Build verified clean (0 errors)
+
+### Related Decisions
+
+- Decision 2: Variable Explorer Architecture (also uses ITextDocument)
+- P3 IntelliSense wiring (relies on ITextDocument for classification)
+
+*Decisions merged from inbox by Scribe, 2026-03-28T01:56:49Z*

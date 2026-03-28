@@ -125,6 +125,19 @@
 
 ---
 
+## 2026-03-28T01:56:49Z — Keyboard & Syntax Highlighting Fix (From Ellie)
+
+**Key Finding**: IWpfTextViewHost keyboard routing and C# classification required fixes.
+- **Keyboard Input**: PreProcessMessage override in NotebookEditorPane checks aggregate focus and bypasses VS accelerator table
+- **C# Highlighting**: ITextDocument now created in BuildCodeCellContent, enabling Roslyn classifiers
+- **HTML Crash**: Non-fatal exception; caught by VS infrastructure
+
+**Impact on Penny**: IntelliSenseManager now requires ITextDocument companion to ITextBuffer. All completion/hover/signature providers will have document association for accurate language-specific handling.
+
+**Related Decision**: Decision 5 — Keyboard Input & Syntax Highlighting Fix (merged to decisions.md)
+
+---
+
 ## 2026-03-27T22:29:00Z — WebView2CompositionControl Recommendation (From Vince)
 
 **Key Finding**: WebView2CompositionControl is the recommended fix for airspace issue.

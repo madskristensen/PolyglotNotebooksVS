@@ -496,3 +496,16 @@ CellControl now branches on CellKind in constructor:
 - Orchestration logs: wendy-4, ellie-5, ellie-6 (2026-03-28T00:43:01Z)
 - Session log: itextviewhost-markdown (2026-03-28T00:43:01Z)
 - Decisions merged into decisions.md; inbox cleared
+
+---
+
+## 2026-03-28T01:56:49Z — Keyboard & Syntax Highlighting Runtime Fix (From Ellie)
+
+**Key Finding**: IWpfTextViewHost keyboard routing and C# classification were blocking editor usability.
+- **Keyboard Input**: PreProcessMessage override in NotebookEditorPane checks aggregate focus and bypasses VS accelerator table
+- **C# Highlighting**: ITextDocument now created in BuildCodeCellContent immediately after buffer init, enabling Roslyn classifiers 
+- **HTML Crash**: Non-fatal exception caught by VS infrastructure; no action needed
+
+**Impact on Wendy**: Rich output rendering (WebView2OutputHost) remains orthogonal. Cell UI keyboard events now properly routed. Markdown cell rendering unaffected.
+
+**Related Decision**: Decision 5 — Keyboard Input & Syntax Highlighting Fix (merged to decisions.md)

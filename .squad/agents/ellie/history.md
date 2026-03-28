@@ -447,3 +447,25 @@ CellControl now branches on CellKind in constructor:
 - Orchestration logs: wendy-4, ellie-5, ellie-6 (2026-03-28T00:43:01Z)
 - Session log: itextviewhost-markdown (2026-03-28T00:43:01Z)
 - Decisions merged into decisions.md; inbox cleared
+
+## Learnings — Keyboard Input & Syntax Highlighting Fix (2025-07-25)
+
+### Architecture Decisions
+- **PreProcessMessage override** is the correct VS extensibility pattern for WindowPane subclasses that host WPF text views. Without it, VS's accelerator pre-translation swallows keyboard messages before they reach WPF controls.
+- **ITextDocument association** is required for Roslyn's syntactic classifiers to engage on standalone buffers. Creating a document with a fake file name (e.g. `cell.cs`) triggers language service activation by file extension.
+- **HTML QuickInfo crash** (`HtmlQuickInfoSource.GetDescription`) is a VS language service bug — non-fatal, caught by AsyncQuickInfoSession. Left alone per Option 2.
+
+### Patterns
+- `WindowPane.PreProcessMessage` checks msg range 0x100–0x109 (WM_KEYDOWN through WM_SYSKEYUP) and defers to WPF when any hosted `IWpfTextView.HasAggregateFocus` is true.
+- `ITextDocumentFactoryService.CreateTextDocument(buffer, fakeFileName)` is wrapped in try/catch so failure doesn't break cell rendering.
+- `GetFakeFileName()` maps kernel names to file extensions; mirrors `_kernelContentTypeMap` but for file association.
+
+### Key File Paths
+- `src/Editor/NotebookEditorPane.cs` — PreProcessMessage override for keyboard routing
+- `src/Editor/CellControl.cs` — HasFocusedTextView(), ITextDocument creation, GetFakeFileName()
+- `src/Editor/NotebookControl.cs` — HasFocusedTextView() iterates child CellControls
+
+### User Preferences
+- Mads prefers `base(null)` in NotebookEditorPane constructor (no automation object)
+- Build via MSBuild.exe directly, not `dotnet build`
+- Old-style csproj; no new files — modify existing only

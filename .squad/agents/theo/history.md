@@ -205,3 +205,16 @@
 **Reliability**: Standard VS SDK pattern. No breaking changes to existing async patterns or disposal cascades.
 
 **Status**: APPROVED — No threading concerns. Feature ready for production.
+
+---
+
+## 2026-03-28T01:56:49Z — Keyboard & Syntax Highlighting Runtime Fix (From Ellie)
+
+**Key Finding**: IWpfTextViewHost keyboard routing and C# classification were blocking editor usability.
+- **Keyboard Input**: PreProcessMessage override in NotebookEditorPane checks aggregate focus and bypasses VS accelerator table
+- **C# Highlighting**: ITextDocument now created in BuildCodeCellContent immediately after buffer init, enabling Roslyn classifiers 
+- **HTML Crash**: Non-fatal exception caught by VS infrastructure; no action needed
+
+**Impact on Theo**: No new threading patterns required. PreProcessMessage is a synchronous VS framework call; no JoinableTaskFactory needed. ITextDocument creation is synchronous. Build verified clean with existing test suite; no test changes required.
+
+**Related Decision**: Decision 5 — Keyboard Input & Syntax Highlighting Fix (merged to decisions.md)
