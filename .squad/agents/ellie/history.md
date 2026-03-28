@@ -332,3 +332,39 @@
   - Microsoft.VisualStudio.Text.Span fully qualified to avoid ambiguity with System.Windows.Documents.Span
 - **Key file**: src/Editor/CellControl.cs (BuildCodeCellContent method)
 - **Assembly references**: All needed assemblies (Text.Data, Text.UI.Wpf, Editor, ComponentModelHost) already available transitively via Community.VisualStudio.Toolkit.17
+
+
+## 2026-03-28 — Markdown & ITextViewHost Implementation Complete
+
+### Cross-Agent Coordination
+
+**Wendy-4** (Markdown Cells): Implemented complete markdown cell rendering + UI integration. Pure WPF StackPanel/TextBlock rendering with double-click edit toggle. Dual ＋Code / ＋Markdown buttons in toolbar. CellToolbar simplified for markdown (no kernel, no run controls). 309 tests passing.
+
+**Ellie-5** (Adorner Syntax Highlighting - SUPERSEDED): Regex-based tokenizer + adorner approach for syntax highlighting. 7 languages supported. Build clean. Later superseded by ITextViewHost approach.
+
+**Ellie-6** (ITextViewHost Integration - ACTIVE): Replaced TextBox in code cells with hosted VS editor. MEF-based content type resolution. Two-way buffer sync with suppression. Dynamic content type updates on kernel change. Build clean, 0 errors.
+
+### Decision Impact
+
+Three new decisions recorded in decisions.md:
+- **Decision 5**: Markdown Cell UI Architecture (Wendy-4 work)
+- **Decision 6**: Syntax Highlighting via Adorner Overlay (Ellie-5 work, SUPERSEDED)
+- **Decision 7**: ITextViewHost for Code Cells (Ellie-6 work, ACTIVE)
+
+### Architecture Pattern Established
+
+CellControl now branches on CellKind in constructor:
+- **Code cells**: IWpfTextViewHost (hosted VS editor)
+- **Markdown cells**: TextBox with rendered markdown display
+- Future cell types will follow same branching pattern
+
+### Outstanding Work
+
+- IntelliSense providers still reference TextBox; migration to IWpfTextView APIs needed (future work)
+- Syntax tokenizer/adorner files retained; may be removed if markdown cells don't need them
+
+### Session Documentation
+
+- Orchestration logs: wendy-4, ellie-5, ellie-6 (2026-03-28T00:43:01Z)
+- Session log: itextviewhost-markdown (2026-03-28T00:43:01Z)
+- Decisions merged into decisions.md; inbox cleared

@@ -1,5 +1,33 @@
 # Wendy History
 
+## Markdown Cell Support Implementation
+
+**Status**: COMPLETE ✅ — Full markdown cell UI with rendered view, edit mode, and dual add-cell buttons
+
+**What Changed**:
+- **CellControl.cs**: Branches on `CellKind.Markdown` vs `CellKind.Code`. Markdown cells show rendered WPF view (headings, bold, italic, code blocks, lists) by default; double-click enters raw text edit mode; blur exits back to rendered view. Uses `Segoe UI` font (not monospace). Inline formatting via regex (`**bold**`, `*italic*`, `` `code` ``). Code blocks rendered in themed Border with Consolas.
+- **CellToolbar.cs**: Markdown cells show "Markdown" label (not kernel combo), hide run/clear/execution counter. Simplified menu keeps: insert code/markdown cells, move up/down, delete.
+- **NotebookControl.cs**: "Add Cell" replaced with "＋ Code" / "＋ Markdown" dual buttons. IntelliSense only attached to code cells. Shift+Enter skips run for markdown cells. Focus advance handles markdown cells.
+- **InsertCellAt** now accepts `CellKind` parameter; markdown cells use `kernelName = "markdown"`.
+
+**Key Patterns**:
+- Markdown rendering is pure WPF (StackPanel of TextBlocks with Inlines) — no WebView2 overhead
+- Edit/view toggle via `Visibility.Collapsed` swap between TextBox and rendered StackPanel
+- `Focusable = true` on markdown CellControl so keyboard shortcuts work in rendered mode
+- All new colors via `VsBrushes.*Key` resource references (theme-safe)
+
+**Build Status**: ✅ Clean (0 errors), 309 tests passing, VSIX produced
+
+## Learnings
+
+- Markdown cells use `CellKind.Markdown` and `KernelName = "markdown"` — parser/serializer handles this already
+- `AddInlineFormatting()` uses regex with group priority: `**` before `*` to avoid bold/italic conflicts
+- `RenderMarkdownToPanel()` handles: headings (h1-h3), bold, italic, inline code, code blocks (```), unordered lists, paragraphs
+- For WPF inline markdown, `Bold(new Run(...))` and `Italic(new Run(...))` from `System.Windows.Documents` namespace
+- `MakeAddCellButtons()` returns a horizontal StackPanel with two buttons; each captures `insertIndex` and `CellKind`
+- Markdown CellControl is `Focusable = true` so GotFocus event works for `_focusedCell` tracking
+- CellToolbar `InsertCellAt()` now takes CellKind — both menus (code and markdown) offer all four insert options
+
 ## 2026-03-27T23:02:37Z — Cell Auto-Sizing Implementation Complete
 
 **Status**: COMPLETE ✅ — Font-metric-based height calculation deployed
@@ -433,3 +461,38 @@ Updated CellControl.cs to make code cells auto-size their height based on conten
 - Beyond 20 lines, MaxHeight caps the TextBox and the scrollbar takes over.
 
 **Key formula:** lineHeight = fontFamily.LineSpacing * fontSize (~15.87px for Consolas 13). MinHeight ≈ 40px (2 lines), MaxHeight ≈ 326px (20 lines).
+
+## 2026-03-28 — Markdown & ITextViewHost Implementation Complete
+
+### Cross-Agent Coordination
+
+**Wendy-4** (Markdown Cells): Implemented complete markdown cell rendering + UI integration. Pure WPF StackPanel/TextBlock rendering with double-click edit toggle. Dual ＋Code / ＋Markdown buttons in toolbar. CellToolbar simplified for markdown (no kernel, no run controls). 309 tests passing.
+
+**Ellie-5** (Adorner Syntax Highlighting - SUPERSEDED): Regex-based tokenizer + adorner approach for syntax highlighting. 7 languages supported. Build clean. Later superseded by ITextViewHost approach.
+
+**Ellie-6** (ITextViewHost Integration - ACTIVE): Replaced TextBox in code cells with hosted VS editor. MEF-based content type resolution. Two-way buffer sync with suppression. Dynamic content type updates on kernel change. Build clean, 0 errors.
+
+### Decision Impact
+
+Three new decisions recorded in decisions.md:
+- **Decision 5**: Markdown Cell UI Architecture (Wendy-4 work)
+- **Decision 6**: Syntax Highlighting via Adorner Overlay (Ellie-5 work, SUPERSEDED)
+- **Decision 7**: ITextViewHost for Code Cells (Ellie-6 work, ACTIVE)
+
+### Architecture Pattern Established
+
+CellControl now branches on CellKind in constructor:
+- **Code cells**: IWpfTextViewHost (hosted VS editor)
+- **Markdown cells**: TextBox with rendered markdown display
+- Future cell types will follow same branching pattern
+
+### Outstanding Work
+
+- IntelliSense providers still reference TextBox; migration to IWpfTextView APIs needed (future work)
+- Syntax tokenizer/adorner files retained; may be removed if markdown cells don't need them
+
+### Session Documentation
+
+- Orchestration logs: wendy-4, ellie-5, ellie-6 (2026-03-28T00:43:01Z)
+- Session log: itextviewhost-markdown (2026-03-28T00:43:01Z)
+- Decisions merged into decisions.md; inbox cleared

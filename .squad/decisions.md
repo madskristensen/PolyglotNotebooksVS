@@ -700,10 +700,141 @@ We needed F7 (View Code) and Shift+F7 (View Designer) support for .dib/.ipynb fi
 - `src/PolyglotNotebooksPackage.cs` — added `ProvideEditorLogicalView` attribute
 - `src/Editor/NotebookEditorFactory.cs` — updated `MapLogicalView` to claim Designer, decline Code/TextView
 
+---
+
+## Decision 5: Markdown Cell UI Architecture (Pure WPF, Rendered Display)
+
+**Date**: 2026-03-27  
+**Lead**: Wendy (UI Specialist)  
+**Status**: ACTIVE  
+**Participants**: Wendy
+
+### Rationale
+
+Markdown cells need fundamentally different UX from code cells: no execution, no kernel selection, and a rendered/edit toggle pattern. Avoids WebView2 overhead by using pure WPF TextBlock-based rendering with Inlines (Bold, Italic, Run).
+
+### Key Decisions
+
+1. **Rendered view uses pure WPF** — StackPanel of TextBlocks with Inlines. No WebView2 for markdown cell display (WebView2 is reserved for output rendering). Keeps cells lightweight.
+2. **Double-click to edit, blur to render** — Follows VS designer/XAML pattern. Single click focuses, double-click enters raw text mode, losing focus re-renders.
+3. **Dual add-cell buttons** — "＋ Code" and "＋ Markdown" side-by-side replaces single "Add Cell" button.
+4. **CellToolbar branches on CellKind** — Markdown cells show "Markdown" label instead of kernel combo. Run, clear, and counter controls hidden. Simplified ··· menu.
+5. **Markdown kernel convention** — Markdown cells use `KernelName = "markdown"` and `CellKind = CellKind.Markdown`.
+
+### Implications
+
+- CellControl now branches in constructor based on CellKind; future cell types follow same pattern
+- IntelliSense only attached to code cells (guarded in NotebookControl.RebuildCells)
+- Shift+Enter on markdown cells advances focus without run events
+- InsertCellAt in CellToolbar now requires CellKind parameter
+
+### Files Changed
+
+- `src/Editor/CellControl.cs` — Major (markdown rendering, edit/view toggle, dual content paths)
+- `src/Editor/CellToolbar.cs` — Major (markdown-aware toolbar, simplified menu, InsertCellAt signature)
+- `src/Editor/NotebookControl.cs` — Moderate (dual add-cell buttons, conditional IntelliSense, focus handling)
+
 ### Related Decisions
 
-- Decision 1: Community.VisualStudio.Toolkit foundation (provides editor factory abstractions)
-- Decision 2: Async-first threading model (applies to keyboard event handling)
+- Decision 6: Syntax Highlighting via Adorner Overlay (SUPERSEDED)
+- Decision 7: ITextViewHost for Code Cell Editors (ACTIVE)
+
+---
+
+## Decision 6: Syntax Highlighting via Adorner Overlay
+
+**Date**: 2026-03-27  
+**Lead**: Ellie (Editor Specialist)  
+**Status**: SUPERSEDED  
+**Participants**: Ellie
+
+### Rationale
+
+Notebook code cells used plain TextBox with no syntax coloring. Adorner overlay pattern avoids TextBox replacement complexity: adorner layer renders colored text while TextBox remains transparent underneath (preserves all existing TextBox APIs and IntelliSense provider integration).
+
+### How It Works
+
+1. `TextBox.Foreground = Transparent` — Text invisible but functional (input, caret, selection intact)
+2. `TextBox.CaretBrush` set via SetResourceReference to keep caret visible
+3. `SyntaxHighlightAdorner` (WPF Adorner) renders colored text via FormattedText with per-token SetForegroundBrush
+4. Regex-based `SyntaxTokenizer` with named groups classifies tokens per language
+
+### Why NOT RichTextBox
+
+All 4 IntelliSense providers (CompletionProvider, HoverProvider, SignatureHelpProvider, DiagnosticsProvider) depend on TextBox-specific APIs: `.Text`, `.CaretIndex`, `.GetRectFromCharacterIndex()`, `.GetCharacterIndexFromPoint()`. Replacing would require rewriting all 4 providers (FlowDocument API is fundamentally different).
+
+### Languages Supported
+
+C#, F#, JavaScript/TypeScript, Python, HTML, SQL, PowerShell via static registry.
+
+### Implications
+
+1. Any future IntelliSense provider can still take TextBox; no API change
+2. DiagnosticsProvider adorner coexists on same TextBox layer (no conflicts)
+3. Token colors hardcoded to VS Dark theme (frozen brushes); not dynamically theme-aware for syntax tokens
+4. If future editor replaces TextBox (e.g., AvalonEdit), adorner AND all IntelliSense providers must migrate together
+
+### New Files
+
+- `src/Editor/SyntaxHighlighting/SyntaxTokenizer.cs` — Base tokenizer + 7 language implementations
+- `src/Editor/SyntaxHighlighting/SyntaxHighlightAdorner.cs` — WPF adorner rendering
+
+### Modified Files
+
+- `src/Editor/CellControl.cs` — Adorner wired in BuildCodeCellContent(), subscribes to KernelName changes
+- `src/PolyglotNotebooks.csproj` — Compile includes for new files
+
+### Superseded By
+
+- Decision 7: ITextViewHost for Code Cell Editors (2026-03-28) — Native VS editor provides superior theming, IntelliSense, find/replace, code folding
+
+---
+
+## Decision 7: Replace TextBox with IWpfTextViewHost in Code Cells
+
+**Date**: 2026-03-27  
+**Lead**: Ellie (Editor Specialist)  
+**Status**: ACTIVE  
+**Participants**: Ellie
+
+### Rationale
+
+Code cells used TextBox with SyntaxHighlightAdorner overlay for syntax coloring. Limited: no real language services, no VS theming integration, adorner duplicated what VS editor already provides. Hosted IWpfTextViewHost gives native syntax highlighting, VS theming, and all built-in editor features (undo/redo, find/replace, code folding, IntelliSense infrastructure) for free via VS editor platform.
+
+### Decision
+
+Replace TextBox in `BuildCodeCellContent` with hosted VS editor (IWpfTextViewHost) using MEF services. Kernel names map to VS content types. Two-way sync between ITextBuffer and NotebookCell.Contents with suppression flag to prevent loops.
+
+### Key Details
+
+- MEF services obtained via `IComponentModel` / `SComponentModel`
+- Services: ITextEditorFactoryService, ITextBufferFactoryService, IContentTypeRegistryService
+- Content type resolved from kernel name → VS content type (e.g., "csharp" → "CSharp")
+- Two-way sync with suppression flag; content type updates dynamically on kernel change
+- `_editor` (TextBox) kept as nullable field for backward compat with IntelliSense providers
+- New public `TextView` property exposed for future IWpfTextView consumers
+- SyntaxHighlightAdorner no longer used for code cells (files retained in project)
+- Markdown cells unchanged (still use TextBox)
+
+### Impact
+
+- **IntelliSense providers** (CompletionProvider, HoverProvider, SignatureHelpProvider, DiagnosticsProvider): Still reference TextBox. Require separate migration to IWpfTextView APIs.
+- **SyntaxHighlightAdorner/SyntaxTokenizer**: Files retained; may be used by markdown cells or removed if not needed.
+- **Theming**: Code cells automatically respect VS theme (dark/light/high contrast) via content type integration
+- **Performance**: No more regex tokenization per keystroke; VS editor handles rendering
+
+### Supersedes
+
+- Decision 6: Syntax Highlighting via Adorner Overlay (SUPERSEDED) — ITextViewHost provides superior solution
+
+### Related Decisions
+
+- Decision 5: Markdown Cell UI Architecture (markdown cells retain TextBox pattern)
+- Decision 2: Async-First Threading Model (applies to MEF service resolution)
+
+### User Directive (Copilot)
+
+This decision implements user directive 2026-03-28T00:18:00Z: "Use ITextViewHost for syntax highlighting in notebook cells. Host real VS editor instances (IWpfTextView/ITextViewHost) inside each cell's WPF panel instead of plain TextBox. Map kernel names to VS content types. Do NOT use custom regex tokenizers or TextMateSharp NuGet."
 
 ---
 
