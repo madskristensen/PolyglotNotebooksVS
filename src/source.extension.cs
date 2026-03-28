@@ -12,7 +12,7 @@ namespace PolyglotNotebooks
         public const string Name = "Polyglot Notebooks";
         public const string Description = @"Interactive notebook experience for Visual Studio. Execute C#, JavaScript, and SQL code in cells with rich output, IntelliSense, and cross-language variable sharing. Powered by .NET Interactive.";
         public const string Language = "en-US";
-        public const string Version = "1.0.900";
+        public const string Version = "1.0.901";
         public const string Author = "Mads Kristensen";
         public const string Tags = "notebook;interactive;polyglot;csharp;javascript;sql;repl";
         public const bool IsPreview = false;

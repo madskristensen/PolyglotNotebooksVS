@@ -2,7 +2,6 @@ using Microsoft.VisualStudio.ComponentModelHost;
 using Microsoft.VisualStudio.Editor;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Text;
-using Microsoft.VisualStudio.Text.Classification;
 using Microsoft.VisualStudio.Text.Editor;
 using Microsoft.VisualStudio.TextManager.Interop;
 using Microsoft.VisualStudio.Utilities;
@@ -179,11 +178,44 @@ namespace PolyglotNotebooks.Editor
                 var initialText = cell.Contents ?? string.Empty;
                 bufferAdapter.InitializeContent(initialText, initialText.Length);
 
+                // Set language service ID on the COM buffer so VS's language
+                // service infrastructure (classifiers, colorizers) engages
+                Guid langServiceId = GetLanguageServiceGuid(cell.KernelName);
+                if (langServiceId != Guid.Empty)
+                {
+                    ((IVsTextBuffer)bufferAdapter).SetLanguageServiceID(ref langServiceId);
+                }
+
                 // Get the MEF ITextBuffer for event subscription and content type changes
                 var buffer = editorAdapterFactory.GetDataBuffer((IVsTextBuffer)bufferAdapter);
 
                 // Mark buffer as a notebook cell so the MEF classifier engages
                 buffer.Properties.AddProperty("PolyglotNotebook.KernelName", cell.KernelName ?? "text");
+
+                // Ensure the data buffer has the correct content type
+                // (CreateVsTextBufferAdapter may not always propagate to the data buffer)
+                if (buffer.ContentType.TypeName != contentType.TypeName)
+                {
+                    ExtensionLogger.LogInfo(nameof(CellControl),
+                        $"Data buffer content type mismatch: got '{buffer.ContentType.TypeName}', expected '{contentType.TypeName}'; forcing change");
+                    buffer.ChangeContentType(contentType, null);
+                }
+
+                // Write temp file to disk so language services can find it
+                var fakePath = GetFakeFileName(cell.KernelName);
+                File.WriteAllText(fakePath, initialText, Encoding.UTF8);
+
+                // Associate a file document so Roslyn/language services engage
+                var documentFactory = componentModel.GetService<ITextDocumentFactoryService>();
+                try
+                {
+                    documentFactory.CreateTextDocument(buffer, fakePath);
+                }
+                catch (Exception docEx)
+                {
+                    ExtensionLogger.LogWarning(nameof(CellControl),
+                        $"ITextDocument creation failed for kernel '{cell.KernelName}': {docEx.Message}");
+                }
 
                 // Create code window adapter — has its own HWND and IOleCommandTarget chain
                 var codeWindow = editorAdapterFactory.CreateVsCodeWindowAdapter(oleServiceProvider);
@@ -212,14 +244,6 @@ namespace PolyglotNotebooks.Editor
                 var textViewHost = editorAdapterFactory.GetWpfTextViewHost(vsTextView);
                 var textView = textViewHost.TextView;
 
-                // Ensure the view's TextBuffer also carries the kernel name property
-                // (the data buffer and the view buffer may differ in some adapter configurations)
-                var viewBuffer = textView.TextBuffer;
-                if (!viewBuffer.Properties.ContainsProperty("PolyglotNotebook.KernelName"))
-                {
-                    viewBuffer.Properties.AddProperty("PolyglotNotebook.KernelName", cell.KernelName ?? "text");
-                }
-
                 // Configure editor display options
                 textView.Options.SetOptionValue(DefaultTextViewOptions.WordWrapStyleId, WordWrapStyles.None);
                 textView.Options.SetOptionValue(DefaultTextViewHostOptions.LineNumberMarginId, false);
@@ -230,21 +254,6 @@ namespace PolyglotNotebooks.Editor
                 _vsTextView = vsTextView;
                 _codeWindow = codeWindow;
                 TextView = textView;
-
-                // Force the classifier aggregator to engage for this buffer.
-                // Getting the classifier triggers MEF discovery for IClassifierProvider exports.
-                try
-                {
-                    var classifierAggregator = componentModel.GetService<IClassifierAggregatorService>();
-                    var classifier = classifierAggregator?.GetClassifier(buffer);
-                    ExtensionLogger.LogInfo(nameof(CellControl),
-                        $"Classifier aggregator returned: {classifier?.GetType().Name ?? "null"}");
-                }
-                catch (Exception classEx)
-                {
-                    ExtensionLogger.LogWarning(nameof(CellControl),
-                        $"Failed to force classifier engagement: {classEx.Message}");
-                }
 
                 var hostControl = textViewHost.HostControl;
                 hostControl.MinHeight = minH;
@@ -306,16 +315,6 @@ namespace PolyglotNotebooks.Editor
                     _vsTextView = null;
                 };
 
-                // The IVsCodeWindow may internally parent the HostControl to its own container.
-                // When running deferred (after the CellControl is already in the visual tree),
-                // we must disconnect it before re-parenting to our Grid.
-                if (hostControl.Parent is System.Windows.Controls.Panel parentPanel)
-                    parentPanel.Children.Remove(hostControl);
-                else if (hostControl.Parent is System.Windows.Controls.ContentControl parentCC)
-                    parentCC.Content = null;
-                else if (hostControl.Parent is System.Windows.Controls.Decorator parentDec)
-                    parentDec.Child = null;
-
                 Grid.SetRow(hostControl, 1);
                 grid.Children.Add(hostControl);
 
@@ -341,10 +340,9 @@ namespace PolyglotNotebooks.Editor
                 var ct = registry.GetContentType(vsContentType);
                 if (ct != null)
                 {
-                    ExtensionLogger.LogInfo(nameof(CellControl),
-                        $"Resolved content type '{ct.TypeName}' for kernel '{kernelName}'");
                     return ct;
                 }
+
                 ExtensionLogger.LogWarning(nameof(CellControl),
                     $"Content type '{vsContentType}' not found for kernel '{kernelName}'; falling back to 'text'");
             }
@@ -402,6 +400,23 @@ namespace PolyglotNotebooks.Editor
             finally
             {
                 if (rawSP != IntPtr.Zero) Marshal.Release(rawSP);
+            }
+        }
+
+        /// <summary>
+        /// Returns the VS language service GUID for a given kernel name.
+        /// This enables COM-level classifiers/colorizers for the buffer.
+        /// </summary>
+        private static Guid GetLanguageServiceGuid(string kernelName)
+        {
+            switch (kernelName?.ToLowerInvariant())
+            {
+                case "csharp": return new Guid("a6c744a8-0e4a-4fc6-886a-064283054674"); // Roslyn C#
+                case "fsharp": return new Guid("BC6DD5A5-D4D6-4dab-A00D-A51242DBAF1B"); // F#
+                case "javascript": return new Guid("71d61d27-9011-4b17-9469-d20f798fb5c0"); // JavaScript
+                case "html": return new Guid("58e975a0-f8fe-11d2-a6ae-00104bcc7269"); // HTML
+                case "sql": return new Guid("fa6e5f20-7e40-11d1-b60e-00a0c9083275"); // T-SQL
+                default: return Guid.Empty;
             }
         }
 

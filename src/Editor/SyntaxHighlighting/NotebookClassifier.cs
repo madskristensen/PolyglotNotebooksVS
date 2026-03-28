@@ -5,6 +5,7 @@ using PolyglotNotebooks.Diagnostics;
 
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 
 namespace PolyglotNotebooks.Editor.SyntaxHighlighting
 {
@@ -39,6 +40,21 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
             _language = LanguagePattern.Get(kernelName);
 
             _buffer.Changed += OnBufferChanged;
+
+            // Force VS to re-classify after the classifier is attached.
+            // Without this, the editor may have already completed its initial
+            // classification pass before the provider returned this classifier,
+            // leaving the buffer un-highlighted.
+            _ = Task.Delay(100).ContinueWith(_ =>
+            {
+                var snapshot = _buffer.CurrentSnapshot;
+                if (snapshot.Length > 0)
+                {
+                    ClassificationChanged?.Invoke(this,
+                        new ClassificationChangedEventArgs(
+                            new SnapshotSpan(snapshot, 0, snapshot.Length)));
+                }
+            }, TaskScheduler.Default);
         }
 
         private void OnBufferChanged(object sender, TextContentChangedEventArgs e)

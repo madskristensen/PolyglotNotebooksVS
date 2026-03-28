@@ -1,14 +1,13 @@
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.OLE.Interop;
-using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
-using Microsoft.VisualStudio.Text.Editor;
+
 using PolyglotNotebooks.Diagnostics;
 using PolyglotNotebooks.Execution;
 using PolyglotNotebooks.IntelliSense;
 using PolyglotNotebooks.Kernel;
 using PolyglotNotebooks.Models;
-using System;
+
 using System.IO;
 
 namespace PolyglotNotebooks.Editor
@@ -125,15 +124,15 @@ namespace PolyglotNotebooks.Editor
             _coordinator = new ExecutionCoordinator(_kernelProcessManager);
             if (_control != null)
             {
-                _control.CellRunRequested        += _coordinator.HandleCellRunRequested;
-                _control.RunAllRequested         += OnRunAllRequested;
+                _control.CellRunRequested += _coordinator.HandleCellRunRequested;
+                _control.RunAllRequested += OnRunAllRequested;
                 _control.RestartAndRunAllRequested += OnRestartAndRunAllRequested;
-                _control.InterruptRequested      += OnInterruptRequested;
-                _control.RestartKernelRequested  += OnRestartKernelRequested;
+                _control.InterruptRequested += OnInterruptRequested;
+                _control.RestartKernelRequested += OnRestartKernelRequested;
                 _control.ClearAllOutputsRequested += OnClearAllOutputsRequested;
-                _control.RunCellAboveRequested   += OnRunCellAboveRequested;
-                _control.RunCellBelowRequested   += OnRunCellBelowRequested;
-                _control.RunSelectionRequested   += OnRunSelectionRequested;
+                _control.RunCellAboveRequested += OnRunCellAboveRequested;
+                _control.RunCellBelowRequested += OnRunCellBelowRequested;
+                _control.RunSelectionRequested += OnRunSelectionRequested;
             }
             _kernelProcessManager.StatusChanged += OnKernelStatusChanged;
 
@@ -186,34 +185,34 @@ namespace PolyglotNotebooks.Editor
                         break;
 
                     case VSSAVEFLAGS.VSSAVE_SaveAs:
-                    {
-                        string? newPath = ShowSaveDialog();
-                        if (newPath == null)
                         {
-                            pfSaveCanceled = 1;
-                            return VSConstants.S_OK;
+                            string? newPath = ShowSaveDialog();
+                            if (newPath == null)
+                            {
+                                pfSaveCanceled = 1;
+                                return VSConstants.S_OK;
+                            }
+                            _document.SaveAs(newPath);
+                            _filePath = newPath;
+                            pbstrMkDocumentNew = newPath;
+                            break;
                         }
-                        _document.SaveAs(newPath);
-                        _filePath = newPath;
-                        pbstrMkDocumentNew = newPath;
-                        break;
-                    }
 
                     case VSSAVEFLAGS.VSSAVE_SaveCopyAs:
-                    {
-                        string? newPath = ShowSaveDialog();
-                        if (newPath == null)
                         {
-                            pfSaveCanceled = 1;
-                            return VSConstants.S_OK;
+                            string? newPath = ShowSaveDialog();
+                            if (newPath == null)
+                            {
+                                pfSaveCanceled = 1;
+                                return VSConstants.S_OK;
+                            }
+                            // Save a copy without changing the document's tracked path or dirty state.
+                            string content = _document.Format == NotebookFormat.Ipynb
+                                ? NotebookParser.SerializeIpynb(_document)
+                                : NotebookParser.SerializeDib(_document);
+                            File.WriteAllText(newPath, content);
+                            break;
                         }
-                        // Save a copy without changing the document's tracked path or dirty state.
-                        string content = _document.Format == NotebookFormat.Ipynb
-                            ? NotebookParser.SerializeIpynb(_document)
-                            : NotebookParser.SerializeDib(_document);
-                        File.WriteAllText(newPath, content);
-                        break;
-                    }
                 }
             }
             catch (Exception ex)
@@ -238,14 +237,14 @@ namespace PolyglotNotebooks.Editor
 
                 if (_control != null)
                 {
-                    _control.RunAllRequested             -= OnRunAllRequested;
-                    _control.RestartAndRunAllRequested   -= OnRestartAndRunAllRequested;
-                    _control.InterruptRequested          -= OnInterruptRequested;
-                    _control.RestartKernelRequested      -= OnRestartKernelRequested;
-                    _control.ClearAllOutputsRequested    -= OnClearAllOutputsRequested;
-                    _control.RunCellAboveRequested       -= OnRunCellAboveRequested;
-                    _control.RunCellBelowRequested       -= OnRunCellBelowRequested;
-                    _control.RunSelectionRequested       -= OnRunSelectionRequested;
+                    _control.RunAllRequested -= OnRunAllRequested;
+                    _control.RestartAndRunAllRequested -= OnRestartAndRunAllRequested;
+                    _control.InterruptRequested -= OnInterruptRequested;
+                    _control.RestartKernelRequested -= OnRestartKernelRequested;
+                    _control.ClearAllOutputsRequested -= OnClearAllOutputsRequested;
+                    _control.RunCellAboveRequested -= OnRunCellAboveRequested;
+                    _control.RunCellBelowRequested -= OnRunCellBelowRequested;
+                    _control.RunSelectionRequested -= OnRunSelectionRequested;
                 }
 
                 if (_kernelProcessManager != null)
@@ -447,14 +446,14 @@ namespace PolyglotNotebooks.Editor
 
                 if (_control != null)
                 {
-                    _control.RunAllRequested             -= OnRunAllRequested;
-                    _control.RestartAndRunAllRequested   -= OnRestartAndRunAllRequested;
-                    _control.InterruptRequested          -= OnInterruptRequested;
-                    _control.RestartKernelRequested      -= OnRestartKernelRequested;
-                    _control.ClearAllOutputsRequested    -= OnClearAllOutputsRequested;
-                    _control.RunCellAboveRequested       -= OnRunCellAboveRequested;
-                    _control.RunCellBelowRequested       -= OnRunCellBelowRequested;
-                    _control.RunSelectionRequested       -= OnRunSelectionRequested;
+                    _control.RunAllRequested -= OnRunAllRequested;
+                    _control.RestartAndRunAllRequested -= OnRestartAndRunAllRequested;
+                    _control.InterruptRequested -= OnInterruptRequested;
+                    _control.RestartKernelRequested -= OnRestartKernelRequested;
+                    _control.ClearAllOutputsRequested -= OnClearAllOutputsRequested;
+                    _control.RunCellAboveRequested -= OnRunCellAboveRequested;
+                    _control.RunCellBelowRequested -= OnRunCellBelowRequested;
+                    _control.RunSelectionRequested -= OnRunSelectionRequested;
                 }
 
                 if (_kernelProcessManager != null)
