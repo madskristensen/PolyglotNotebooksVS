@@ -1,9 +1,14 @@
 using Microsoft.VisualStudio.Shell;
 using PolyglotNotebooks.Models;
 using System;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Windows.Documents;
+using System.Windows.Input;
+using System.Windows.Media;
 
 namespace PolyglotNotebooks.Editor
 {
@@ -14,7 +19,12 @@ namespace PolyglotNotebooks.Editor
     internal sealed class CellControl : Border
     {
         private readonly NotebookCell _cell;
-        private readonly TextBox _editor;
+        private TextBox _editor;
+
+        // Markdown cell state
+        private StackPanel _markdownDisplay;
+        private bool _isMarkdownEditing;
+        private Grid _contentGrid;
 
         /// <summary>Raised when the user activates Run on this cell's toolbar.</summary>
         public event EventHandler? RunRequested;
