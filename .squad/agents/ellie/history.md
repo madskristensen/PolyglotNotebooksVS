@@ -583,3 +583,21 @@ See commit 000082f. Changes:
 - Setting Button.BackgroundProperty bypasses WPF ControlTemplate hover states - don't set it
 - ExecutionCompleted must fire from both single-cell and multi-cell paths
 
+### Learnings — Checkmark Moniker & Classifier Diagnostics (2025-07-25)
+- `CellToolbar` uses `CrispImage` + `KnownMonikers` for icon-based indicators; 20x20 for status, 16x16 for buttons
+- `_statusIcon` (CrispImage) and `_statusIndicator` (TextBlock) are toggled via Visibility in `UpdateStatusIndicator()`
+- `registry.GetClassificationType("class name")` can return null — fall back to `"type"`
+- Force initial classification via delayed `ClassificationChanged` event (100ms `Task.Delay`) to handle late classifier creation
+- Diagnostic logging in `GetClassificationSpans` is essential for debugging "no color" issues: log kernel name, text length, span count
+- Build with: `& "C:\Program Files\Microsoft Visual Studio\2022\Preview\MSBuild\Current\Bin\MSBuild.exe" PolyglotNotebooks.slnx /v:m -restore`
+- VSSDK1026 VSIX lock error is benign when VS is running the extension — DLL compiles fine
+
+### Learnings — Deferred Code Window Loading (2026-03-28)
+- Two-phase loading pattern: show lightweight TextBox placeholder first, upgrade to IVsCodeWindow via `Dispatcher.BeginInvoke(DispatcherPriority.Background)` after Loaded event
+- Key files modified: `CellControl.cs` (placeholder + upgrade logic), `NotebookEditorPane.cs` (async kernel check)
+- `BuildCodeCellPlaceholder()` creates a read-only Consolas TextBox at row 1 with VS theme colors — no COM calls, renders in <10ms
+- `UpgradeToCodeWindow()` removes placeholder + OutputControl, then calls existing `BuildCodeCellContent()` to create the real IVsCodeWindow
+- Guard with `_codeWindowCreated` bool to prevent double-upgrade; check `IsLoaded` to avoid upgrade on disposed controls
+- `IntelliSenseManager.AttachToCell()` already short-circuits when `CodeEditor` is null (IVsCodeWindow cells), so no special handling needed
+- Kernel installation check (`KernelInstallationDetector`) converted from blocking `JoinableTaskFactory.Run` to fire-and-forget `RunAsync`
+- Suppress `VSTHRD110`, `VSTHRD001`, `VSSDK007` pragmas for intentional fire-and-forget and Dispatcher usage
