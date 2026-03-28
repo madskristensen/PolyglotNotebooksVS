@@ -1269,3 +1269,36 @@ User decided to keep the [0] counter as-is. Rationale: Consistent with early-pha
 ### Related Decisions
 
 - Decision 9: Markdown Cell Rendering Pattern (toolbar branching applies to counter display too)
+
+---
+
+## Decision 11: Collapse Left Margin Container via GetTextViewMargin("left")
+
+**Date**: 2026-03-28
+**Lead**: Ellie (Editor)
+**Status**: ACTIVE
+**Participants**: Ellie
+
+### Context
+
+The code cell editor already disabled individual left-side margins via `SetOptionValue` (GlyphMarginId, LineNumberMarginId, SelectionMarginId, ChangeTrackingId). However, the margin container itself can still occupy space even when all child margins are disabled.
+
+### Decision
+
+Collapse the entire left margin container using `textViewHost.GetTextViewMargin("left")` and setting its `VisualElement.Visibility` to `Collapsed`. This follows the exact same pattern used for the bottom margin container.
+
+### Rationale
+
+- Consistent with the established bottom-margin collapse pattern
+- Belt-and-suspenders: options disable the individual margins, container collapse removes any residual space
+- Safe null-check pattern ensures no crash if the margin isn't found
+
+### Implications
+
+1. Cell text editors now have no left or bottom margin space allocated
+2. Editing area utilization improved in the notebook interface
+3. Pattern `GetTextViewMargin("left")` + `Visibility.Collapsed` is now the standard for margin removal
+
+### Files Changed
+
+- `src/Editor/CellControl.cs` — Left margin container collapse (lines 267-270)

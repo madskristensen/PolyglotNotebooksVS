@@ -264,6 +264,11 @@ namespace PolyglotNotebooks.Editor
                 if (bottomMargin?.VisualElement != null)
                     bottomMargin.VisualElement.Visibility = Visibility.Collapsed;
 
+                // Collapse the left margin container (indicator/selection/line-number gutters)
+                var leftMargin = textViewHost.GetTextViewMargin("left") as IWpfTextViewMargin;
+                if (leftMargin?.VisualElement != null)
+                    leftMargin.VisualElement.Visibility = Visibility.Collapsed;
+
                 // Store references for cleanup and command forwarding
                 _textViewHost = textViewHost;
                 _vsTextView = vsTextView;

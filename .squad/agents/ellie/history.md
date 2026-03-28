@@ -774,3 +774,8 @@ Setting `hostControl.Height` inside the `LayoutChanged` handler caused layout re
 - src/Editor/CellControl.cs — overflow-aware PreviewMouseWheel, deferred LayoutChanged resize, dynamic VerticalScrollBarId toggle
 - src/Editor/OutputControl.cs — overflow-aware PreviewMouseWheel
 - src/Editor/WebView2OutputHost.cs — overflow-aware JS wheel injection
+
+### Left-Side Margin Removal (2026-03-28)
+**Task**: Collapse all left-side editor margins (indicator/breakpoint gutter, selection margin, line numbers) from code cell IVsCodeWindow text views.
+**Approach**: The options were already set to false (GlyphMarginId, LineNumberMarginId, SelectionMarginId, ChangeTrackingId), but the left margin container can still occupy space. Added 	extViewHost.GetTextViewMargin("left") collapse, mirroring the existing bottom margin pattern.
+**Files Modified**: src/Editor/CellControl.cs — added left margin container collapse at line 267-270.
