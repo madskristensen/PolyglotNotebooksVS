@@ -20,6 +20,7 @@ namespace PolyglotNotebooks.Execution
     internal sealed class ExecutionCoordinator : IDisposable
     {
         private readonly KernelProcessManager _kernelProcessManager;
+        private readonly KernelInstallationDetector _installationDetector = new KernelInstallationDetector();
         private readonly SemaphoreSlim _startupLock = new SemaphoreSlim(1, 1);
         private readonly CancellationTokenSource _lifetimeCts = new CancellationTokenSource();
 
@@ -307,6 +308,29 @@ namespace PolyglotNotebooks.Execution
 
                 ExtensionLogger.LogInfo(nameof(ExecutionCoordinator),
                     "Starting dotnet-interactive kernel.");
+
+                // Check installation before launching the process.
+                // This runs lazily on first execution, not during LoadDocData.
+                bool isInstalled = await _installationDetector.IsInstalledAsync(ct).ConfigureAwait(false);
+                if (!isInstalled)
+                {
+                    ExtensionLogger.LogWarning(nameof(ExecutionCoordinator),
+                        "dotnet-interactive not installed; prompting user.");
+
+                    bool installed = await KernelNotInstalledDialog.ShowAsync(_installationDetector).ConfigureAwait(false);
+                    if (installed)
+                    {
+                        // Dialog reports success — re-verify (cache was invalidated by the dialog).
+                        isInstalled = await _installationDetector.IsInstalledAsync(ct).ConfigureAwait(false);
+                    }
+
+                    if (!isInstalled)
+                    {
+                        throw new InvalidOperationException(
+                            "dotnet-interactive is not installed. " +
+                            $"Install it with: {KernelInstallationDetector.GetInstallCommand()}");
+                    }
+                }
 
                 await _kernelProcessManager.StartAsync(ct).ConfigureAwait(false);
 

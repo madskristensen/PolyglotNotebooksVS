@@ -272,3 +272,31 @@
 **Status**: IMPLEMENTED — Critical violation resolved
 
 **Coordination**: Part of three-agent quick-wins session (Vince + Theo + Ellie, parallel) — orchestration log at .squad/orchestration-log/2026-03-28T1435-theo.md
+
+---
+
+## 2026-07-21 — Reliability Fixes #7, #8, #9
+
+**Status**: COMPLETE ✅ — Build passes, 0 new errors
+
+**What Changed**: Fixed three reliability issues from the audit:
+
+1. **Fix #7 — Process handle leak in KernelInstallationDetector**: Wrapped Process in `using var`, added inner try/catch to kill process on cancellation before returning null. Process is now always disposed.
+2. **Fix #8 — CancellationTokenRegistration leaks in EventObserver**: Both `WaitForEventTypeAsync` and `WaitForTerminalEventAsync` now capture the `ct.Register()` return value and dispose it in a `finally` block. Method signatures changed to `async` to support await+finally pattern.
+3. **Fix #9 — AutoRestartAsync fire-and-forget without JTF**: Replaced `Task.Run(() => AutoRestartAsync(...))` with `ThreadHelper.JoinableTaskFactory.RunAsync(...)`. Added `#pragma warning disable VSTHRD110, VSSDK007` since it's intentional fire-and-forget.
+
+**Files Modified**:
+- `src/Kernel/KernelInstallationDetector.cs` (Fix #7)
+- `src/Protocol/EventObserver.cs` (Fix #8)
+- `src/Kernel/KernelProcessManager.cs` (Fix #9)
+
+**Build**: ✅ 0 errors (all warnings pre-existing)
+
+---
+
+## Learnings
+
+- `CancellationTokenRegistration` from `ct.Register()` must always be disposed — it holds a delegate reference that leaks if the token source outlives the caller. Pattern: `var reg = ct.Register(...); try { await ...; } finally { reg.Dispose(); }`
+- `Process` objects in .NET hold OS handles. Always use `using` even when awaiting async completion via TCS+Exited event. On cancellation, kill the process before disposing.
+- `Task.Run()` fire-and-forget bypasses JoinableTaskFactory's shutdown tracking. In VS extensions, always use `ThreadHelper.JoinableTaskFactory.RunAsync()` for fire-and-forget async work, even when the work doesn't need the UI thread — JTF ensures proper join-on-shutdown behavior.
+- Suppress both `VSTHRD110` (fire-and-forget) and `VSSDK007` (un-awaited JTF.RunAsync) together when intentionally discarding the JoinableTask.

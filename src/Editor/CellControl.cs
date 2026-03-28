@@ -224,11 +224,12 @@ namespace PolyglotNotebooks.Editor
                 // Create code window adapter — has its own HWND and IOleCommandTarget chain
                 var codeWindow = editorAdapterFactory.CreateVsCodeWindowAdapter(oleServiceProvider);
 
-                // Disable splitter bar (crashes in hosted/embedded scenarios)
+                // Disable splitter bar and dropdown/navigation bar to reduce chrome
                 var codeWindowEx = (IVsCodeWindowEx)codeWindow;
                 var initView = new INITVIEW[1];
                 codeWindowEx.Initialize(
-                    (uint)_codewindowbehaviorflags.CWB_DISABLESPLITTER,
+                    (uint)(_codewindowbehaviorflags.CWB_DISABLESPLITTER
+                         | _codewindowbehaviorflags.CWB_DISABLEDROPDOWNBAR),
                     VSUSERCONTEXTATTRIBUTEUSAGE.VSUC_Usage_Filter,
                     szNameAuxUserContext: "",
                     szValueAuxUserContext: "",
@@ -248,10 +249,20 @@ namespace PolyglotNotebooks.Editor
                 var textViewHost = editorAdapterFactory.GetWpfTextViewHost(vsTextView);
                 var textView = textViewHost.TextView;
 
-                // Configure editor display options
+                // Configure editor display options — keep cells compact
                 textView.Options.SetOptionValue(DefaultTextViewOptions.WordWrapStyleId, WordWrapStyles.None);
                 textView.Options.SetOptionValue(DefaultTextViewHostOptions.LineNumberMarginId, false);
                 textView.Options.SetOptionValue(DefaultTextViewHostOptions.GlyphMarginId, false);
+                textView.Options.SetOptionValue(DefaultTextViewHostOptions.HorizontalScrollBarId, false);
+                textView.Options.SetOptionValue(DefaultTextViewHostOptions.VerticalScrollBarId, false);
+                textView.Options.SetOptionValue(DefaultTextViewHostOptions.ZoomControlId, false);
+                textView.Options.SetOptionValue(DefaultTextViewHostOptions.SelectionMarginId, false);
+                textView.Options.SetOptionValue(DefaultTextViewHostOptions.ChangeTrackingId, false);
+
+                // Collapse the bottom margin container (status bar showing Ln/Ch/encoding/zoom)
+                var bottomMargin = textViewHost.GetTextViewMargin("bottom") as IWpfTextViewMargin;
+                if (bottomMargin?.VisualElement != null)
+                    bottomMargin.VisualElement.Visibility = Visibility.Collapsed;
 
                 // Store references for cleanup and command forwarding
                 _textViewHost = textViewHost;

@@ -97,7 +97,7 @@ namespace PolyglotNotebooks.Kernel
                     CreateNoWindow = true
                 };
 
-                var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
+                using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
                 var output = new StringBuilder();
                 var tcs = new TaskCompletionSource<int>();
 
@@ -112,9 +112,18 @@ namespace PolyglotNotebooks.Kernel
                 process.Start();
                 process.BeginOutputReadLine();
 
-                using (ct.Register(() => tcs.TrySetCanceled()))
+                try
                 {
-                    await tcs.Task.ConfigureAwait(false);
+                    using (ct.Register(() => tcs.TrySetCanceled()))
+                    {
+                        await tcs.Task.ConfigureAwait(false);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    // Kill the process if cancellation fires while it's still running
+                    try { if (!process.HasExited) process.Kill(); } catch { }
+                    return null;
                 }
 
                 return output.ToString();

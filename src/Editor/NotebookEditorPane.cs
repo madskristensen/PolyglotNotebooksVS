@@ -75,29 +75,9 @@ namespace PolyglotNotebooks.Editor
             ThreadHelper.ThrowIfNotOnUIThread();
             _filePath = pszMkDocument;
 
-            // Check dotnet-interactive installation before loading the editor.
-            ThreadHelper.JoinableTaskFactory.Run(async () =>
-            {
-                var detector = new Kernel.KernelInstallationDetector();
-                bool isInstalled = await detector.IsInstalledAsync().ConfigureAwait(false);
-                if (!isInstalled)
-                {
-                    ExtensionLogger.LogWarning(nameof(NotebookEditorPane),
-                        $"dotnet-interactive not installed; opening '{pszMkDocument}' in degraded mode.");
-                    bool installed = await Kernel.KernelNotInstalledDialog.ShowAsync(detector).ConfigureAwait(false);
-                    if (installed)
-                    {
-                        // Re-verify after install; cache was invalidated by the dialog.
-                        isInstalled = await detector.IsInstalledAsync().ConfigureAwait(false);
-                    }
-                }
-
-                if (isInstalled)
-                {
-                    ExtensionLogger.LogInfo(nameof(NotebookEditorPane),
-                        $"dotnet-interactive detected. Loading '{pszMkDocument}'.");
-                }
-            });
+            // Installation check for dotnet-interactive is deferred to the first
+            // cell execution (see ExecutionCoordinator.EnsureKernelStartedAsync).
+            // This keeps LoadDocData fast — no child process spawn on the UI thread.
 
             try
             {

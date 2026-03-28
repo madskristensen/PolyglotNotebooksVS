@@ -286,7 +286,27 @@ namespace PolyglotNotebooks.Editor
                 UpdateTitle();
         }
 
-        private void OnCellsChanged(object sender, NotifyCollectionChangedEventArgs e) => RebuildCells();
+        private void OnCellsChanged(object sender, NotifyCollectionChangedEventArgs e)
+        {
+            switch (e.Action)
+            {
+                case NotifyCollectionChangedAction.Add:
+                    HandleCellsAdded(e);
+                    break;
+                case NotifyCollectionChangedAction.Remove:
+                    HandleCellsRemoved(e);
+                    break;
+                case NotifyCollectionChangedAction.Move:
+                    HandleCellsMoved(e);
+                    break;
+                case NotifyCollectionChangedAction.Replace:
+                    HandleCellsReplaced(e);
+                    break;
+                case NotifyCollectionChangedAction.Reset:
+                    RebuildCells();
+                    break;
+            }
+        }
 
         private void UpdateTitle()
         {
@@ -316,42 +336,161 @@ namespace PolyglotNotebooks.Editor
 
             if (_document.Cells.Count == 0)
             {
-                _cellStack.Children.Add(MakeAddCellButtons(0));
+                _cellStack.Children.Add(MakeAddCellButtons());
                 return;
             }
 
             for (int i = 0; i < _document.Cells.Count; i++)
             {
-                // Insert button above first cell
                 if (i == 0)
-                    _cellStack.Children.Add(MakeAddCellButtons(0));
+                    _cellStack.Children.Add(MakeAddCellButtons());
 
-                var cell = _document.Cells[i];
-                var cellControl = new CellControl(_document, cell);
-
-                // Bubble run events with cell context
-                cellControl.RunRequested      += (s, e) => CellRunRequested?.Invoke(this, new CellRunEventArgs(cell));
-                cellControl.RunAboveRequested += (s, e) => RunCellAboveRequested?.Invoke(this, new CellRunEventArgs(cell));
-                cellControl.RunBelowRequested += (s, e) => RunCellBelowRequested?.Invoke(this, new CellRunEventArgs(cell));
-                cellControl.RunSelectionRequested += (s, e) =>
-                    RunSelectionRequested?.Invoke(this, new CellRunSelectionEventArgs(cell, e.SelectedText));
-
-                // Track which cell currently has keyboard focus
-                cellControl.GotFocus  += (s, e) => _focusedCell = cellControl;
-                cellControl.LostFocus += (s, e) => { if (ReferenceEquals(_focusedCell, cellControl)) _focusedCell = null; };
-
-                // Only attach IntelliSense to code cells
-                if (cell.Kind == CellKind.Code)
-                    _intelliSenseManager?.AttachToCell(cellControl);
-
-                _cellStack.Children.Add(cellControl);
-
-                // Insert button below every cell
-                _cellStack.Children.Add(MakeAddCellButtons(i + 1));
+                _cellStack.Children.Add(CreateWiredCellControl(_document.Cells[i]));
+                _cellStack.Children.Add(MakeAddCellButtons());
             }
         }
 
-        private UIElement MakeAddCellButtons(int insertIndex)
+        /// <summary>
+        /// Creates a <see cref="CellControl"/>, wires run/focus events, and attaches IntelliSense.
+        /// </summary>
+        private CellControl CreateWiredCellControl(NotebookCell cell)
+        {
+            var cellControl = new CellControl(_document, cell);
+
+            cellControl.RunRequested      += (s, e) => CellRunRequested?.Invoke(this, new CellRunEventArgs(cell));
+            cellControl.RunAboveRequested += (s, e) => RunCellAboveRequested?.Invoke(this, new CellRunEventArgs(cell));
+            cellControl.RunBelowRequested += (s, e) => RunCellBelowRequested?.Invoke(this, new CellRunEventArgs(cell));
+            cellControl.RunSelectionRequested += (s, e) =>
+                RunSelectionRequested?.Invoke(this, new CellRunSelectionEventArgs(cell, e.SelectedText));
+
+            cellControl.GotFocus  += (s, e) => _focusedCell = cellControl;
+            cellControl.LostFocus += (s, e) => { if (ReferenceEquals(_focusedCell, cellControl)) _focusedCell = null; };
+
+            if (cell.Kind == CellKind.Code)
+                _intelliSenseManager?.AttachToCell(cellControl);
+
+            return cellControl;
+        }
+
+        /// <summary>
+        /// Handles <see cref="NotifyCollectionChangedAction.Add"/>: inserts only the new
+        /// CellControl(s) and their separator buttons without touching existing cells.
+        /// </summary>
+        private void HandleCellsAdded(NotifyCollectionChangedEventArgs e)
+        {
+            if (_document == null || e.NewItems == null) return;
+
+            for (int i = 0; i < e.NewItems.Count; i++)
+            {
+                var cell = (NotebookCell)e.NewItems[i];
+                int docIdx = e.NewStartingIndex + i;
+                // Layout: [AddBtn, Cell, AddBtn, Cell, AddBtn, …]
+                // Cell at document index N lives at _cellStack position 2*N+1.
+                int cellStackPos = 2 * docIdx + 1;
+
+                _cellStack.Children.Insert(cellStackPos, CreateWiredCellControl(cell));
+                _cellStack.Children.Insert(cellStackPos + 1, MakeAddCellButtons());
+            }
+        }
+
+        /// <summary>
+        /// Handles <see cref="NotifyCollectionChangedAction.Remove"/>: detaches IntelliSense
+        /// from and removes only the deleted CellControl(s).
+        /// </summary>
+        private void HandleCellsRemoved(NotifyCollectionChangedEventArgs e)
+        {
+            if (e.OldItems == null) return;
+
+            // Process from last to first so removals don't shift indices of earlier items
+            for (int i = e.OldItems.Count - 1; i >= 0; i--)
+            {
+                int docIdx = e.OldStartingIndex + i;
+                int cellStackPos = 2 * docIdx + 1;
+
+                if (cellStackPos < _cellStack.Children.Count &&
+                    _cellStack.Children[cellStackPos] is CellControl cc)
+                {
+                    _intelliSenseManager?.DetachFromCell(cc);
+                    if (ReferenceEquals(_focusedCell, cc))
+                        _focusedCell = null;
+                }
+
+                // Remove the trailing AddButtons panel, then the CellControl
+                if (cellStackPos + 1 < _cellStack.Children.Count)
+                    _cellStack.Children.RemoveAt(cellStackPos + 1);
+                if (cellStackPos < _cellStack.Children.Count)
+                    _cellStack.Children.RemoveAt(cellStackPos);
+            }
+
+            // After removing the last cell the stack must still contain one AddButtons panel
+            if (_document != null && _document.Cells.Count == 0 && _cellStack.Children.Count == 0)
+                _cellStack.Children.Add(MakeAddCellButtons());
+        }
+
+        /// <summary>
+        /// Handles <see cref="NotifyCollectionChangedAction.Move"/>: removes the CellControl at the
+        /// old position and creates a fresh one at the new position.  Only one HWND is recycled
+        /// instead of every cell in the notebook.
+        /// </summary>
+        private void HandleCellsMoved(NotifyCollectionChangedEventArgs e)
+        {
+            if (_document == null || e.OldItems == null) return;
+
+            int oldCellStackPos = 2 * e.OldStartingIndex + 1;
+
+            // Detach IntelliSense from the cell being moved
+            if (oldCellStackPos < _cellStack.Children.Count &&
+                _cellStack.Children[oldCellStackPos] is CellControl cc)
+            {
+                _intelliSenseManager?.DetachFromCell(cc);
+                if (ReferenceEquals(_focusedCell, cc))
+                    _focusedCell = null;
+            }
+
+            // Remove old CellControl and its trailing AddButtons panel
+            if (oldCellStackPos + 1 < _cellStack.Children.Count)
+                _cellStack.Children.RemoveAt(oldCellStackPos + 1);
+            if (oldCellStackPos < _cellStack.Children.Count)
+                _cellStack.Children.RemoveAt(oldCellStackPos);
+
+            // Insert a new CellControl at the destination position
+            var cell = (NotebookCell)e.OldItems[0];
+            int newCellStackPos = 2 * e.NewStartingIndex + 1;
+            _cellStack.Children.Insert(newCellStackPos, CreateWiredCellControl(cell));
+            _cellStack.Children.Insert(newCellStackPos + 1, MakeAddCellButtons());
+        }
+
+        /// <summary>
+        /// Handles <see cref="NotifyCollectionChangedAction.Replace"/>: swaps the CellControl
+        /// at the replaced position without affecting any other cells.
+        /// </summary>
+        private void HandleCellsReplaced(NotifyCollectionChangedEventArgs e)
+        {
+            if (_document == null || e.OldItems == null || e.NewItems == null) return;
+
+            for (int i = 0; i < e.OldItems.Count; i++)
+            {
+                int docIdx = e.OldStartingIndex + i;
+                int cellStackPos = 2 * docIdx + 1;
+
+                if (cellStackPos < _cellStack.Children.Count &&
+                    _cellStack.Children[cellStackPos] is CellControl oldCc)
+                {
+                    _intelliSenseManager?.DetachFromCell(oldCc);
+                    if (ReferenceEquals(_focusedCell, oldCc))
+                        _focusedCell = null;
+                }
+
+                // Remove old CellControl, insert new one at the same position
+                if (cellStackPos < _cellStack.Children.Count)
+                    _cellStack.Children.RemoveAt(cellStackPos);
+
+                var newCell = (NotebookCell)e.NewItems[i];
+                _cellStack.Children.Insert(cellStackPos, CreateWiredCellControl(newCell));
+            }
+        }
+
+        private UIElement MakeAddCellButtons()
         {
             var panel = new StackPanel
             {
@@ -359,12 +498,12 @@ namespace PolyglotNotebooks.Editor
                 HorizontalAlignment = HorizontalAlignment.Left,
                 Margin = new Thickness(0, 2, 0, 2),
             };
-            panel.Children.Add(MakeAddCellButton(insertIndex, CellKind.Code, "\uFF0B Code", "Insert a new code cell"));
-            panel.Children.Add(MakeAddCellButton(insertIndex, CellKind.Markdown, "\uFF0B Markdown", "Insert a new markdown cell"));
+            panel.Children.Add(MakeAddCellButton(panel, CellKind.Code, "\uFF0B Code", "Insert a new code cell"));
+            panel.Children.Add(MakeAddCellButton(panel, CellKind.Markdown, "\uFF0B Markdown", "Insert a new markdown cell"));
             return panel;
         }
 
-        private Button MakeAddCellButton(int insertIndex, CellKind kind, string label, string tooltip)
+        private Button MakeAddCellButton(UIElement parentPanel, CellKind kind, string label, string tooltip)
         {
             var icon = new CrispImage
             {
@@ -395,12 +534,16 @@ namespace PolyglotNotebooks.Editor
             btn.MouseEnter += (s, e) => btn.Opacity = 1.0;
             btn.MouseLeave += (s, e) => btn.Opacity = 0.5;
 
-            var capturedIndex = insertIndex;
-            var kernelName = kind == CellKind.Markdown ? "markdown" : (_document?.DefaultKernelName ?? "csharp");
+            // Compute insertion index dynamically from the panel's position in the cell stack.
+            // AddButtons panels sit at even indices (0, 2, 4, …), so dividing by 2 gives
+            // the cell insertion index.  This stays correct after incremental insertions/removals.
             btn.Click += (s, e) =>
             {
                 if (_document == null) return;
-                _document.AddCell(kind, kernelName, capturedIndex);
+                int stackIndex = _cellStack.Children.IndexOf(parentPanel);
+                int cellInsertIndex = stackIndex >= 0 ? stackIndex / 2 : _document.Cells.Count;
+                var kernelName = kind == CellKind.Markdown ? "markdown" : (_document.DefaultKernelName ?? "csharp");
+                _document.AddCell(kind, kernelName, cellInsertIndex);
             };
 
             return btn;

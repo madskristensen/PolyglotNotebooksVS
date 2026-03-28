@@ -134,14 +134,15 @@ namespace PolyglotNotebooks.Protocol
         /// Returns a task that completes when an event of the given type is received for this token.
         /// Multiple calls for the same eventType share the same TCS.
         /// </summary>
-        public System.Threading.Tasks.Task<KernelEventEnvelope> WaitForEventTypeAsync(
+        public async System.Threading.Tasks.Task<KernelEventEnvelope> WaitForEventTypeAsync(
             string eventType,
             System.Threading.CancellationToken ct = default)
         {
             var tcs = _pending.GetOrAdd(eventType,
                 _ => new TaskCompletionSource<KernelEventEnvelope>());
-            ct.Register(() => tcs.TrySetCanceled());
-            return tcs.Task;
+            var registration = ct.Register(() => tcs.TrySetCanceled());
+            try { return await tcs.Task.ConfigureAwait(false); }
+            finally { registration.Dispose(); }
         }
 
         /// <summary>
@@ -151,13 +152,17 @@ namespace PolyglotNotebooks.Protocol
         public async System.Threading.Tasks.Task<KernelEventEnvelope> WaitForTerminalEventAsync(
             System.Threading.CancellationToken ct = default)
         {
-            ct.Register(() => _terminalTcs.TrySetCanceled());
-            var completed = await System.Threading.Tasks.Task.WhenAny(
-                _terminalTcs.Task,
-                System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(60), ct)).ConfigureAwait(false);
-            if (completed != _terminalTcs.Task)
-                throw new TimeoutException("Kernel did not respond within 60 seconds.");
-            return await _terminalTcs.Task.ConfigureAwait(false);
+            var registration = ct.Register(() => _terminalTcs.TrySetCanceled());
+            try
+            {
+                var completed = await System.Threading.Tasks.Task.WhenAny(
+                    _terminalTcs.Task,
+                    System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(60), ct)).ConfigureAwait(false);
+                if (completed != _terminalTcs.Task)
+                    throw new TimeoutException("Kernel did not respond within 60 seconds.");
+                return await _terminalTcs.Task.ConfigureAwait(false);
+            }
+            finally { registration.Dispose(); }
         }
 
         private void OnNext(KernelEventEnvelope envelope)

@@ -677,3 +677,9 @@ _cellStack.Children pattern: [AddBtn, Cell, AddBtn, Cell, ..., AddBtn]
 
 ### Coordination
 Parallel session with Vince (defer install check). Both address startup/edit latency independently. No blocking dependencies.
+
+### Learnings — Compact Code Cell Chrome (2026-03-28)
+- To hide the bottom status bar (Ln/Ch/encoding/zoom) on embedded IVsCodeWindow cells, collapse the `bottom` margin container via `textViewHost.GetTextViewMargin("bottom") as IWpfTextViewMargin` and set `VisualElement.Visibility = Collapsed`
+- Additional `DefaultTextViewHostOptions` to disable for compact cells: `HorizontalScrollBarId`, `VerticalScrollBarId`, `ZoomControlId`, `SelectionMarginId`, `ChangeTrackingId`
+- `_codewindowbehaviorflags.CWB_DISABLEDROPDOWNBAR` (OR'd with `CWB_DISABLESPLITTER`) hides the navigation dropdown bar at the top of the code window
+- Key file: `src/Editor/CellControl.cs` lines 227-265 — code window initialization and option configuration

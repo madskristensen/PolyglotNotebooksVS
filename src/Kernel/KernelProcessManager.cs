@@ -293,7 +293,9 @@ namespace PolyglotNotebooks.Kernel
 
             if (willRetry)
             {
-                _ = Task.Run(() => AutoRestartAsync(currentAttempt, exitCode));
+#pragma warning disable VSTHRD110, VSSDK007 // Intentional fire-and-forget for auto-restart
+                _ = ThreadHelper.JoinableTaskFactory.RunAsync(() => AutoRestartAsync(currentAttempt, exitCode));
+#pragma warning restore VSTHRD110, VSSDK007
             }
             else
             {
