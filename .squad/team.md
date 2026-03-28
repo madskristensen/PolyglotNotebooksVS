@@ -18,7 +18,7 @@
 - **Domain**: Visual Studio Extension Development (VSIX)
 - **Tech Stack**: C#, WPF, VS SDK, Community.VisualStudio.Toolkit, MEF (Managed Extensibility Framework)
 - **Target Audience**: Mads Kristensen, VS extensibility community, extension developers
-- **User**: Brady Gaster
+- **User**: Mads Kristensen
 - **Reference Architecture**: [Community.VisualStudio.Toolkit](https://github.com/VsixCommunity/Community.VisualStudio.Toolkit)
 - **Foundational Docs**: VSIX Cookbook (vsixcookbook.com), VS Agent Plugins (38 skills)
 
