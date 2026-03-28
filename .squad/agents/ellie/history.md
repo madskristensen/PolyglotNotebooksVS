@@ -696,3 +696,30 @@ Parallel session with Vince (defer install check). Both address startup/edit lat
 - src/Editor/CellControl.cs
 
 **Team Coordination**: Parallel with Theo (reliability fixes). Both tasks in perf-reliability-round3.
+
+### Learnings — Dynamic Cell Sizing & Scroll Forwarding (2026-03-28)
+
+- **IWpfTextView.LayoutChanged** is the right hook for auto-sizing code cells. It fires after any text change, fold, or layout update. `TextSnapshot.LineCount` gives actual line count for height calculation.
+- **PreviewMouseWheel** (tunneling event) fires on WPF wrappers *before* the message reaches native HWNDs like IVsCodeWindow. This is the key to intercepting scroll events that would otherwise be consumed by embedded Win32 controls.
+- **VisualTreeHelper.GetParent** walk is the reliable way to find the notebook's outer ScrollViewer from inside a cell. The pattern `FindParentScrollViewer(DependencyObject)` is reusable.
+- **WebView2 wheel forwarding** requires a two-part approach: inject JS `wheel` event listener that calls `postMessage`, then handle `CoreWebView2.WebMessageReceived` on the C# side. Must use `{ passive: false }` on the JS listener so `preventDefault()` works.
+- **OutputControl's inner ScrollViewer** (MaxHeight=500) also steals wheel events. Forwarding via PreviewMouseWheel on that ScrollViewer ensures the notebook scrolls as a unit.
+- Guard JS injection with `window.__polyglotWheelHooked` flag to avoid re-registering on repeated navigations.
+
+---
+
+## 2026-03-28 — Dynamic Code Cell Height & Scroll-Wheel Forwarding
+
+**Status**: COMPLETE ✅ — Build passes (0 errors)
+
+**What Changed**:
+1. **Dynamic cell height**: Min changed from 2→1 lines, max from 20→25 lines. Added `LayoutChanged` subscription to auto-size `hostControl.Height` based on actual `TextSnapshot.LineCount`. Initial height also set on creation.
+2. **Scroll-wheel forwarding (3 layers)**:
+   - CellControl: `PreviewMouseWheel` on `textViewHost.HostControl` forwards wheel to parent ScrollViewer
+   - WebView2OutputHost: JS `wheel` listener + `postMessage` → `WebMessageReceived` handler forwards to parent ScrollViewer
+   - OutputControl: `PreviewMouseWheel` on inner ScrollViewer forwards to parent ScrollViewer
+
+**Files Modified**:
+- src/Editor/CellControl.cs — dynamic sizing, PreviewMouseWheel, FindParentScrollViewer
+- src/Editor/WebView2OutputHost.cs — JS wheel injection, WebMessageReceived, FindParentScrollViewer, updated Dispose
+- src/Editor/OutputControl.cs — PreviewMouseWheel on inner ScrollViewer, FindParentScrollViewer

@@ -221,7 +221,61 @@ Three IWpfTextViewHost runtime issues were blocking editor usability:
 
 ---
 
-## Decision 6: Performance & Reliability Audit Findings (Theo — Threading Specialist)
+## Decision 6: Scroll-Wheel Forwarding Strategy for Notebook Cells
+
+**Author**: Ellie (Editor Specialist)  
+**Date**: 2026-03-28  
+**Status**: IMPLEMENTED  
+**Type**: Architecture / UI Event Routing
+
+### Context
+
+The notebook uses a WPF `ScrollViewer` wrapping a `StackPanel` of cells. Three types of controls inside cells capture `WM_MOUSEWHEEL` before WPF can route it to the outer ScrollViewer:
+1. **IVsCodeWindow** — native Win32 HWND for code editing
+2. **WebView2CompositionControl** — Chromium-based renderer for HTML outputs
+3. **OutputControl's inner ScrollViewer** — WPF scroll container capping output height at 500px
+
+### Decision
+
+Use **three complementary interception strategies**, one per control type:
+
+| Control | Strategy | Why it works |
+|---------|----------|-------------|
+| IVsCodeWindow | `PreviewMouseWheel` on `IWpfTextViewHost.HostControl` | Tunneling event fires on WPF wrapper *before* reaching the native HWND |
+| WebView2 | JS `wheel` → `postMessage` → C# `WebMessageReceived` | No WPF tunneling for composition controls; must intercept in Chromium |
+| Inner ScrollViewer | `PreviewMouseWheel` on the `ScrollViewer` itself | Standard WPF tunneling, forwarded to parent |
+
+All three use `FindParentScrollViewer(DependencyObject)` to walk the visual tree and find the notebook's outer `ScrollViewer`.
+
+### Trade-off
+
+This approach **always forwards** wheel events, meaning individual outputs taller than 500px can no longer be scrolled internally. This is acceptable because:
+- WebView2 outputs auto-size up to 480px (rarely need internal scroll)
+- The notebook-as-a-whole scrolling experience is the primary UX concern
+- Internal output scrolling can be re-added later with boundary detection if needed
+
+### Also: Dynamic Cell Height
+
+Changed code cell sizing from fixed min/max to **auto-sizing based on content**:
+- Min: 2 lines → 1 line, Max: 20 lines → 25 lines
+- `IWpfTextView.LayoutChanged` drives real-time height updates
+- Initial height set from `TextSnapshot.LineCount` on creation
+
+### Team Impact
+
+- **Wendy**: The notebook ScrollViewer in `NotebookControl.cs` is now the sole scroll authority. No changes needed there.
+- **Theo**: No test impact — these are UI-only changes in WPF event handlers.
+- **Vince**: Part of overall UI/UX refinement initiative
+
+### Implementation Files
+
+- CellControl.cs: PreviewMouseWheel on text view host, dynamic height on LayoutChanged
+- OutputControl.cs: PreviewMouseWheel forwarding on inner ScrollViewer
+- WebView2OutputHost.cs: JS wheel interception + WebMessageReceived forwarding
+
+---
+
+## Decision 7: Performance & Reliability Audit Findings (Theo — Threading Specialist)
 
 **Date**: 2026-07-21  
 **Lead**: Theo (Threading & Reliability Engineer)  
@@ -290,7 +344,7 @@ Overall assessment: **The codebase is well-structured with strong threading disc
 
 ---
 
-## Decision 7: Loading & Execution Pipeline Architecture Audit (Vince — Architect)
+## Decision 8: Loading & Execution Pipeline Architecture Audit (Vince — Architect)
 
 **Date**: 2026-07-15  
 **Lead**: Vince (Extension Architect)  
