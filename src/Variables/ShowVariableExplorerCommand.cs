@@ -1,15 +1,26 @@
+using Community.VisualStudio.Toolkit;
+using Microsoft.VisualStudio.Shell;
+using PolyglotNotebooks.Diagnostics;
+
 namespace PolyglotNotebooks.Variables
 {
-    /// <summary>
-    /// Helper that shows the Variable Explorer tool window.
-    /// Can be called from the notebook toolbar button or any other entry point.
-    /// </summary>
-    internal static class ShowVariableExplorerCommand
+    [Command(PackageIds.ShowVariableExplorer)]
+    internal sealed class ShowVariableExplorerCommand : BaseCommand<ShowVariableExplorerCommand>
     {
-        /// <summary>Shows (or focuses) the Polyglot Variables tool window.</summary>
-        public static async Task ExecuteAsync()
+        protected override async Task ExecuteAsync(OleMenuCmdEventArgs e)
         {
-            await VariableExplorerToolWindow.ShowAsync();
+            try
+            {
+                ExtensionLogger.LogInfo(nameof(ShowVariableExplorerCommand), "Showing Variable Explorer tool window");
+                await VariableExplorerToolWindow.ShowAsync();
+            }
+            catch (Exception ex)
+            {
+                ExtensionLogger.LogException(nameof(ShowVariableExplorerCommand),
+                    "Failed to show Variable Explorer", ex);
+                System.Diagnostics.Debug.WriteLine(
+                    $"[PolyglotNotebooks] ShowVariableExplorer failed: {ex}");
+            }
         }
     }
 }

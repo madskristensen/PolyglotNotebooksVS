@@ -1,13 +1,16 @@
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows;
+using System.Windows.Controls;
 using Microsoft.VisualStudio.Shell;
+using PolyglotNotebooks.Diagnostics;
 
 namespace PolyglotNotebooks.Variables
 {
     /// <summary>
     /// Toolkit-managed tool window that hosts the <see cref="VariableExplorerControl"/>.
     /// Shown via <c>VariableExplorerToolWindow.ShowAsync()</c> or the show command.
+    /// Must be initialized in the package via <c>VariableExplorerToolWindow.Initialize(this)</c>.
     /// </summary>
     public class VariableExplorerToolWindow : BaseToolWindow<VariableExplorerToolWindow>
     {
@@ -17,8 +20,19 @@ namespace PolyglotNotebooks.Variables
 
         public override Task<FrameworkElement> CreateAsync(int toolWindowId, CancellationToken ct)
         {
-            return Task.FromResult<FrameworkElement>(
-                new VariableExplorerControl(VariableService.Current));
+            try
+            {
+                ExtensionLogger.LogInfo(nameof(VariableExplorerToolWindow), "Creating Variable Explorer control");
+                var control = new VariableExplorerControl(VariableService.Current);
+                return Task.FromResult<FrameworkElement>(control);
+            }
+            catch (Exception ex)
+            {
+                ExtensionLogger.LogException(nameof(VariableExplorerToolWindow),
+                    "Failed to create Variable Explorer control", ex);
+                return Task.FromResult<FrameworkElement>(
+                    new TextBlock { Text = $"Variable Explorer failed to load: {ex.Message}" });
+            }
         }
 
         /// <summary>The VS tool window pane; identified by its GUID in the registry.</summary>

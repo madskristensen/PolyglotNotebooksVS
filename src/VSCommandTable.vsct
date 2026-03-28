@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<CommandTable xmlns="http://schemas.microsoft.com/VisualStudio/2005-10-18/CommandTable" xmlns:xs="http://www.w3.org/2001/XMLSchema">
+
+  <Extern href="stdidcmd.h"/>
+  <Extern href="vsshlids.h"/>
+  <Include href="KnownImageIds.vsct"/>
+
+  <Commands package="PolyglotNotebooks">
+    <Buttons>
+      <Button guid="PolyglotNotebooks" id="ShowVariableExplorer" priority="0x0100" type="Button">
+        <Parent guid="guidSHLMainMenu" id="IDG_VS_WNDO_OTRWNDWS1"/>
+        <Icon guid="ImageCatalogGuid" id="VariableProperty"/>
+        <CommandFlag>IconIsMoniker</CommandFlag>
+        <Strings>
+          <ButtonText>Polyglot Variables</ButtonText>
+        </Strings>
+      </Button>
+    </Buttons>
+  </Commands>
+
+  <Symbols>
+    <GuidSymbol name="PolyglotNotebooks" value="{7a8b905d-687d-4b8c-8842-85067272e3ab}">
+      <IDSymbol name="ShowVariableExplorer" value="0x0105"/>
+    </GuidSymbol>
+  </Symbols>
+
+</CommandTable>
