@@ -13,7 +13,6 @@ or get the latest CI build from [Open VSIX Gallery][vsixgallery].
 
 Write and run C#, JavaScript, SQL, and more — right inside Visual Studio. Polyglot Notebooks brings an interactive notebook experience to the IDE you already know, powered by [.NET Interactive](https://github.com/dotnet/interactive). Mix languages in a single document, share variables across cells, and see rich output instantly.
 
-<!-- TODO: capture screenshot of a notebook with multiple cells and output -->
 ![Notebook editor](art/notebook-editor.png)
 
 ## What You Get
