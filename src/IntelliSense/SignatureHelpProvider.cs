@@ -217,7 +217,7 @@ namespace PolyglotNotebooks.IntelliSense
             _popup.IsOpen = false;
         }
 
-        private static LinePosition CaretToLinePosition(string text, int caretIndex)
+        internal static LinePosition CaretToLinePosition(string text, int caretIndex)
         {
             int line = 0, character = 0;
             for (int i = 0; i < caretIndex && i < text.Length; i++)

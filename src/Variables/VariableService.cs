@@ -183,7 +183,7 @@ namespace PolyglotNotebooks.Variables
 
         // ── Helpers ───────────────────────────────────────────────────────────
 
-        private static string Truncate(string value, int max = 100) =>
+        internal static string Truncate(string value, int max = 100) =>
             value.Length > max ? value.Substring(0, max) + "…" : value;
 
         public void Dispose()
