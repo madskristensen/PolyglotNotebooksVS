@@ -39,17 +39,17 @@ namespace PolyglotNotebooks.Models
 
         public IReadOnlyDictionary<string, NotebookDocument> OpenDocuments => _openDocuments;
 
-        public Task<NotebookDocument> OpenAsync(string filePath)
+        public async Task<NotebookDocument> OpenAsync(string filePath)
         {
             string normalized = NormalizePath(filePath);
 
             if (_openDocuments.TryGetValue(normalized, out var existing))
-                return Task.FromResult(existing);
+                return existing;
 
-            var doc = NotebookDocument.Load(normalized);
+            var doc = await Task.Run(() => NotebookDocument.Load(normalized)).ConfigureAwait(false);
             TrackDocument(normalized, doc);
             DocumentOpened?.Invoke(this, new DocumentOpenedEventArgs(doc));
-            return Task.FromResult(doc);
+            return doc;
         }
 
         public Task CloseAsync(string filePath)
