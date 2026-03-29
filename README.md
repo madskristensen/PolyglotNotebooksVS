@@ -32,7 +32,13 @@ Write and run C#, JavaScript, SQL, and more — right inside Visual Studio. Poly
 
 **Zero setup** - The extension detects and installs `dotnet-interactive` automatically when needed. Open a notebook file and start coding.
 
+**Item template** - Create new `.dib` notebooks directly from the **Add New Item** dialog. No need to leave the IDE or copy files manually.
+
 ## Getting Started
+
+### Create a New Notebook
+
+Right-click a project or folder in Solution Explorer and select **Add > New Item**. Search for **Polyglot Notebook** in the template list. The template creates a `.dib` file with an empty C# code cell so you can start writing immediately.
 
 ### Open a Notebook
 

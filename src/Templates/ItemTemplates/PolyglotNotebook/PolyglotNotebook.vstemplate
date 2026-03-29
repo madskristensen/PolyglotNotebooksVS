@@ -1,0 +1,14 @@
+<VSTemplate Version="3.0.0" Type="Item" xmlns="http://schemas.microsoft.com/developer/vstemplate/2005">
+  <TemplateData>
+    <Name>Polyglot Notebook</Name>
+    <Description>An empty Polyglot Notebook with a C# code cell</Description>
+    <Icon>PolyglotNotebook.png</Icon>
+    <DefaultName>Notebook.dib</DefaultName>
+    <ProvideDefaultName>true</ProvideDefaultName>
+    <ProjectType>CSharp</ProjectType>
+    <SortOrder>1000</SortOrder>
+  </TemplateData>
+  <TemplateContent>
+    <ProjectItem TargetFileName="$fileinputname$.dib">PolyglotNotebook.dib</ProjectItem>
+  </TemplateContent>
+</VSTemplate>
