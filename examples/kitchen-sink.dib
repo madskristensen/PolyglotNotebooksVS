@@ -1,5 +1,5 @@
 #!meta
-{"kernelInfo":{"defaultKernelName":"csharp","items":[{"name":"csharp"},{"name":"fsharp"},{"name":"pwsh"},{"name":"html"},{"name":"javascript"},{"name":"mermaid"}]}}
+{"kernelInfo":{"defaultKernelName":"csharp","items":[{"name":"csharp"},{"name":"fsharp"},{"name":"pwsh"},{"name":"html"},{"name":"javascript"},{"name":"mermaid"},{"name":"http"}]}}
 
 #!markdown
 # Kitchen Sink Test
@@ -66,6 +66,12 @@ graph TD
     B -->|No| D[Debug]
     D --> B
     C --> E[Ship it 🚀]
+
+#!markdown
+## HTTP Request
+
+#!http
+GET https://jsonplaceholder.typicode.com/todos/1
 
 #!markdown
 ## Multi-Cell State Sharing (C#)

@@ -92,7 +92,7 @@ namespace PolyglotNotebooks.Execution
             if (document == null) return;
             foreach (var cell in document.Cells)
                 if (cell.Kind == CellKind.Code)
-                    cell.ExecutionStatus = CellExecutionStatus.Running;
+                    cell.ExecutionStatus = CellExecutionStatus.Queued;
             FireAndForget(ct => RunAllCellsAsync(document, ct), "Run All");
         }
 
@@ -104,7 +104,7 @@ namespace PolyglotNotebooks.Execution
             {
                 if (ReferenceEquals(cell, currentCell)) break;
                 if (cell.Kind == CellKind.Code)
-                    cell.ExecutionStatus = CellExecutionStatus.Running;
+                    cell.ExecutionStatus = CellExecutionStatus.Queued;
             }
             FireAndForget(ct => RunCellsAboveAsync(document, currentCell, ct), "Run Cells Above");
         }
@@ -118,7 +118,7 @@ namespace PolyglotNotebooks.Execution
             {
                 if (ReferenceEquals(cell, currentCell)) reached = true;
                 if (reached && cell.Kind == CellKind.Code)
-                    cell.ExecutionStatus = CellExecutionStatus.Running;
+                    cell.ExecutionStatus = CellExecutionStatus.Queued;
             }
             FireAndForget(ct => RunCellsBelowAsync(document, currentCell, ct), "Run Cells Below");
         }
@@ -136,7 +136,7 @@ namespace PolyglotNotebooks.Execution
             if (document == null) return;
             foreach (var cell in document.Cells)
                 if (cell.Kind == CellKind.Code)
-                    cell.ExecutionStatus = CellExecutionStatus.Running;
+                    cell.ExecutionStatus = CellExecutionStatus.Queued;
             FireAndForget(ct => RestartAndRunAllAsync(document, ct), "Restart and Run All");
         }
 
@@ -301,6 +301,10 @@ namespace PolyglotNotebooks.Execution
         /// </summary>
         private async Task ExecuteCellRoutedAsync(NotebookCell cell, CancellationToken ct)
         {
+            // Mark as Running on the UI thread — PropertyChanged triggers WPF bindings in CellToolbar.
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(ct);
+            cell.ExecutionStatus = CellExecutionStatus.Running;
+
             if (IsJavaScriptCell(cell))
             {
                 await _nodeJsExecutor.ExecuteAsync(cell, ct).ConfigureAwait(false);

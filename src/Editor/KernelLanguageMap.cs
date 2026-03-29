@@ -22,7 +22,7 @@ namespace PolyglotNotebooks.Editor
                 ["kql"] = "plaintext",
                 ["html"] = "HTML",
                 ["markdown"] = "markdown",
-                ["mermaid"] = "markdown",
+                ["mermaid"] = "plaintext",
                 ["http"] = "Rest"
             };
 
@@ -39,7 +39,7 @@ namespace PolyglotNotebooks.Editor
                 ["kql"] = ".kql",
                 ["html"] = ".html",
                 ["markdown"] = ".md",
-                ["mermaid"] = ".md",
+                ["mermaid"] = ".mmd",
                 ["http"] = ".http"
             };
 
