@@ -882,3 +882,44 @@ Not yet used by ExecutionCoordinator but available for future use (e.g., Run All
 - Other team members can use `CellExecutionStatus.Queued` in ExecutionCoordinator when ready
 - Timing data is available on the model for potential future display in other UI surfaces
 
+---
+
+## Decision 11: Document Outline via IVsDocOutlineProvider on EditorPane
+
+**Date**: 2026-03-29  
+**Author**: Wendy (UI & Tool Window Specialist)  
+**Status**: ACTIVE  
+**Type**: Architecture / UI/UX
+
+### Context
+
+The notebook editor needed Document Outline support (View → Other Windows → Document Outline). Since the editor uses a custom `WindowPane` (not a LanguageService/CodeWindowManager), the `IVsDocOutlineProvider` interface must be implemented directly on `NotebookEditorPane`.
+
+### Decision
+
+- `IVsDocOutlineProvider` is implemented on `NotebookEditorPane` with `[ComVisible(true)]`
+- The outline control (`DocumentOutlineControl`) is a pure C# WPF UserControl (no XAML), following project convention
+- It's hosted via `ElementHost` (WinForms interop) to provide the HWND that VS's outline infrastructure expects
+- Theming uses `TreeViewColors` brush keys from `Microsoft.VisualStudio.PlatformUI` for native VS look
+- Cell focus sync uses a new `FocusedCellChanged` event on `NotebookControl`
+- Navigation uses a new `ScrollToCell(NotebookCell)` method on `NotebookControl`
+
+### Rationale
+
+- `IVsDocOutlineProvider` is the standard VS SDK interface for custom outline providers
+- Pure C# control avoids XAML parsing overhead; ElementHost bridges to VS outline infrastructure
+- Event-driven architecture keeps outline sync decoupled from core notebook logic
+- Native theming integrates seamlessly with VS color scheme
+
+### Implications
+
+- Any future custom editor panes that want Document Outline must implement `IVsDocOutlineProvider` the same way
+- `NotebookControl.FocusedCellChanged` is available for any feature that needs cell focus tracking
+- `WindowsFormsIntegration` assembly reference is now required in the project
+- New public APIs on NotebookControl establish patterns for cell-aware features
+
+### Related Work
+
+- Variable Explorer Architecture (Decision 2) — also uses NotebookControl for UI integration
+- P4 IntelliSense features may leverage FocusedCellChanged for context-aware completions
+
