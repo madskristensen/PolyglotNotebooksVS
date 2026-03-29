@@ -195,3 +195,28 @@
 **Maintenance Rule**: Whenever Microsoft.Web.WebView2 NuGet is updated to a new version, BOTH `NewVersion` and `OldVersionUpperBound` in both ProvideBindingRedirection attributes MUST be updated to match the new package version. Example: if upgrading to 1.0.4000.0, change both to `0.0.0.0–1.0.4000.0 → 1.0.4000.0`.
 
 **Related Decisions**: Wendy's WebView2CompositionControl Migration
+
+### Item Template for New .dib Notebooks (Issue #1)
+
+**What Changed**: Added a Visual Studio item template so users can create new `.dib` notebooks via Add New Item dialog.
+
+**Files Created**:
+| File | Purpose |
+|------|---------|
+| `src/Templates/ItemTemplates/PolyglotNotebook/PolyglotNotebook.vstemplate` | VS item template manifest — defines name ("Polyglot Notebook"), description, icon, default filename (`Notebook.dib`), and content mapping |
+| `src/Templates/ItemTemplates/PolyglotNotebook/PolyglotNotebook.dib` | Template content — minimal valid .dib with `#!meta` header and one empty `#!csharp` cell |
+| `src/Templates/ItemTemplates/PolyglotNotebook/PolyglotNotebook.png` | Icon copied from `src/Resources/Icon.png` |
+
+**Files Modified**:
+| File | Change |
+|------|--------|
+| `src/PolyglotNotebooks.csproj` | Added `<Content Include="..."><IncludeInVSIX>true</IncludeInVSIX></Content>` for all three template files |
+| `src/source.extension.vsixmanifest` | Added `<Asset Type="Microsoft.VisualStudio.ItemTemplate" Path="Templates\ItemTemplates" />` |
+
+**Key Patterns**:
+- Item template uses `$fileinputname$` parameter — VS replaces this with the user's chosen filename (minus extension) at creation time.
+- `.vstemplate` Icon element uses relative file path (not KnownMonikers) for VSIX item templates.
+- Asset Type is `Microsoft.VisualStudio.ItemTemplate` with Path pointing to the folder containing `.vstemplate`.
+- Old-style csproj requires explicit `<Content Include="...">` for each template file with `<IncludeInVSIX>true</IncludeInVSIX>`.
+
+**Build Verification**: Build succeeds with 0 errors (all warnings pre-existing).

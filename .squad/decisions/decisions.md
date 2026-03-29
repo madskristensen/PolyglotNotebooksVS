@@ -576,3 +576,52 @@ Added VariableExplorerToolWindow.Initialize(this) to PolyglotNotebooksPackage.In
 ### Rule for Future Tool Windows
 
 Any new BaseToolWindow<T> subclass must have a corresponding MyToolWindow.Initialize(this) call in the package's InitializeAsync.
+
+---
+
+## Decision 10: Item Template for .dib Notebooks
+
+**Author**: Sam (Solution & Build Integration Specialist)  
+**Date**: 2026-03-29  
+**Status**: Implemented  
+**Type**: User Experience / Template
+
+### Context
+
+GitHub Issue #1 requested an item template so users can create new `.dib` notebooks from the Visual Studio Add New Item dialog without manually creating and naming files.
+
+### Decision
+
+Created a complete VSIX item template at `src/Templates/ItemTemplates/PolyglotNotebook/` containing:
+
+- **PolyglotNotebook.vstemplate**: Template manifest using `$fileinputname$` for dynamic naming based on user input
+- **PolyglotNotebook.dib**: Minimal valid notebook with metadata header and one empty C# cell
+- **PolyglotNotebook.png**: Icon asset
+
+Registered in the build system:
+- `src/PolyglotNotebooks.csproj`: `<Content Include="..." IncludeInVSIX="true" />` for all template files
+- `src/source.extension.vsixmanifest`: `<Asset Type="Microsoft.VisualStudio.ItemTemplate">` declaration
+
+### Rationale
+
+- Icon reuses existing `src/Resources/Icon.png` — avoids bundling redundant assets and maintains design consistency
+- Minimal template (one C# cell) reduces friction; users can add cells after creation
+- VSIX registration via manifest follows standard VS SDK conventions
+- No custom template processing needed; standard item naming and file substitution handles all cases
+
+### Alternatives Considered
+
+- **KnownMonikers for icon**: Using `<Icon Package="...">` syntax would avoid PNG duplication but is unreliably supported in VSIX item templates. File path approach chosen for robustness.
+- **Multiple cell types in template**: Could include F#, Python, SQL cells pre-created, but users typically want a clean slate. Single C# cell chosen for simplicity.
+
+### Implications
+
+- **Wendy (UI Specialist)**: Template icon is a file copy of `Icon.png`; if icon design changes, this copy should be updated to stay in sync
+- **Build system**: VSIX now includes an additional asset directory; no changes to build process needed
+- **User experience**: New .dib notebooks can now be created via File → Add → New Item dialog with proper naming from the start
+
+### Build Impact
+
+- Clean build with 0 errors
+- All template files correctly included in VSIX package
+- Ready for testing and marketplace distribution
