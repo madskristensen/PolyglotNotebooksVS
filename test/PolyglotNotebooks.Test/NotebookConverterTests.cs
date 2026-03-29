@@ -42,10 +42,12 @@ namespace PolyglotNotebooks.Test
 
             var ipynb = NotebookConverter.ConvertDibToIpynb(dib);
 
-            Assert.IsNotNull(ipynb);
-            Assert.IsTrue(ipynb.Contains("Console.WriteLine"), "ipynb should contain the cell source");
-            // A valid Jupyter notebook has nbformat metadata
-            Assert.IsTrue(ipynb.Contains("nbformat"), "ipynb output should include nbformat");
+            // Structurally verify by parsing the output
+            var doc = NotebookParser.ParseIpynb(ipynb, "test.ipynb");
+            Assert.AreEqual(1, doc.Cells.Count, "Should produce exactly one cell");
+            Assert.AreEqual(CellKind.Code, doc.Cells[0].Kind, "Cell should be a code cell");
+            Assert.IsTrue(doc.Cells[0].Contents.Contains("Console.WriteLine(\"Hi\");"),
+                "Cell content should be preserved");
         }
 
         [TestMethod]
@@ -55,8 +57,9 @@ namespace PolyglotNotebooks.Test
 
             var ipynb = NotebookConverter.ConvertDibToIpynb(dib, "fsharp");
 
-            Assert.IsTrue(ipynb.Contains("fsharp"),
-                "ipynb kernelspec should reflect the overridden kernel name");
+            var doc = NotebookParser.ParseIpynb(ipynb, "test.ipynb");
+            Assert.AreEqual("fsharp", doc.DefaultKernelName,
+                "Default kernel should reflect the overridden kernel name");
         }
 
         [TestMethod]
@@ -69,9 +72,19 @@ namespace PolyglotNotebooks.Test
 
             var ipynb = NotebookConverter.ConvertDibToIpynb(dib);
 
-            Assert.IsTrue(ipynb.Contains("var a = 1;"), "First cell content should be preserved");
-            Assert.IsTrue(ipynb.Contains("let b = 2"), "Second cell content should be preserved");
-            Assert.IsTrue(ipynb.Contains("# Title"), "Markdown cell content should be preserved");
+            var doc = NotebookParser.ParseIpynb(ipynb, "test.ipynb");
+            Assert.AreEqual(3, doc.Cells.Count, "All three cells should be present");
+
+            // Verify ordering and content
+            Assert.AreEqual(CellKind.Code, doc.Cells[0].Kind);
+            Assert.IsTrue(doc.Cells[0].Contents.Contains("var a = 1;"), "First cell content");
+
+            Assert.AreEqual(CellKind.Code, doc.Cells[1].Kind);
+            Assert.AreEqual("fsharp", doc.Cells[1].KernelName, "Second cell kernel");
+            Assert.IsTrue(doc.Cells[1].Contents.Contains("let b = 2"), "Second cell content");
+
+            Assert.AreEqual(CellKind.Markdown, doc.Cells[2].Kind);
+            Assert.IsTrue(doc.Cells[2].Contents.Contains("# Title"), "Third cell content");
         }
 
         // ── Ipynb → Dib ──────────────────────────────────────────────
@@ -79,14 +92,17 @@ namespace PolyglotNotebooks.Test
         [TestMethod]
         public void ConvertIpynbToDib_SingleCell_ProducesValidDib()
         {
-            // First create a valid .ipynb from a known .dib
             var originalDib = MakeDib("csharp", "int x = 42;");
             var ipynb = NotebookConverter.ConvertDibToIpynb(originalDib);
 
             var dib = NotebookConverter.ConvertIpynbToDib(ipynb);
 
-            Assert.IsNotNull(dib);
-            Assert.IsTrue(dib.Contains("int x = 42;"), "Converted .dib should contain the original code");
+            // Structurally verify by parsing the dib output
+            var doc = NotebookParser.ParseDib(dib, "test.dib");
+            Assert.AreEqual(1, doc.Cells.Count, "Should produce exactly one cell");
+            Assert.AreEqual(CellKind.Code, doc.Cells[0].Kind);
+            Assert.IsTrue(doc.Cells[0].Contents.Contains("int x = 42;"),
+                "Cell content should be preserved");
         }
 
         // ── Round-trips ──────────────────────────────────────────────
@@ -101,35 +117,32 @@ namespace PolyglotNotebooks.Test
             var ipynb = NotebookConverter.ConvertDibToIpynb(originalDib);
             var roundTripped = NotebookConverter.ConvertIpynbToDib(ipynb);
 
-            Assert.IsTrue(roundTripped.Contains("var msg = \"hello\";"),
+            // Structurally verify the round-tripped content
+            var doc = NotebookParser.ParseDib(roundTripped, "test.dib");
+            Assert.AreEqual(2, doc.Cells.Count, "Both cells should survive round-trip");
+            Assert.AreEqual(CellKind.Code, doc.Cells[0].Kind);
+            Assert.IsTrue(doc.Cells[0].Contents.Contains("var msg = \"hello\";"),
                 "Code cell content should survive round-trip");
-            Assert.IsTrue(roundTripped.Contains("## Notes"),
+            Assert.AreEqual(CellKind.Markdown, doc.Cells[1].Kind);
+            Assert.IsTrue(doc.Cells[1].Contents.Contains("## Notes"),
                 "Markdown cell content should survive round-trip");
         }
 
         [TestMethod]
         public void RoundTrip_IpynbToDib_ThenBack_PreservesCells()
         {
-            // Verify that ipynb → dib preserves cell content, and that .dib content
-            // can independently be converted back to ipynb. We avoid a single
-            // ipynb→dib→ipynb chain because the Interactive.Documents library has a
-            // known JsonElement metadata cast limitation on that path.
             var seed = MakeDib("csharp", "Console.Read();");
             var ipynb = NotebookConverter.ConvertDibToIpynb(seed);
 
             var dib = NotebookConverter.ConvertIpynbToDib(ipynb);
-            Assert.IsTrue(dib.Contains("Console.Read();"),
-                "Cell content should survive ipynb → dib conversion");
 
-            // Verify the .dib is valid by parsing it independently
+            // Structurally verify the round-tripped content
             var doc = NotebookParser.ParseDib(dib, string.Empty);
-            bool foundCell = false;
-            foreach (var cell in doc.Cells)
-            {
-                if (cell.Contents.Contains("Console.Read();"))
-                { foundCell = true; break; }
-            }
-            Assert.IsTrue(foundCell, "Parsed .dib should contain the original code cell");
+            Assert.AreEqual(1, doc.Cells.Count, "Cell count should be preserved");
+            Assert.AreEqual(CellKind.Code, doc.Cells[0].Kind, "Cell kind should be code");
+            Assert.AreEqual("csharp", doc.Cells[0].KernelName, "Kernel name should be csharp");
+            Assert.IsTrue(doc.Cells[0].Contents.Contains("Console.Read();"),
+                "Cell content should survive ipynb → dib conversion");
         }
     }
 }

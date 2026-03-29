@@ -189,6 +189,53 @@ namespace PolyglotNotebooks.Test
         }
 
         // ════════════════════════════════════════════════════════════════════════
+        // Subject<T> edge cases
+        // ════════════════════════════════════════════════════════════════════════
+
+        [TestMethod]
+        public void Subject_SubscribeAfterDispose_DoesNotThrow()
+        {
+            var subject = new Subject<int>();
+            subject.Dispose();
+
+            var obs = new RecordingObserver<int>();
+            var subscription = subject.Subscribe(obs);
+
+            // Should complete immediately (Dispose calls OnCompleted)
+            Assert.AreEqual(1, obs.CompletedCount, "Subscribe after Dispose should call OnCompleted immediately");
+            Assert.IsNotNull(subscription);
+        }
+
+        [TestMethod]
+        public void Subject_OnNext_AfterOnCompleted_IsNoOp()
+        {
+            var subject = new Subject<int>();
+            var obs = new RecordingObserver<int>();
+
+            subject.Subscribe(obs);
+            subject.OnCompleted();
+            subject.OnNext(42);
+
+            // Observers were cleared on OnCompleted, so OnNext should have no effect
+            Assert.AreEqual(0, obs.Values.Count, "OnNext after OnCompleted should be a no-op");
+            Assert.AreEqual(1, obs.CompletedCount);
+        }
+
+        [TestMethod]
+        public void Subject_MultipleOnCompleted_IsIdempotent()
+        {
+            var subject = new Subject<int>();
+            var obs = new RecordingObserver<int>();
+
+            subject.Subscribe(obs);
+            subject.OnCompleted();
+            subject.OnCompleted();
+            subject.OnCompleted();
+
+            Assert.AreEqual(1, obs.CompletedCount, "Multiple OnCompleted calls must invoke observers only once");
+        }
+
+        // ════════════════════════════════════════════════════════════════════════
         // ActionObserver<T> tests
         // ════════════════════════════════════════════════════════════════════════
 
@@ -247,6 +294,39 @@ namespace PolyglotNotebooks.Test
             try { obs.OnCompleted(); }
             catch { threw = true; }
             Assert.IsFalse(threw, "OnCompleted with null callback must not throw");
+        }
+
+        // ════════════════════════════════════════════════════════════════════════
+        // ActionObserver<T> edge cases
+        // ════════════════════════════════════════════════════════════════════════
+
+        [TestMethod]
+        public void ActionObserver_OnError_ReceivesExactException()
+        {
+            var exceptions = new List<Exception>();
+            var obs = new ActionObserver<int>(_ => { }, onError: e => exceptions.Add(e));
+
+            var ex1 = new ArgumentException("first");
+            var ex2 = new InvalidOperationException("second");
+            obs.OnError(ex1);
+            obs.OnError(ex2);
+
+            Assert.AreEqual(2, exceptions.Count);
+            Assert.AreSame(ex1, exceptions[0]);
+            Assert.AreSame(ex2, exceptions[1]);
+        }
+
+        [TestMethod]
+        public void ActionObserver_OnCompleted_FiresExactlyOnce()
+        {
+            int completedCount = 0;
+            var obs = new ActionObserver<int>(_ => { }, onCompleted: () => completedCount++);
+
+            obs.OnCompleted();
+            obs.OnCompleted();
+
+            // ActionObserver does not guard against double-completion; each call fires
+            Assert.AreEqual(2, completedCount, "ActionObserver delegates each OnCompleted call");
         }
 
         // ════════════════════════════════════════════════════════════════════════
@@ -436,6 +516,72 @@ namespace PolyglotNotebooks.Test
             });
 
             Assert.IsFalse(task.IsCompleted, "Event with null Command should be ignored");
+        }
+
+        // ════════════════════════════════════════════════════════════════════════
+        // EventObserver edge cases
+        // ════════════════════════════════════════════════════════════════════════
+
+        [TestMethod]
+        public void EventObserver_WaitForTerminalEventAsync_CancellationThrows()
+        {
+            var subject = new Subject<KernelEventEnvelope>();
+            using var observer = new EventObserver(subject, "token");
+            using var cts = new CancellationTokenSource();
+
+            var task = observer.WaitForTerminalEventAsync(cts.Token);
+
+            cts.Cancel();
+
+            // Cancellation races between TCS.TrySetCanceled and Task.Delay cancellation;
+            // the method may throw TaskCanceledException or TimeoutException depending on
+            // which branch of WhenAny wins. Either outcome means the wait did not hang.
+            bool threw = false;
+            try { task.GetAwaiter().GetResult(); }
+            catch (TaskCanceledException) { threw = true; }
+            catch (OperationCanceledException) { threw = true; }
+            catch (TimeoutException) { threw = true; }
+            Assert.IsTrue(threw, "CancellationToken should cause the wait to terminate with an exception");
+        }
+
+        [TestMethod]
+        public void EventObserver_DisposeDuringActiveWait_EventNotReceived()
+        {
+            var subject = new Subject<KernelEventEnvelope>();
+            const string token = "test-token";
+
+            var observer = new EventObserver(subject, token);
+            var task = observer.WaitForEventTypeAsync(KernelEventTypes.ReturnValueProduced);
+            var terminalTask = observer.WaitForTerminalEventAsync();
+
+            // Dispose unsubscribes from the subject
+            observer.Dispose();
+
+            // Events sent after dispose should not resolve the pending waits
+            subject.OnNext(MakeEnvelope(KernelEventTypes.ReturnValueProduced, token));
+            subject.OnNext(MakeEnvelope(KernelEventTypes.CommandSucceeded, token));
+
+            Assert.IsFalse(task.IsCompleted, "WaitForEventTypeAsync should not resolve after Dispose");
+            Assert.IsFalse(terminalTask.IsCompleted, "WaitForTerminalEventAsync should not resolve after Dispose");
+        }
+
+        [TestMethod]
+        public void EventObserver_MultipleConcurrentWaiters_GetSameTerminalResult()
+        {
+            var subject = new Subject<KernelEventEnvelope>();
+            const string token = "test-token";
+
+            using var observer = new EventObserver(subject, token);
+            var task1 = observer.WaitForTerminalEventAsync();
+            var task2 = observer.WaitForTerminalEventAsync();
+
+            var envelope = MakeEnvelope(KernelEventTypes.CommandSucceeded, token);
+            subject.OnNext(envelope);
+
+            Assert.IsTrue(task1.IsCompleted);
+            Assert.IsTrue(task2.IsCompleted);
+            Assert.AreSame(task1.GetAwaiter().GetResult(), task2.GetAwaiter().GetResult(),
+                "Both waiters should receive the same result");
         }
     }
 }

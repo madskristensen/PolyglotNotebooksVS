@@ -37,31 +37,18 @@ namespace PolyglotNotebooks.Test
             => OutputControl.ParseCsvLine(line);
 
         // ====================================================================
-        // MarkdownToHtml — ATX headings
+        // MarkdownToHtml — ATX headings (consolidated DataRow)
         // ====================================================================
 
         [TestMethod]
-        public void MarkdownToHtml_H1_ContainsH1Tag()
+        [DataRow("# Title",   "<h1>", "Title",   DisplayName = "H1")]
+        [DataRow("## Section", "<h2>", "Section", DisplayName = "H2")]
+        [DataRow("### Sub",    "<h3>", "Sub",     DisplayName = "H3")]
+        public void MarkdownToHtml_Heading_ContainsCorrectTag(string input, string expectedTag, string expectedText)
         {
-            string html = MarkdownToHtml("# Title");
-            StringAssert.Contains(html, "<h1>");
-            StringAssert.Contains(html, "Title");
-        }
-
-        [TestMethod]
-        public void MarkdownToHtml_H2_ContainsH2Tag()
-        {
-            string html = MarkdownToHtml("## Section");
-            StringAssert.Contains(html, "<h2>");
-            StringAssert.Contains(html, "Section");
-        }
-
-        [TestMethod]
-        public void MarkdownToHtml_H3_ContainsH3Tag()
-        {
-            string html = MarkdownToHtml("### Sub");
-            StringAssert.Contains(html, "<h3>");
-            StringAssert.Contains(html, "Sub");
+            string html = MarkdownToHtml(input);
+            StringAssert.Contains(html, expectedTag);
+            StringAssert.Contains(html, expectedText);
         }
 
         [TestMethod]
@@ -80,24 +67,24 @@ namespace PolyglotNotebooks.Test
         }
 
         // ====================================================================
-        // MarkdownToHtml — unordered lists
+        // MarkdownToHtml — unordered lists (consolidated DataRow)
         // ====================================================================
 
         [TestMethod]
-        public void MarkdownToHtml_DashListItem_ContainsUlAndLi()
+        [DataRow("- item one", "item one", DisplayName = "DashList")]
+        [DataRow("* item two", "item two", DisplayName = "AsteriskList")]
+        public void MarkdownToHtml_ListItem_ContainsLi(string input, string expectedText)
         {
-            string html = MarkdownToHtml("- item one");
-            StringAssert.Contains(html, "<ul>");
+            string html = MarkdownToHtml(input);
             StringAssert.Contains(html, "<li>");
-            StringAssert.Contains(html, "item one");
+            StringAssert.Contains(html, expectedText);
         }
 
         [TestMethod]
-        public void MarkdownToHtml_AsteriskListItem_ContainsLi()
+        public void MarkdownToHtml_DashListItem_ContainsUl()
         {
-            string html = MarkdownToHtml("* item two");
-            StringAssert.Contains(html, "<li>");
-            StringAssert.Contains(html, "item two");
+            string html = MarkdownToHtml("- item one");
+            StringAssert.Contains(html, "<ul>");
         }
 
         [TestMethod]
@@ -111,21 +98,15 @@ namespace PolyglotNotebooks.Test
         }
 
         // ====================================================================
-        // MarkdownToHtml — code blocks
+        // MarkdownToHtml — code blocks (consolidated DataRow)
         // ====================================================================
 
         [TestMethod]
-        public void MarkdownToHtml_TripleBacktickCodeBlock_ContainsPreCode()
+        [DataRow("```\nvar x = 1;\n```", DisplayName = "TripleBacktick")]
+        [DataRow("~~~\ncode here\n~~~",  DisplayName = "TildeBlock")]
+        public void MarkdownToHtml_CodeBlock_ContainsPreCode(string input)
         {
-            string html = MarkdownToHtml("```\nvar x = 1;\n```");
-            StringAssert.Contains(html, "<pre><code>");
-            StringAssert.Contains(html, "</code></pre>");
-        }
-
-        [TestMethod]
-        public void MarkdownToHtml_TildeCodeBlock_ContainsPreCode()
-        {
-            string html = MarkdownToHtml("~~~\ncode here\n~~~");
+            string html = MarkdownToHtml(input);
             StringAssert.Contains(html, "<pre><code>");
             StringAssert.Contains(html, "</code></pre>");
         }
@@ -139,23 +120,53 @@ namespace PolyglotNotebooks.Test
         }
 
         // ====================================================================
-        // InlineMarkdown — bold, italic, inline code, links
+        // MarkdownToHtml — edge cases
         // ====================================================================
 
         [TestMethod]
-        public void InlineMarkdown_DoubleAsteriskBold_WrapsInStrong()
+        public void MarkdownToHtml_EmptyString_ReturnsNonNull()
         {
-            string html = InlineMarkdown("**bold text**");
-            StringAssert.Contains(html, "<strong>");
-            StringAssert.Contains(html, "bold text");
+            string html = MarkdownToHtml("");
+            Assert.IsNotNull(html);
         }
 
         [TestMethod]
-        public void InlineMarkdown_DoubleUnderscoreBold_WrapsInStrong()
+        public void MarkdownToHtml_WhitespaceOnly_ContainsBrTag()
         {
-            string html = InlineMarkdown("__bold__");
+            string html = MarkdownToHtml("   ");
+            StringAssert.Contains(html, "<br>");
+        }
+
+        [TestMethod]
+        public void MarkdownToHtml_NestedFormatting_BoldInsideItalic()
+        {
+            // Text with both bold and italic markers in the same line
+            string html = MarkdownToHtml("*this is **bold** in italic*");
+            StringAssert.Contains(html, "<em>");
             StringAssert.Contains(html, "<strong>");
-            StringAssert.Contains(html, "bold");
+        }
+
+        [TestMethod]
+        public void MarkdownToHtml_FencedCodeBlock_WithLanguage()
+        {
+            string html = MarkdownToHtml("```csharp\nint x = 1;\n```");
+            StringAssert.Contains(html, "<pre><code>");
+            StringAssert.Contains(html, "int x = 1;");
+            StringAssert.Contains(html, "</code></pre>");
+        }
+
+        // ====================================================================
+        // InlineMarkdown — bold, italic, inline code, links (consolidated)
+        // ====================================================================
+
+        [TestMethod]
+        [DataRow("**bold text**", "<strong>", "bold text", DisplayName = "DoubleAsteriskBold")]
+        [DataRow("__bold__",      "<strong>", "bold",      DisplayName = "DoubleUnderscoreBold")]
+        public void InlineMarkdown_Bold_WrapsInStrong(string input, string expectedTag, string expectedText)
+        {
+            string html = InlineMarkdown(input);
+            StringAssert.Contains(html, expectedTag);
+            StringAssert.Contains(html, expectedText);
         }
 
         [TestMethod]
@@ -197,6 +208,33 @@ namespace PolyglotNotebooks.Test
         {
             string html = InlineMarkdown("hello world");
             StringAssert.Contains(html, "hello world");
+        }
+
+        // ====================================================================
+        // InlineMarkdown — edge cases
+        // ====================================================================
+
+        [TestMethod]
+        public void InlineMarkdown_EmptyString_ReturnsEmpty()
+        {
+            string html = InlineMarkdown("");
+            Assert.AreEqual("", html);
+        }
+
+        [TestMethod]
+        public void InlineMarkdown_PlainTextNoSyntax_PassedThrough()
+        {
+            string html = InlineMarkdown("no markdown here 123");
+            Assert.AreEqual("no markdown here 123", html);
+        }
+
+        [TestMethod]
+        public void InlineMarkdown_MixedFormatting_AllApplied()
+        {
+            string html = InlineMarkdown("**bold** and *italic* and `code`");
+            StringAssert.Contains(html, "<strong>bold</strong>");
+            StringAssert.Contains(html, "<em>italic</em>");
+            StringAssert.Contains(html, "<code>code</code>");
         }
 
         // ====================================================================
@@ -256,7 +294,49 @@ namespace PolyglotNotebooks.Test
         }
 
         // ====================================================================
-        // ParseCsvLine
+        // CsvToHtmlTable — edge cases
+        // ====================================================================
+
+        [TestMethod]
+        public void CsvToHtmlTable_HeadersOnly_NoDataRows()
+        {
+            string html = CsvToHtmlTable("Name,Age");
+            StringAssert.Contains(html, "<thead>");
+            StringAssert.Contains(html, "<th>");
+            StringAssert.Contains(html, "Name");
+            // tbody should be present but contain no <td> elements
+            Assert.IsFalse(html.Contains("<td>"), "Header-only CSV should not contain <td> tags");
+        }
+
+        [TestMethod]
+        public void CsvToHtmlTable_QuotedFieldsWithCommas_RenderAsOneCell()
+        {
+            string html = CsvToHtmlTable("Col\n\"hello, world\"");
+            StringAssert.Contains(html, "<td>");
+            StringAssert.Contains(html, "hello, world");
+        }
+
+        [TestMethod]
+        public void CsvToHtmlTable_QuotedFieldsWithNewlines_SplitByLines()
+        {
+            // CsvToHtmlTable splits on newlines first, so quoted newlines
+            // are treated as row separators (a known limitation of this lightweight parser)
+            string html = CsvToHtmlTable("Col\n\"line1\nline2\"");
+            Assert.IsNotNull(html);
+            StringAssert.Contains(html, "<table>");
+        }
+
+        [TestMethod]
+        public void CsvToHtmlTable_SingleColumn_RendersCorrectly()
+        {
+            string html = CsvToHtmlTable("Name\nAlice\nBob");
+            StringAssert.Contains(html, "<th>Name</th>");
+            StringAssert.Contains(html, "<td>Alice</td>");
+            StringAssert.Contains(html, "<td>Bob</td>");
+        }
+
+        // ====================================================================
+        // ParseCsvLine (consolidated DataRow + edge cases)
         // ====================================================================
 
         [TestMethod]
@@ -288,11 +368,13 @@ namespace PolyglotNotebooks.Test
         }
 
         [TestMethod]
-        public void ParseCsvLine_SingleField_ReturnsSingleElement()
+        [DataRow("only", 1, "only", DisplayName = "SingleField")]
+        [DataRow("a",    1, "a",    DisplayName = "SingleChar")]
+        public void ParseCsvLine_SingleField_ReturnsSingleElement(string input, int expectedCount, string expectedValue)
         {
-            string[] fields = ParseCsvLine("only");
-            Assert.AreEqual(1, fields.Length);
-            Assert.AreEqual("only", fields[0]);
+            string[] fields = ParseCsvLine(input);
+            Assert.AreEqual(expectedCount, fields.Length);
+            Assert.AreEqual(expectedValue, fields[0]);
         }
 
         [TestMethod]
@@ -309,6 +391,56 @@ namespace PolyglotNotebooks.Test
             string[] fields = ParseCsvLine("a,b,");
             Assert.AreEqual(3, fields.Length);
             Assert.AreEqual("", fields[2]);
+        }
+
+        // ====================================================================
+        // ParseCsvLine — edge cases
+        // ====================================================================
+
+        [TestMethod]
+        public void ParseCsvLine_EmptyString_ReturnsSingleEmptyField()
+        {
+            string[] fields = ParseCsvLine("");
+            Assert.AreEqual(1, fields.Length);
+            Assert.AreEqual("", fields[0]);
+        }
+
+        [TestMethod]
+        public void ParseCsvLine_OnlyCommas_ReturnsAllEmptyFields()
+        {
+            string[] fields = ParseCsvLine(",,");
+            Assert.AreEqual(3, fields.Length);
+            Assert.AreEqual("", fields[0]);
+            Assert.AreEqual("", fields[1]);
+            Assert.AreEqual("", fields[2]);
+        }
+
+        [TestMethod]
+        public void ParseCsvLine_EscapedQuotes_DoubleDouble()
+        {
+            // Field containing only escaped quotes: """" → single "
+            string[] fields = ParseCsvLine("\"\"\"\"");
+            Assert.AreEqual(1, fields.Length);
+            Assert.AreEqual("\"", fields[0]);
+        }
+
+        [TestMethod]
+        public void ParseCsvLine_UnbalancedQuotes_TreatedAsQuoted()
+        {
+            // An unclosed quote consumes to end of line
+            string[] fields = ParseCsvLine("\"unclosed,comma");
+            Assert.AreEqual(1, fields.Length);
+            Assert.AreEqual("unclosed,comma", fields[0]);
+        }
+
+        [TestMethod]
+        public void ParseCsvLine_LeadingTrailingWhitespace_Preserved()
+        {
+            string[] fields = ParseCsvLine(" a , b , c ");
+            Assert.AreEqual(3, fields.Length);
+            Assert.AreEqual(" a ", fields[0]);
+            Assert.AreEqual(" b ", fields[1]);
+            Assert.AreEqual(" c ", fields[2]);
         }
 
         // ====================================================================

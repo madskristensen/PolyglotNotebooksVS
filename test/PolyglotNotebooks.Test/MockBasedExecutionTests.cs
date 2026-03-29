@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
@@ -703,5 +705,585 @@ namespace PolyglotNotebooks.Test
 
             client.Dispose();
         }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // CellExecutionEngine.ExecuteCellAsync — event handling logic tests
+        //
+        // ExecuteCellAsync depends on ThreadHelper (VS SDK), which is
+        // unavailable at test runtime. Instead, we test the core event-
+        // handling and command-building logic that ExecuteCellAsync relies on:
+        //   - EventObserver: token-matched event waiting (the heart of execution)
+        //   - KernelCommandEnvelope: command building
+        //   - MapKernelName / IsTerminalEvent: static helpers
+        // ══════════════════════════════════════════════════════════════════════
+
+        [TestMethod]
+        public void EventObserver_CommandSucceeded_CompletesTerminalWait()
+        {
+            var subject = new Subject<KernelEventEnvelope>();
+            var token = "test-token-success";
+
+            using var observer = new EventObserver(subject, token);
+
+            // Simulate kernel sending CommandSucceeded for this token
+            subject.OnNext(new KernelEventEnvelope
+            {
+                EventType = KernelEventTypes.CommandSucceeded,
+                Event = JsonSerializer.SerializeToElement(
+                    new CommandSucceeded { ExecutionOrder = 1 },
+                    ProtocolSerializerOptions.Default),
+                Command = new KernelCommandEnvelope { Token = token }
+            });
+
+            var result = observer.WaitForTerminalEventAsync().GetAwaiter().GetResult();
+
+            Assert.AreEqual(KernelEventTypes.CommandSucceeded, result.EventType,
+                "Terminal event should be CommandSucceeded");
+        }
+
+        [TestMethod]
+        public void EventObserver_CommandFailed_CompletesTerminalWait()
+        {
+            var subject = new Subject<KernelEventEnvelope>();
+            var token = "test-token-fail";
+
+            using var observer = new EventObserver(subject, token);
+
+            subject.OnNext(new KernelEventEnvelope
+            {
+                EventType = KernelEventTypes.CommandFailed,
+                Event = JsonSerializer.SerializeToElement(
+                    new CommandFailed { Message = "Compilation error CS1002" },
+                    ProtocolSerializerOptions.Default),
+                Command = new KernelCommandEnvelope { Token = token }
+            });
+
+            var result = observer.WaitForTerminalEventAsync().GetAwaiter().GetResult();
+
+            Assert.AreEqual(KernelEventTypes.CommandFailed, result.EventType,
+                "Terminal event should be CommandFailed");
+            var failed = result.Event.Deserialize<CommandFailed>(ProtocolSerializerOptions.Default);
+            Assert.IsNotNull(failed);
+            Assert.IsTrue(failed!.Message.Contains("CS1002"),
+                "Failed event should carry the error message");
+        }
+
+        [TestMethod]
+        public void EventObserver_WrongToken_DoesNotCompleteTerminalWait()
+        {
+            var subject = new Subject<KernelEventEnvelope>();
+            var token = "my-token";
+
+            using var observer = new EventObserver(subject, token);
+
+            // Push event with a DIFFERENT token — should be ignored
+            subject.OnNext(new KernelEventEnvelope
+            {
+                EventType = KernelEventTypes.CommandSucceeded,
+                Event = JsonSerializer.SerializeToElement(new CommandSucceeded(), ProtocolSerializerOptions.Default),
+                Command = new KernelCommandEnvelope { Token = "other-token" }
+            });
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+            bool didNotComplete = false;
+            try
+            {
+                observer.WaitForTerminalEventAsync(cts.Token).GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException) { didNotComplete = true; }
+            catch (TimeoutException) { didNotComplete = true; }
+            Assert.IsTrue(didNotComplete,
+                "Events with wrong token should be ignored; wait should not complete");
+        }
+
+        [TestMethod]
+        public void EventObserver_Cancellation_ThrowsOperationCanceled()
+        {
+            var subject = new Subject<KernelEventEnvelope>();
+            using var observer = new EventObserver(subject, "token-cancel");
+
+            using var cts = new CancellationTokenSource();
+            cts.Cancel(); // pre-cancel
+
+            bool threw = false;
+            try
+            {
+                observer.WaitForTerminalEventAsync(cts.Token).GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException) { threw = true; }
+            Assert.IsTrue(threw, "Pre-cancelled token should cause OperationCanceledException");
+        }
+
+        [TestMethod]
+        public void EventObserver_StreamCompleted_FaultsPendingWait()
+        {
+            var subject = new Subject<KernelEventEnvelope>();
+            using var observer = new EventObserver(subject, "token-crash");
+
+            // Simulate kernel process crashing (stream completes unexpectedly)
+            subject.OnCompleted();
+
+            bool threw = false;
+            try
+            {
+                observer.WaitForTerminalEventAsync().GetAwaiter().GetResult();
+            }
+            catch (InvalidOperationException ex)
+            {
+                threw = true;
+                Assert.IsTrue(ex.Message.Contains("terminated"),
+                    "Exception should indicate the kernel process terminated");
+            }
+            Assert.IsTrue(threw,
+                "Stream completion should fault pending waits with InvalidOperationException");
+        }
+
+        [TestMethod]
+        public void EventObserver_StreamError_FaultsPendingWait()
+        {
+            var subject = new Subject<KernelEventEnvelope>();
+            using var observer = new EventObserver(subject, "token-error");
+
+            // Simulate stream error
+            subject.OnError(new IOException("Broken pipe"));
+
+            bool threw = false;
+            try
+            {
+                observer.WaitForTerminalEventAsync().GetAwaiter().GetResult();
+            }
+            catch (IOException ex)
+            {
+                threw = true;
+                Assert.IsTrue(ex.Message.Contains("Broken pipe"));
+            }
+            Assert.IsTrue(threw,
+                "Stream error should fault pending waits with the original exception");
+        }
+
+        [TestMethod]
+        public void EventObserver_IntermediateEvents_DoNotCompleteTerminalWait()
+        {
+            var subject = new Subject<KernelEventEnvelope>();
+            var token = "token-intermediate";
+            using var observer = new EventObserver(subject, token);
+
+            // Push non-terminal events (display, output, etc.)
+            subject.OnNext(new KernelEventEnvelope
+            {
+                EventType = KernelEventTypes.DisplayedValueProduced,
+                Event = JsonSerializer.SerializeToElement(new { }, ProtocolSerializerOptions.Default),
+                Command = new KernelCommandEnvelope { Token = token }
+            });
+            subject.OnNext(new KernelEventEnvelope
+            {
+                EventType = KernelEventTypes.StandardOutputValueProduced,
+                Event = JsonSerializer.SerializeToElement(new { }, ProtocolSerializerOptions.Default),
+                Command = new KernelCommandEnvelope { Token = token }
+            });
+
+            // Terminal wait should NOT be completed by intermediate events
+            using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+            bool didNotComplete = false;
+            try
+            {
+                observer.WaitForTerminalEventAsync(cts.Token).GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException) { didNotComplete = true; }
+            catch (TimeoutException) { didNotComplete = true; }
+            Assert.IsTrue(didNotComplete,
+                "Intermediate events should not satisfy WaitForTerminalEventAsync");
+        }
+
+        [TestMethod]
+        public void EventObserver_WaitForEventType_CompletesOnMatchingEvent()
+        {
+            var subject = new Subject<KernelEventEnvelope>();
+            var token = "token-wait-type";
+            using var observer = new EventObserver(subject, token);
+
+            // Start the wait first (creates the TCS in _pending), then push the event
+            var waitTask = observer.WaitForEventTypeAsync(KernelEventTypes.KernelReady);
+
+            subject.OnNext(new KernelEventEnvelope
+            {
+                EventType = KernelEventTypes.KernelReady,
+                Event = JsonSerializer.SerializeToElement(new { }, ProtocolSerializerOptions.Default),
+                Command = new KernelCommandEnvelope { Token = token }
+            });
+
+            var result = waitTask.GetAwaiter().GetResult();
+            Assert.AreEqual(KernelEventTypes.KernelReady, result.EventType);
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // CellExecutionEngine — static helper methods
+        // ══════════════════════════════════════════════════════════════════════
+
+        [TestMethod]
+        public void MapKernelName_CSharpVariants_AllMapToCsharp()
+        {
+            Assert.AreEqual("csharp", CellExecutionEngine.MapKernelName("csharp"));
+            Assert.AreEqual("csharp", CellExecutionEngine.MapKernelName("C#"));
+            Assert.AreEqual("csharp", CellExecutionEngine.MapKernelName("CSharp"));
+        }
+
+        [TestMethod]
+        public void MapKernelName_FSharpVariants_AllMapToFsharp()
+        {
+            Assert.AreEqual("fsharp", CellExecutionEngine.MapKernelName("fsharp"));
+            Assert.AreEqual("fsharp", CellExecutionEngine.MapKernelName("F#"));
+            Assert.AreEqual("fsharp", CellExecutionEngine.MapKernelName("FSharp"));
+        }
+
+        [TestMethod]
+        public void MapKernelName_NullOrEmpty_DefaultsToCsharp()
+        {
+            Assert.AreEqual("csharp", CellExecutionEngine.MapKernelName(null!));
+            Assert.AreEqual("csharp", CellExecutionEngine.MapKernelName(""));
+        }
+
+        [TestMethod]
+        public void MapKernelName_Unknown_ReturnsAsIs()
+        {
+            Assert.AreEqual("rust", CellExecutionEngine.MapKernelName("rust"));
+            Assert.AreEqual("go", CellExecutionEngine.MapKernelName("go"));
+        }
+
+        [TestMethod]
+        public void IsTerminalEvent_CommandSucceeded_ReturnsTrue()
+        {
+            Assert.IsTrue(CellExecutionEngine.IsTerminalEvent(KernelEventTypes.CommandSucceeded));
+        }
+
+        [TestMethod]
+        public void IsTerminalEvent_CommandFailed_ReturnsTrue()
+        {
+            Assert.IsTrue(CellExecutionEngine.IsTerminalEvent(KernelEventTypes.CommandFailed));
+        }
+
+        [TestMethod]
+        public void IsTerminalEvent_OtherEvents_ReturnsFalse()
+        {
+            Assert.IsFalse(CellExecutionEngine.IsTerminalEvent(KernelEventTypes.KernelReady));
+            Assert.IsFalse(CellExecutionEngine.IsTerminalEvent(KernelEventTypes.DisplayedValueProduced));
+            Assert.IsFalse(CellExecutionEngine.IsTerminalEvent(KernelEventTypes.StandardOutputValueProduced));
+            Assert.IsFalse(CellExecutionEngine.IsTerminalEvent(KernelEventTypes.ErrorProduced));
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // ExecutionCoordinator — error propagation tests
+        // ══════════════════════════════════════════════════════════════════════
+
+        [TestMethod]
+        public void Coordinator_RestartAndRunAll_StopAsyncThrows_PropagatesException()
+        {
+            var mockPM = new Mock<IKernelProcessManager>();
+            mockPM.Setup(pm => pm.IsRunning).Returns(true);
+            mockPM.Setup(pm => pm.StopAsync())
+                .ThrowsAsync(new InvalidOperationException("Process already dead"));
+
+            using var coordinator = new ExecutionCoordinator(mockPM.Object);
+            var doc = NotebookDocument.Create("test.dib", NotebookFormat.Dib);
+
+            bool threw = false;
+            try
+            {
+                coordinator.RestartAndRunAllAsync(doc).GetAwaiter().GetResult();
+            }
+            catch (InvalidOperationException ex)
+            {
+                threw = true;
+                Assert.IsTrue(ex.Message.Contains("Process already dead"),
+                    "Exception from StopAsync should propagate with original message");
+            }
+            Assert.IsTrue(threw,
+                "StopAsync exception should propagate through RestartAndRunAllAsync");
+        }
+
+        [TestMethod]
+        public void Coordinator_RestartAndRunAll_CancelledToken_ThrowsOperationCanceled()
+        {
+            var mockPM = new Mock<IKernelProcessManager>();
+            mockPM.Setup(pm => pm.IsRunning).Returns(false);
+            using var coordinator = new ExecutionCoordinator(mockPM.Object);
+            var doc = NotebookDocument.Create("test.dib", NotebookFormat.Dib);
+
+            using var cts = new CancellationTokenSource();
+            cts.Cancel();
+
+            bool threw = false;
+            try
+            {
+                coordinator.RestartAndRunAllAsync(doc, cts.Token).GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException) { threw = true; }
+            Assert.IsTrue(threw,
+                "Cancelled token should cause OperationCanceledException in RestartAndRunAllAsync");
+        }
+
+        [TestMethod]
+        public void Coordinator_RunAllCellsAsync_NullDocument_ThrowsArgumentNull()
+        {
+            var mockPM = new Mock<IKernelProcessManager>();
+            using var coordinator = new ExecutionCoordinator(mockPM.Object);
+
+            bool threw = false;
+            try
+            {
+                coordinator.RunAllCellsAsync(null!).GetAwaiter().GetResult();
+            }
+            catch (ArgumentNullException) { threw = true; }
+            Assert.IsTrue(threw, "Expected ArgumentNullException for null document");
+        }
+
+        [TestMethod]
+        public void Coordinator_CancelCurrentExecution_SequentialCalls_DoNotThrow()
+        {
+            var mockPM = new Mock<IKernelProcessManager>();
+            using var coordinator = new ExecutionCoordinator(mockPM.Object);
+
+            // Multiple sequential cancellations should be safe
+            bool threw = false;
+            try
+            {
+                coordinator.CancelCurrentExecution();
+                coordinator.CancelCurrentExecution();
+                coordinator.CancelCurrentExecution();
+            }
+            catch { threw = true; }
+            Assert.IsFalse(threw,
+                "Multiple CancelCurrentExecution calls should never throw");
+        }
+
+        [TestMethod]
+        public void Coordinator_Dispose_ThenCancel_DoesNotThrow()
+        {
+            var mockPM = new Mock<IKernelProcessManager>();
+            var coordinator = new ExecutionCoordinator(mockPM.Object);
+
+            coordinator.Dispose();
+
+            // Cancellation after disposal should be safe (no-op)
+            bool threw = false;
+            try
+            {
+                coordinator.CancelCurrentExecution();
+            }
+            catch { threw = true; }
+            Assert.IsFalse(threw,
+                "CancelCurrentExecution after Dispose should not throw");
+        }
+
+        [TestMethod]
+        public void Coordinator_IsJavaScriptCell_CorrectlyIdentifiesJSKernels()
+        {
+            Assert.IsTrue(ExecutionCoordinator.IsJavaScriptCell("javascript"));
+            Assert.IsTrue(ExecutionCoordinator.IsJavaScriptCell("js"));
+            Assert.IsTrue(ExecutionCoordinator.IsJavaScriptCell("JavaScript"));
+            Assert.IsTrue(ExecutionCoordinator.IsJavaScriptCell("JS"));
+            Assert.IsFalse(ExecutionCoordinator.IsJavaScriptCell("csharp"));
+            Assert.IsFalse(ExecutionCoordinator.IsJavaScriptCell("fsharp"));
+            Assert.IsFalse(ExecutionCoordinator.IsJavaScriptCell(null));
+            Assert.IsFalse(ExecutionCoordinator.IsJavaScriptCell(""));
+        }
+
+        [TestMethod]
+        public void Coordinator_SelectCellsAbove_ReturnsOnlyCellsBeforeCurrent()
+        {
+            var cells = new List<NotebookCell>
+            {
+                new NotebookCell(CellKind.Code, "csharp", "cell0"),
+                new NotebookCell(CellKind.Code, "csharp", "cell1"),
+                new NotebookCell(CellKind.Code, "csharp", "cell2"),
+            };
+
+            var result = ExecutionCoordinator.SelectCellsAbove(cells, cells[2]);
+            Assert.AreEqual(2, result.Count);
+            Assert.AreSame(cells[0], result[0]);
+            Assert.AreSame(cells[1], result[1]);
+        }
+
+        [TestMethod]
+        public void Coordinator_SelectCellsBelow_ReturnsCurrentAndAllBelow()
+        {
+            var cells = new List<NotebookCell>
+            {
+                new NotebookCell(CellKind.Code, "csharp", "cell0"),
+                new NotebookCell(CellKind.Code, "csharp", "cell1"),
+                new NotebookCell(CellKind.Code, "csharp", "cell2"),
+            };
+
+            var result = ExecutionCoordinator.SelectCellsBelow(cells, cells[1]);
+            Assert.AreEqual(2, result.Count);
+            Assert.AreSame(cells[1], result[0]);
+            Assert.AreSame(cells[2], result[1]);
+        }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // KernelProcessManager — crash recovery and lifecycle tests
+        // ══════════════════════════════════════════════════════════════════════
+
+        [TestMethod]
+        public void ProcessManager_InitialStatus_IsNotStarted()
+        {
+            var manager = new KernelProcessManager();
+            Assert.AreEqual(KernelStatus.NotStarted, manager.Status);
+            Assert.IsFalse(manager.IsRunning);
+            Assert.IsNull(manager.Process);
+            Assert.IsNull(manager.ConnectionInfo);
+            manager.Dispose();
+        }
+
+        [TestMethod]
+        public void ProcessManager_Dispose_ThrowsObjectDisposed_OnStartAsync()
+        {
+            var manager = new KernelProcessManager();
+            manager.Dispose();
+
+            bool threw = false;
+            try
+            {
+                manager.StartAsync().GetAwaiter().GetResult();
+            }
+            catch (ObjectDisposedException) { threw = true; }
+            Assert.IsTrue(threw,
+                "StartAsync after Dispose should throw ObjectDisposedException");
+        }
+
+        [TestMethod]
+        public void ProcessManager_Dispose_ThrowsObjectDisposed_OnStopAsync()
+        {
+            var manager = new KernelProcessManager();
+            manager.Dispose();
+
+            bool threw = false;
+            try
+            {
+                manager.StopAsync().GetAwaiter().GetResult();
+            }
+            catch (ObjectDisposedException) { threw = true; }
+            Assert.IsTrue(threw,
+                "StopAsync after Dispose should throw ObjectDisposedException");
+        }
+
+        [TestMethod]
+        public void ProcessManager_Dispose_ThrowsObjectDisposed_OnRestartAsync()
+        {
+            var manager = new KernelProcessManager();
+            manager.Dispose();
+
+            bool threw = false;
+            try
+            {
+                manager.RestartAsync().GetAwaiter().GetResult();
+            }
+            catch (ObjectDisposedException) { threw = true; }
+            Assert.IsTrue(threw,
+                "RestartAsync after Dispose should throw ObjectDisposedException");
+        }
+
+        [TestMethod]
+        public void ProcessManager_DisposeAll_DoesNotThrow()
+        {
+            // DisposeAll is a static cleanup method for VS shutdown
+            bool threw = false;
+            try
+            {
+                KernelProcessManager.DisposeAll();
+            }
+            catch { threw = true; }
+            Assert.IsFalse(threw,
+                "DisposeAll should never throw even when no instances exist");
+        }
+
+        [TestMethod]
+        public void MockProcessManager_CrashEvent_WillRetryFalse_AtMaxAttempts()
+        {
+            var mockPM = new Mock<IKernelProcessManager>();
+            KernelCrashedEventArgs? capturedArgs = null;
+
+            mockPM.Object.KernelCrashed += (s, e) => capturedArgs = e;
+            mockPM.Raise(pm => pm.KernelCrashed += null,
+                new KernelCrashedEventArgs(
+                    exitCode: -1073740791,
+                    stderrOutput: "Stack overflow",
+                    attemptNumber: KernelProcessManager.MaxRestartAttempts,
+                    willRetry: false));
+
+            Assert.IsNotNull(capturedArgs);
+            Assert.IsFalse(capturedArgs!.WillRetry,
+                "WillRetry should be false when attempts have reached max");
+            Assert.AreEqual(KernelProcessManager.MaxRestartAttempts, capturedArgs.AttemptNumber);
+        }
+
+        [TestMethod]
+        public void MockProcessManager_SequentialCrashes_TrackAttemptNumbers()
+        {
+            var mockPM = new Mock<IKernelProcessManager>();
+            var crashEvents = new List<KernelCrashedEventArgs>();
+
+            mockPM.Object.KernelCrashed += (s, e) => crashEvents.Add(e);
+
+            // Simulate 4 crashes: 3 with retry, 1 giving up
+            for (int i = 0; i <= KernelProcessManager.MaxRestartAttempts; i++)
+            {
+                bool willRetry = i < KernelProcessManager.MaxRestartAttempts;
+                mockPM.Raise(pm => pm.KernelCrashed += null,
+                    new KernelCrashedEventArgs(
+                        exitCode: -1,
+                        stderrOutput: $"Crash #{i}",
+                        attemptNumber: i,
+                        willRetry: willRetry));
+            }
+
+            Assert.AreEqual(KernelProcessManager.MaxRestartAttempts + 1, crashEvents.Count,
+                "Should have received one crash event per attempt plus the final one");
+            Assert.IsTrue(crashEvents[0].WillRetry, "First crash should have willRetry=true");
+            Assert.IsFalse(crashEvents[crashEvents.Count - 1].WillRetry,
+                "Last crash should have willRetry=false");
+        }
+
+        [TestMethod]
+        public void MockProcessManager_StatusTransitions_DuringCrashRecovery()
+        {
+            var mockPM = new Mock<IKernelProcessManager>();
+            var statusChanges = new List<KernelStatusChangedEventArgs>();
+
+            mockPM.Object.StatusChanged += (s, e) => statusChanges.Add(e);
+
+            // Simulate: Ready → Error (crash) → Restarting → Ready
+            mockPM.Raise(pm => pm.StatusChanged += null,
+                new KernelStatusChangedEventArgs(KernelStatus.Ready, KernelStatus.Error));
+            mockPM.Raise(pm => pm.StatusChanged += null,
+                new KernelStatusChangedEventArgs(KernelStatus.Error, KernelStatus.Restarting));
+            mockPM.Raise(pm => pm.StatusChanged += null,
+                new KernelStatusChangedEventArgs(KernelStatus.Restarting, KernelStatus.Ready));
+
+            Assert.AreEqual(3, statusChanges.Count);
+            Assert.AreEqual(KernelStatus.Error, statusChanges[0].NewStatus);
+            Assert.AreEqual(KernelStatus.Restarting, statusChanges[1].NewStatus);
+            Assert.AreEqual(KernelStatus.Ready, statusChanges[2].NewStatus);
+        }
+
+        [TestMethod]
+        public void ProcessExitedEventArgs_Unexpected_HasCorrectProperties()
+        {
+            var args = new ProcessExitedEventArgs(exitCode: -1073741819, stderrOutput: "Access violation", wasUnexpected: true);
+
+            Assert.AreEqual(-1073741819, args.ExitCode);
+            Assert.AreEqual("Access violation", args.StderrOutput);
+            Assert.IsTrue(args.WasUnexpected);
+        }
+
+        [TestMethod]
+        public void ProcessExitedEventArgs_Expected_HasWasUnexpectedFalse()
+        {
+            var args = new ProcessExitedEventArgs(exitCode: 0, stderrOutput: "", wasUnexpected: false);
+
+            Assert.AreEqual(0, args.ExitCode);
+            Assert.IsFalse(args.WasUnexpected);
+        }
     }
 }
+
