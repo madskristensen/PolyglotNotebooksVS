@@ -19,12 +19,17 @@ namespace PolyglotNotebooks.Execution
     /// </summary>
     internal sealed class CellExecutionEngine : IDisposable
     {
-        private readonly KernelClient _kernelClient;
+        private readonly IKernelClient _kernelClient;
         private readonly SemaphoreSlim _executionGate = new SemaphoreSlim(1, 1);
         private CancellationTokenSource? _currentCts;
         private bool _disposed;
 
         public CellExecutionEngine(KernelClient kernelClient)
+            : this((IKernelClient)kernelClient)
+        {
+        }
+
+        internal CellExecutionEngine(IKernelClient kernelClient)
         {
             _kernelClient = kernelClient ?? throw new ArgumentNullException(nameof(kernelClient));
         }

@@ -56,7 +56,7 @@ namespace PolyglotNotebooks.Protocol
     /// Protocol client for communicating with a dotnet-interactive kernel over stdin/stdout
     /// using line-delimited JSON.  All public methods are async and thread-safe.
     /// </summary>
-    public sealed class KernelClient : IDisposable
+    public sealed class KernelClient : IKernelClient
     {
         private readonly Process _process;
         private readonly Subject<KernelEventEnvelope> _events = new Subject<KernelEventEnvelope>();

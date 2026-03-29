@@ -31,6 +31,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyVersion(Vsix.Version)]
 [assembly: AssemblyFileVersion(Vsix.Version)]
 [assembly: InternalsVisibleTo("PolyglotNotebooks.Test")]
+[assembly: InternalsVisibleTo("DynamicProxyGenAssembly2")]
 
 namespace System.Runtime.CompilerServices
 {

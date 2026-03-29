@@ -20,13 +20,14 @@ namespace PolyglotNotebooks.Execution
     /// </summary>
     internal sealed class ExecutionCoordinator : IDisposable
     {
-        private readonly KernelProcessManager _kernelProcessManager;
-        private readonly KernelInstallationDetector _installationDetector = new KernelInstallationDetector();
+        private readonly IKernelProcessManager _kernelProcessManager;
+        private readonly KernelInstallationDetector _installationDetector;
+        private readonly Func<System.Diagnostics.Process, IKernelClient>? _kernelClientFactory;
         private readonly SemaphoreSlim _startupLock = new SemaphoreSlim(1, 1);
         private readonly CancellationTokenSource _lifetimeCts = new CancellationTokenSource();
         private readonly NodeJsExecutor _nodeJsExecutor = new NodeJsExecutor();
 
-        private KernelClient? _kernelClient;
+        private IKernelClient? _kernelClient;
         private CellExecutionEngine? _executionEngine;
         private CancellationTokenSource? _currentCts;
         private bool _kernelStarted;
@@ -37,12 +38,27 @@ namespace PolyglotNotebooks.Execution
         /// <summary>Raised when any run operation (Run All, Run Cell, etc.) completes or is cancelled.</summary>
         public event EventHandler? ExecutionCompleted;
 
-        public KernelClient? KernelClient => _kernelClient;
+        public KernelClient? KernelClient => _kernelClient as KernelClient;
 
         public ExecutionCoordinator(KernelProcessManager kernelProcessManager)
         {
             _kernelProcessManager = kernelProcessManager
                 ?? throw new ArgumentNullException(nameof(kernelProcessManager));
+            _installationDetector = new KernelInstallationDetector();
+        }
+
+        /// <summary>
+        /// Internal constructor for unit testing: accepts interfaces so dependencies can be mocked.
+        /// </summary>
+        internal ExecutionCoordinator(
+            IKernelProcessManager kernelProcessManager,
+            Func<System.Diagnostics.Process, IKernelClient>? kernelClientFactory = null,
+            KernelInstallationDetector? installationDetector = null)
+        {
+            _kernelProcessManager = kernelProcessManager
+                ?? throw new ArgumentNullException(nameof(kernelProcessManager));
+            _kernelClientFactory = kernelClientFactory;
+            _installationDetector = installationDetector ?? new KernelInstallationDetector();
         }
 
         // ── Fire-and-forget handlers (called from UI thread) ──────────────────
@@ -424,7 +440,9 @@ namespace PolyglotNotebooks.Execution
                     ?? throw new InvalidOperationException(
                         "KernelProcessManager.Process is null after StartAsync completed.");
 
-                _kernelClient = new KernelClient(process);
+                _kernelClient = _kernelClientFactory != null
+                    ? _kernelClientFactory(process)
+                    : new KernelClient(process);
                 _kernelClient.Start(_lifetimeCts.Token);
 
                 ExtensionLogger.LogInfo(nameof(ExecutionCoordinator),
@@ -457,6 +475,11 @@ namespace PolyglotNotebooks.Execution
                         _kernelClient = null;
                         _executionEngine = null;
                         _kernelStarted = false;
+
+                        // Stop the orphaned kernel process to prevent resource leaks.
+                        try { await _kernelProcessManager.StopAsync().ConfigureAwait(false); }
+                        catch { /* best-effort cleanup */ }
+
                         throw;
                     }
                 }
@@ -467,7 +490,8 @@ namespace PolyglotNotebooks.Execution
                 _executionEngine = new CellExecutionEngine(_kernelClient);
                 _kernelStarted = true;
 
-                KernelClientAvailable?.Invoke(_kernelClient);
+                if (_kernelClient is KernelClient concreteClient)
+                    KernelClientAvailable?.Invoke(concreteClient);
 
                 ExtensionLogger.LogInfo(nameof(ExecutionCoordinator),
                     "Kernel ready. Execution engine initialized.");

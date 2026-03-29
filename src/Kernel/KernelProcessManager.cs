@@ -29,7 +29,7 @@ namespace PolyglotNotebooks.Kernel
     /// All public async methods are safe to call from any thread.
     /// Supports automatic crash recovery with exponential backoff.
     /// </summary>
-    public sealed class KernelProcessManager : IDisposable
+    public sealed class KernelProcessManager : IKernelProcessManager
     {
         private const int StopTimeoutMs = 5000;
         private const int MaxStderrLines = 100;
