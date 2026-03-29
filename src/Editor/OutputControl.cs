@@ -49,13 +49,6 @@ namespace PolyglotNotebooks.Editor
             Child = _root;
             Visibility = Visibility.Collapsed;
 
-            this.Unloaded += (s, e) =>
-            {
-                if (_cell != null)
-                    _cell.Outputs.CollectionChanged -= OnOutputsChanged;
-
-                DisposeTrackedControls();
-            };
         }
 
         public NotebookCell? Cell
@@ -73,6 +66,19 @@ namespace PolyglotNotebooks.Editor
 
                 Rebuild();
             }
+        }
+
+        /// <summary>
+        /// Permanently releases all output resources.
+        /// Called by <see cref="CellControl.Cleanup"/> when the cell is removed
+        /// from the document — NOT on WPF Unloaded (which also fires on tab switch).
+        /// </summary>
+        internal void Cleanup()
+        {
+            if (_cell != null)
+                _cell.Outputs.CollectionChanged -= OnOutputsChanged;
+
+            DisposeTrackedControls();
         }
 
         // -----------------------------------------------------------------------

@@ -5,6 +5,7 @@ using PolyglotNotebooks.Diagnostics;
 
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace PolyglotNotebooks.Editor.SyntaxHighlighting
@@ -24,12 +25,14 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
         private readonly IClassificationType _number;
         private readonly IClassificationType _typeName;
         private LanguagePattern _language;
+        private readonly SynchronizationContext? _syncContext;
 
         public event EventHandler<ClassificationChangedEventArgs> ClassificationChanged;
 
         internal NotebookClassifier(ITextBuffer buffer, IClassificationTypeRegistryService registry)
         {
             _buffer = buffer;
+            _syncContext = SynchronizationContext.Current;
             _keyword = registry.GetClassificationType("keyword");
             _string = registry.GetClassificationType("string");
             _comment = registry.GetClassificationType("comment");
@@ -50,9 +53,8 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
                 var snapshot = _buffer.CurrentSnapshot;
                 if (snapshot.Length > 0)
                 {
-                    ClassificationChanged?.Invoke(this,
-                        new ClassificationChangedEventArgs(
-                            new SnapshotSpan(snapshot, 0, snapshot.Length)));
+                    RaiseClassificationChanged(
+                        new SnapshotSpan(snapshot, 0, snapshot.Length));
                 }
             }, TaskScheduler.Default);
         }
@@ -61,9 +63,8 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
         {
             foreach (var change in e.Changes)
             {
-                ClassificationChanged?.Invoke(this,
-                    new ClassificationChangedEventArgs(
-                        new SnapshotSpan(e.After, change.NewSpan)));
+                RaiseClassificationChanged(
+                    new SnapshotSpan(e.After, change.NewSpan));
             }
         }
 
@@ -77,9 +78,29 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
             var snapshot = _buffer.CurrentSnapshot;
             if (snapshot.Length > 0)
             {
-                ClassificationChanged?.Invoke(this,
-                    new ClassificationChangedEventArgs(
-                        new SnapshotSpan(snapshot, 0, snapshot.Length)));
+                RaiseClassificationChanged(
+                    new SnapshotSpan(snapshot, 0, snapshot.Length));
+            }
+        }
+
+        /// <summary>
+        /// Raises <see cref="ClassificationChanged"/> on the UI thread.
+        /// VS expects this event on the main thread; buffer.Changed and
+        /// Task continuations may fire on a ThreadPool thread.
+        /// </summary>
+        private void RaiseClassificationChanged(SnapshotSpan span)
+        {
+            var handler = ClassificationChanged;
+            if (handler == null) return;
+
+            var args = new ClassificationChangedEventArgs(span);
+            if (_syncContext != null && SynchronizationContext.Current != _syncContext)
+            {
+                _syncContext.Post(_ => handler(this, args), null);
+            }
+            else
+            {
+                handler(this, args);
             }
         }
 

@@ -27,10 +27,10 @@ namespace PolyglotNotebooks.Execution
         private readonly CancellationTokenSource _lifetimeCts = new CancellationTokenSource();
         private readonly NodeJsExecutor _nodeJsExecutor = new NodeJsExecutor();
 
-        private IKernelClient? _kernelClient;
-        private CellExecutionEngine? _executionEngine;
+        private volatile IKernelClient? _kernelClient;
+        private volatile CellExecutionEngine? _executionEngine;
         private CancellationTokenSource? _currentCts;
-        private bool _kernelStarted;
+        private volatile bool _kernelStarted;
         private bool _disposed;
 
         public event Action<KernelClient>? KernelClientAvailable;

@@ -11,6 +11,7 @@ using PolyglotNotebooks.Editor.SyntaxHighlighting;
 using PolyglotNotebooks.Models;
 
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -40,6 +41,10 @@ namespace PolyglotNotebooks.Editor
         private bool _suppressBufferSync;
         private IVsRunningDocumentTable? _rdt;
         private uint _rdtCookie;
+        private OutputControl? _outputControl;
+        private ITextBuffer? _buffer;
+        private EventHandler<TextContentChangedEventArgs>? _bufferChangedHandler;
+        private PropertyChangedEventHandler? _cellPropertyChangedHandler;
 
         // Kernel name → VS content type mapping (delegated to KernelLanguageMap)
 
@@ -132,6 +137,20 @@ namespace PolyglotNotebooks.Editor
         /// </summary>
         internal void Cleanup()
         {
+            // Detach event handlers to prevent leaks when the cell model outlives this control
+            if (_buffer != null && _bufferChangedHandler != null)
+            {
+                _buffer.Changed -= _bufferChangedHandler;
+                _bufferChangedHandler = null;
+            }
+            if (_cellPropertyChangedHandler != null)
+            {
+                _cell.PropertyChanged -= _cellPropertyChangedHandler;
+                _cellPropertyChangedHandler = null;
+            }
+
+            _outputControl?.Cleanup();
+
             if (_rdt != null && _rdtCookie != 0)
             {
                 try { _rdt.UnlockDocument((uint)_VSRDTFLAGS.RDT_ReadLock, _rdtCookie); }
@@ -437,16 +456,18 @@ namespace PolyglotNotebooks.Editor
                 };
 
                 // Two-way sync: Buffer → Model
-                buffer.Changed += (s, e) =>
+                _buffer = buffer;
+                _bufferChangedHandler = (s, e) =>
                 {
                     if (_suppressBufferSync) return;
                     var text = buffer.CurrentSnapshot.GetText();
                     cell.Contents = text;
                     ParseMagicCommand(text, cell);
                 };
+                _buffer.Changed += _bufferChangedHandler;
 
                 // Two-way sync: Model → Buffer (for external changes)
-                cell.PropertyChanged += (s, e) =>
+                _cellPropertyChangedHandler = (s, e) =>
                 {
                     if (e.PropertyName == nameof(NotebookCell.Contents))
                     {
@@ -502,6 +523,7 @@ namespace PolyglotNotebooks.Editor
                         }
                     }
                 };
+                cell.PropertyChanged += _cellPropertyChangedHandler;
 
                 toolbar.RunSelectionRequested += (s, e) =>
                 {
@@ -528,9 +550,9 @@ namespace PolyglotNotebooks.Editor
                 Grid.SetRow(hostControl, 1);
                 grid.Children.Add(hostControl);
 
-                var output = new OutputControl { Cell = cell };
-                Grid.SetRow(output, 2);
-                grid.Children.Add(output);
+                _outputControl = new OutputControl { Cell = cell };
+                Grid.SetRow(_outputControl, 2);
+                grid.Children.Add(_outputControl);
             }
             catch (Exception ex)
             {
@@ -687,9 +709,9 @@ namespace PolyglotNotebooks.Editor
             Grid.SetRow(editor, 1);
             grid.Children.Add(editor);
 
-            var output = new OutputControl { Cell = cell };
-            Grid.SetRow(output, 2);
-            grid.Children.Add(output);
+            _outputControl = new OutputControl { Cell = cell };
+            Grid.SetRow(_outputControl, 2);
+            grid.Children.Add(_outputControl);
         }
 
         // ── Markdown cell construction ────────────────────────────────────────
@@ -754,11 +776,12 @@ namespace PolyglotNotebooks.Editor
             grid.Children.Add(_markdownDisplay);
 
             // Re-render when contents change externally
-            cell.PropertyChanged += (s, e) =>
+            _cellPropertyChangedHandler = (s, e) =>
             {
                 if (e.PropertyName == nameof(NotebookCell.Contents) && !_isMarkdownEditing)
                     RefreshMarkdownDisplay();
             };
+            cell.PropertyChanged += _cellPropertyChangedHandler;
         }
 
         private void OnMarkdownDisplayClicked(object sender, MouseButtonEventArgs e)
