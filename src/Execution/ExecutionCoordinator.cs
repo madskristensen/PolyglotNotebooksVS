@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -100,12 +101,9 @@ namespace PolyglotNotebooks.Execution
         public void HandleRunCellsAboveRequested(NotebookDocument document, NotebookCell currentCell)
         {
             if (document == null || currentCell == null) return;
-            foreach (var cell in document.Cells)
-            {
-                if (ReferenceEquals(cell, currentCell)) break;
+            foreach (var cell in SelectCellsAbove(document.Cells, currentCell))
                 if (cell.Kind == CellKind.Code)
                     cell.ExecutionStatus = CellExecutionStatus.Queued;
-            }
             FireAndForget(ct => RunCellsAboveAsync(document, currentCell, ct), "Run Cells Above");
         }
 
@@ -113,13 +111,9 @@ namespace PolyglotNotebooks.Execution
         public void HandleRunCellsBelowRequested(NotebookDocument document, NotebookCell currentCell)
         {
             if (document == null || currentCell == null) return;
-            bool reached = false;
-            foreach (var cell in document.Cells)
-            {
-                if (ReferenceEquals(cell, currentCell)) reached = true;
-                if (reached && cell.Kind == CellKind.Code)
+            foreach (var cell in SelectCellsBelow(document.Cells, currentCell))
+                if (cell.Kind == CellKind.Code)
                     cell.ExecutionStatus = CellExecutionStatus.Queued;
-            }
             FireAndForget(ct => RunCellsBelowAsync(document, currentCell, ct), "Run Cells Below");
         }
 
@@ -205,9 +199,8 @@ namespace PolyglotNotebooks.Execution
             if (document == null) throw new ArgumentNullException(nameof(document));
             if (currentCell == null) throw new ArgumentNullException(nameof(currentCell));
 
-            foreach (var cell in document.Cells)
+            foreach (var cell in SelectCellsAbove(document.Cells, currentCell))
             {
-                if (ReferenceEquals(cell, currentCell)) break;
                 ct.ThrowIfCancellationRequested();
                 if (cell.Kind == CellKind.Code)
                     await ExecuteCellRoutedAsync(cell, ct).ConfigureAwait(false);
@@ -220,11 +213,8 @@ namespace PolyglotNotebooks.Execution
             if (document == null) throw new ArgumentNullException(nameof(document));
             if (currentCell == null) throw new ArgumentNullException(nameof(currentCell));
 
-            bool reached = false;
-            foreach (var cell in document.Cells)
+            foreach (var cell in SelectCellsBelow(document.Cells, currentCell))
             {
-                if (ReferenceEquals(cell, currentCell)) reached = true;
-                if (!reached) continue;
                 ct.ThrowIfCancellationRequested();
                 if (cell.Kind == CellKind.Code)
                     await ExecuteCellRoutedAsync(cell, ct).ConfigureAwait(false);
@@ -286,13 +276,46 @@ namespace PolyglotNotebooks.Execution
         // ── Private helpers ───────────────────────────────────────────────────
 
         /// <summary>
-        /// Returns true if the cell's kernel name is JavaScript and should be
-        /// executed via Node.js instead of the dotnet-interactive kernel.
+        /// Returns true if <paramref name="kernelName"/> identifies a JavaScript
+        /// kernel that should be executed via Node.js instead of dotnet-interactive.
         /// </summary>
-        private static bool IsJavaScriptCell(NotebookCell cell)
+        internal static bool IsJavaScriptCell(string? kernelName)
         {
-            var name = cell.KernelName?.ToLowerInvariant();
+            var name = kernelName?.ToLowerInvariant();
             return name == "javascript" || name == "js";
+        }
+
+        private static bool IsJavaScriptCell(NotebookCell cell)
+            => IsJavaScriptCell(cell.KernelName);
+
+        /// <summary>
+        /// Returns all cells that appear before <paramref name="current"/> in the list
+        /// (exclusive of <paramref name="current"/> itself).
+        /// </summary>
+        internal static IReadOnlyList<NotebookCell> SelectCellsAbove(IList<NotebookCell> cells, NotebookCell current)
+        {
+            var result = new List<NotebookCell>();
+            foreach (var cell in cells)
+            {
+                if (ReferenceEquals(cell, current)) break;
+                result.Add(cell);
+            }
+            return result;
+        }
+
+        /// <summary>
+        /// Returns <paramref name="current"/> and all cells that follow it in the list.
+        /// </summary>
+        internal static IReadOnlyList<NotebookCell> SelectCellsBelow(IList<NotebookCell> cells, NotebookCell current)
+        {
+            var result = new List<NotebookCell>();
+            bool reached = false;
+            foreach (var cell in cells)
+            {
+                if (ReferenceEquals(cell, current)) reached = true;
+                if (reached) result.Add(cell);
+            }
+            return result;
         }
 
         /// <summary>

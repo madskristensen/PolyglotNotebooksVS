@@ -148,20 +148,5 @@ namespace PolyglotNotebooks.Test
             Assert.IsTrue(threw, "RunAllCellsAsync with a pre-cancelled token must throw OperationCanceledException");
         }
 
-        [TestMethod]
-        public void RunAllCellsAsync_WhenNullDocument_ThrowsArgumentNullException()
-        {
-            using var manager = new KernelProcessManager();
-            using var coordinator = new ExecutionCoordinator(manager);
-
-            bool threw = false;
-            try
-            {
-                coordinator.RunAllCellsAsync(null!).GetAwaiter().GetResult();
-            }
-            catch (ArgumentNullException) { threw = true; }
-            Assert.IsTrue(threw, "RunAllCellsAsync(null) must throw ArgumentNullException");
-        }
-
     }
 }

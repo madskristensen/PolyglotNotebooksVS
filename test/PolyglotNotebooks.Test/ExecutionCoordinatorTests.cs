@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PolyglotNotebooks.Execution;
@@ -85,5 +86,162 @@ namespace PolyglotNotebooks.Test
         // references ThreadHelper.JoinableTaskFactory (VS SDK type).  JIT compilation
         // of the whole method fails in the unit-test runner before the null guard
         // can execute.  Behaviour is validated by integration/VS-hosted tests.
+
+        // ── IsJavaScriptCell helper ───────────────────────────────────────────
+
+        [TestMethod]
+        public void IsJavaScriptCell_WhenJavascript_ReturnsTrue()
+        {
+            Assert.IsTrue(ExecutionCoordinator.IsJavaScriptCell("javascript"));
+        }
+
+        [TestMethod]
+        public void IsJavaScriptCell_WhenJs_ReturnsTrue()
+        {
+            Assert.IsTrue(ExecutionCoordinator.IsJavaScriptCell("js"));
+        }
+
+        [TestMethod]
+        public void IsJavaScriptCell_WhenJavaScript_CaseInsensitive_ReturnsTrue()
+        {
+            Assert.IsTrue(ExecutionCoordinator.IsJavaScriptCell("JavaScript"));
+            Assert.IsTrue(ExecutionCoordinator.IsJavaScriptCell("JAVASCRIPT"));
+            Assert.IsTrue(ExecutionCoordinator.IsJavaScriptCell("JS"));
+            Assert.IsTrue(ExecutionCoordinator.IsJavaScriptCell("Js"));
+        }
+
+        [TestMethod]
+        public void IsJavaScriptCell_WhenCsharp_ReturnsFalse()
+        {
+            Assert.IsFalse(ExecutionCoordinator.IsJavaScriptCell("csharp"));
+        }
+
+        [TestMethod]
+        public void IsJavaScriptCell_WhenNull_ReturnsFalse()
+        {
+            Assert.IsFalse(ExecutionCoordinator.IsJavaScriptCell((string?)null));
+        }
+
+        [TestMethod]
+        public void IsJavaScriptCell_WhenEmpty_ReturnsFalse()
+        {
+            Assert.IsFalse(ExecutionCoordinator.IsJavaScriptCell(""));
+        }
+
+        [TestMethod]
+        public void IsJavaScriptCell_WhenPython_ReturnsFalse()
+        {
+            Assert.IsFalse(ExecutionCoordinator.IsJavaScriptCell("python"));
+        }
+
+        // ── SelectCellsAbove / SelectCellsBelow helpers ───────────────────────
+
+        [TestMethod]
+        public void SelectCellsAbove_WhenCurrentIsFirst_ReturnsEmpty()
+        {
+            var cells = new List<NotebookCell>
+            {
+                new NotebookCell(CellKind.Code, "csharp", "first"),
+                new NotebookCell(CellKind.Code, "csharp", "second"),
+            };
+
+            var result = ExecutionCoordinator.SelectCellsAbove(cells, cells[0]);
+
+            Assert.AreEqual(0, result.Count);
+        }
+
+        [TestMethod]
+        public void SelectCellsAbove_WhenCurrentIsLast_ReturnsAllButLast()
+        {
+            var cells = new List<NotebookCell>
+            {
+                new NotebookCell(CellKind.Code, "csharp", "first"),
+                new NotebookCell(CellKind.Code, "csharp", "second"),
+                new NotebookCell(CellKind.Code, "csharp", "third"),
+            };
+
+            var result = ExecutionCoordinator.SelectCellsAbove(cells, cells[2]);
+
+            Assert.AreEqual(2, result.Count);
+            Assert.AreSame(cells[0], result[0]);
+            Assert.AreSame(cells[1], result[1]);
+        }
+
+        [TestMethod]
+        public void SelectCellsAbove_WhenCurrentIsMiddle_ReturnsCellsBefore()
+        {
+            var cells = new List<NotebookCell>
+            {
+                new NotebookCell(CellKind.Code, "csharp", "a"),
+                new NotebookCell(CellKind.Code, "csharp", "b"),
+                new NotebookCell(CellKind.Code, "csharp", "c"),
+            };
+
+            var result = ExecutionCoordinator.SelectCellsAbove(cells, cells[1]);
+
+            Assert.AreEqual(1, result.Count);
+            Assert.AreSame(cells[0], result[0]);
+        }
+
+        [TestMethod]
+        public void SelectCellsAbove_WhenCurrentNotInList_ReturnsAll()
+        {
+            var cells = new List<NotebookCell>
+            {
+                new NotebookCell(CellKind.Code, "csharp", "a"),
+                new NotebookCell(CellKind.Code, "csharp", "b"),
+            };
+            var orphan = new NotebookCell(CellKind.Code, "csharp", "orphan");
+
+            var result = ExecutionCoordinator.SelectCellsAbove(cells, orphan);
+
+            Assert.AreEqual(2, result.Count);
+        }
+
+        [TestMethod]
+        public void SelectCellsBelow_WhenCurrentIsLast_ReturnsOnlyCurrent()
+        {
+            var cells = new List<NotebookCell>
+            {
+                new NotebookCell(CellKind.Code, "csharp", "first"),
+                new NotebookCell(CellKind.Code, "csharp", "second"),
+            };
+
+            var result = ExecutionCoordinator.SelectCellsBelow(cells, cells[1]);
+
+            Assert.AreEqual(1, result.Count);
+            Assert.AreSame(cells[1], result[0]);
+        }
+
+        [TestMethod]
+        public void SelectCellsBelow_WhenCurrentIsFirst_ReturnsAll()
+        {
+            var cells = new List<NotebookCell>
+            {
+                new NotebookCell(CellKind.Code, "csharp", "first"),
+                new NotebookCell(CellKind.Code, "csharp", "second"),
+                new NotebookCell(CellKind.Code, "csharp", "third"),
+            };
+
+            var result = ExecutionCoordinator.SelectCellsBelow(cells, cells[0]);
+
+            Assert.AreEqual(3, result.Count);
+            Assert.AreSame(cells[0], result[0]);
+            Assert.AreSame(cells[2], result[2]);
+        }
+
+        [TestMethod]
+        public void SelectCellsBelow_WhenCurrentNotInList_ReturnsEmpty()
+        {
+            var cells = new List<NotebookCell>
+            {
+                new NotebookCell(CellKind.Code, "csharp", "a"),
+            };
+            var orphan = new NotebookCell(CellKind.Code, "csharp", "orphan");
+
+            var result = ExecutionCoordinator.SelectCellsBelow(cells, orphan);
+
+            Assert.AreEqual(0, result.Count);
+        }
     }
 }

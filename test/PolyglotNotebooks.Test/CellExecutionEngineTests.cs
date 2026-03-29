@@ -19,133 +19,45 @@ namespace PolyglotNotebooks.Test
     [TestClass]
     public class CellExecutionEngineTests
     {
-        // ── MapKernelName — C# variants ───────────────────────────────────────
+        // ── MapKernelName ─────────────────────────────────────────────────────
 
         [TestMethod]
-        public void MapKernelName_WhenCSharpSymbol_ReturnsCsharp()
-            => Assert.AreEqual("csharp", CellExecutionEngine.MapKernelName("C#"));
-
-        [TestMethod]
-        public void MapKernelName_WhenCsharpLowerCase_ReturnsCsharp()
-            => Assert.AreEqual("csharp", CellExecutionEngine.MapKernelName("csharp"));
-
-        [TestMethod]
-        public void MapKernelName_WhenCsharpMixedCase_ReturnsCsharp()
-            => Assert.AreEqual("csharp", CellExecutionEngine.MapKernelName("CSharp"));
-
-        [TestMethod]
-        public void MapKernelName_WhenNull_DefaultsToCsharp()
-            => Assert.AreEqual("csharp", CellExecutionEngine.MapKernelName(null));
-
-        [TestMethod]
-        public void MapKernelName_WhenEmpty_DefaultsToCsharp()
-            => Assert.AreEqual("csharp", CellExecutionEngine.MapKernelName(""));
-
-        // ── MapKernelName — F# variants ───────────────────────────────────────
-
-        [TestMethod]
-        public void MapKernelName_WhenFSharpSymbol_ReturnsFsharp()
-            => Assert.AreEqual("fsharp", CellExecutionEngine.MapKernelName("F#"));
-
-        [TestMethod]
-        public void MapKernelName_WhenFsharpLowerCase_ReturnsFsharp()
-            => Assert.AreEqual("fsharp", CellExecutionEngine.MapKernelName("fsharp"));
-
-        // ── MapKernelName — JavaScript variants ──────────────────────────────
-
-        [TestMethod]
-        public void MapKernelName_WhenJavaScript_ReturnsJavascript()
-            => Assert.AreEqual("javascript", CellExecutionEngine.MapKernelName("JavaScript"));
-
-        [TestMethod]
-        public void MapKernelName_WhenJsAlias_ReturnsJavascript()
-            => Assert.AreEqual("javascript", CellExecutionEngine.MapKernelName("js"));
-
-        [TestMethod]
-        public void MapKernelName_WhenJavascriptLowerCase_ReturnsJavascript()
-            => Assert.AreEqual("javascript", CellExecutionEngine.MapKernelName("javascript"));
-
-        // ── MapKernelName — SQL ───────────────────────────────────────────────
-
-        [TestMethod]
-        public void MapKernelName_WhenSQLUpperCase_ReturnsSql()
-            => Assert.AreEqual("sql", CellExecutionEngine.MapKernelName("SQL"));
-
-        [TestMethod]
-        public void MapKernelName_WhenSqlLowerCase_ReturnsSql()
-            => Assert.AreEqual("sql", CellExecutionEngine.MapKernelName("sql"));
-
-        // ── MapKernelName — PowerShell variants ──────────────────────────────
-
-        [TestMethod]
-        public void MapKernelName_WhenPwsh_ReturnsPwsh()
-            => Assert.AreEqual("pwsh", CellExecutionEngine.MapKernelName("pwsh"));
-
-        [TestMethod]
-        public void MapKernelName_WhenPowershell_ReturnsPwsh()
-            => Assert.AreEqual("pwsh", CellExecutionEngine.MapKernelName("powershell"));
-
-        [TestMethod]
-        public void MapKernelName_WhenPowerShellMixedCase_ReturnsPwsh()
-            => Assert.AreEqual("pwsh", CellExecutionEngine.MapKernelName("PowerShell"));
-
-        // ── MapKernelName — HTML / Markdown ───────────────────────────────────
-
-        [TestMethod]
-        public void MapKernelName_WhenHtml_ReturnsHtml()
-            => Assert.AreEqual("html", CellExecutionEngine.MapKernelName("html"));
-
-        [TestMethod]
-        public void MapKernelName_WhenHtmlUpperCase_ReturnsHtml()
-            => Assert.AreEqual("html", CellExecutionEngine.MapKernelName("HTML"));
-
-        [TestMethod]
-        public void MapKernelName_WhenMarkdown_ReturnsMarkdown()
-            => Assert.AreEqual("markdown", CellExecutionEngine.MapKernelName("markdown"));
-
-        [TestMethod]
-        public void MapKernelName_WhenMdAlias_ReturnsMarkdown()
-            => Assert.AreEqual("markdown", CellExecutionEngine.MapKernelName("md"));
-
-        // ── MapKernelName — unknown passthrough ───────────────────────────────
-
-        [TestMethod]
-        public void MapKernelName_WhenUnknownKernel_PassesThrough()
-            => Assert.AreEqual("mycustomkernel", CellExecutionEngine.MapKernelName("mycustomkernel"));
+        [DataRow("C#", "csharp")]
+        [DataRow("csharp", "csharp")]
+        [DataRow("CSharp", "csharp")]
+        [DataRow(null, "csharp")]
+        [DataRow("", "csharp")]
+        [DataRow("F#", "fsharp")]
+        [DataRow("fsharp", "fsharp")]
+        [DataRow("JavaScript", "javascript")]
+        [DataRow("js", "javascript")]
+        [DataRow("javascript", "javascript")]
+        [DataRow("SQL", "sql")]
+        [DataRow("sql", "sql")]
+        [DataRow("pwsh", "pwsh")]
+        [DataRow("powershell", "pwsh")]
+        [DataRow("PowerShell", "pwsh")]
+        [DataRow("html", "html")]
+        [DataRow("HTML", "html")]
+        [DataRow("markdown", "markdown")]
+        [DataRow("md", "markdown")]
+        [DataRow("mycustomkernel", "mycustomkernel")]
+        public void MapKernelName_ReturnsExpectedResult(string? input, string expected)
+            => Assert.AreEqual(expected, CellExecutionEngine.MapKernelName(input));
 
         // ── IsTerminalEvent ───────────────────────────────────────────────────
 
         [TestMethod]
-        public void IsTerminalEvent_WhenCommandSucceeded_ReturnsTrue()
-            => Assert.IsTrue(CellExecutionEngine.IsTerminalEvent(KernelEventTypes.CommandSucceeded));
-
-        [TestMethod]
-        public void IsTerminalEvent_WhenCommandFailed_ReturnsTrue()
-            => Assert.IsTrue(CellExecutionEngine.IsTerminalEvent(KernelEventTypes.CommandFailed));
-
-        [TestMethod]
-        public void IsTerminalEvent_WhenReturnValueProduced_ReturnsFalse()
-            => Assert.IsFalse(CellExecutionEngine.IsTerminalEvent(KernelEventTypes.ReturnValueProduced));
-
-        [TestMethod]
-        public void IsTerminalEvent_WhenStandardOutputProduced_ReturnsFalse()
-            => Assert.IsFalse(CellExecutionEngine.IsTerminalEvent(KernelEventTypes.StandardOutputValueProduced));
-
-        [TestMethod]
-        public void IsTerminalEvent_WhenStandardErrorProduced_ReturnsFalse()
-            => Assert.IsFalse(CellExecutionEngine.IsTerminalEvent(KernelEventTypes.StandardErrorValueProduced));
-
-        [TestMethod]
-        public void IsTerminalEvent_WhenDisplayedValueProduced_ReturnsFalse()
-            => Assert.IsFalse(CellExecutionEngine.IsTerminalEvent(KernelEventTypes.DisplayedValueProduced));
-
-        [TestMethod]
-        public void IsTerminalEvent_WhenKernelReady_ReturnsFalse()
-            => Assert.IsFalse(CellExecutionEngine.IsTerminalEvent(KernelEventTypes.KernelReady));
-
-        [TestMethod]
-        public void IsTerminalEvent_WhenErrorProduced_ReturnsFalse()
-            => Assert.IsFalse(CellExecutionEngine.IsTerminalEvent(KernelEventTypes.ErrorProduced));
+        [DataRow("CommandSucceeded", true)]
+        [DataRow("CommandFailed", true)]
+        [DataRow("ReturnValueProduced", false)]
+        [DataRow("StandardOutputValueProduced", false)]
+        [DataRow("StandardErrorValueProduced", false)]
+        [DataRow("DisplayedValueProduced", false)]
+        [DataRow("KernelReady", false)]
+        [DataRow("ErrorProduced", false)]
+        public void IsTerminalEvent_ReturnsExpectedResult(string eventType, bool expected)
+            => Assert.AreEqual(expected, CellExecutionEngine.IsTerminalEvent(eventType));
 
         // ── Constructor guard ─────────────────────────────────────────────────
 

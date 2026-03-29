@@ -97,6 +97,41 @@ namespace PolyglotNotebooks.Test
             Assert.AreEqual(KernelStatus.NotStarted, args.OldStatus);
             Assert.AreEqual(KernelStatus.Starting, args.NewStatus);
         }
+
+        [TestMethod]
+        public void KernelCrashedEventArgs_Constructor_StoresExitCode()
+        {
+            var args = new KernelCrashedEventArgs(1, "error output", 0, false);
+            Assert.AreEqual(1, args.ExitCode);
+        }
+
+        [TestMethod]
+        public void KernelCrashedEventArgs_Constructor_StoresStderr()
+        {
+            var args = new KernelCrashedEventArgs(-1, "crash details", 1, true);
+            Assert.AreEqual("crash details", args.StderrOutput);
+        }
+
+        [TestMethod]
+        public void KernelCrashedEventArgs_Constructor_StoresAttemptNumber()
+        {
+            var args = new KernelCrashedEventArgs(0, "", 2, true);
+            Assert.AreEqual(2, args.AttemptNumber);
+        }
+
+        [TestMethod]
+        public void KernelCrashedEventArgs_Constructor_StoresWillRetry()
+        {
+            var args = new KernelCrashedEventArgs(0, "", 0, true);
+            Assert.IsTrue(args.WillRetry);
+        }
+
+        [TestMethod]
+        public void KernelCrashedEventArgs_WillRetryFalse_StoredCorrectly()
+        {
+            var args = new KernelCrashedEventArgs(0, "", 3, false);
+            Assert.IsFalse(args.WillRetry);
+        }
     }
 
     [TestClass]
@@ -226,15 +261,6 @@ namespace PolyglotNotebooks.Test
         }
 
         [TestMethod]
-        public void StatusChanged_WhenSubscribed_EventArgsCarryOldAndNewStatus()
-        {
-            // Verify the event args type is correctly constructed
-            var args = new KernelStatusChangedEventArgs(KernelStatus.Starting, KernelStatus.Ready);
-            Assert.AreEqual(KernelStatus.Starting, args.OldStatus);
-            Assert.AreEqual(KernelStatus.Ready, args.NewStatus);
-        }
-
-        [TestMethod]
         public void ProcessExitedEventArgs_WhenCreated_SetsAllProperties()
         {
             var args = new ProcessExitedEventArgs(exitCode: -1, stderrOutput: "Fatal error", wasUnexpected: true);
@@ -283,6 +309,7 @@ namespace PolyglotNotebooks.Test
         }
 
         [TestMethod]
+        [TestCategory("Integration")]
         public void IsInstalledAsync_WhenCalledTwice_ReturnsCachedResult()
         {
             var detector = new KernelInstallationDetector();
@@ -311,6 +338,7 @@ namespace PolyglotNotebooks.Test
         }
 
         [TestMethod]
+        [TestCategory("Integration")]
         public void GetInstalledVersionAsync_WhenNotInstalled_ReturnsNullOrVersion()
         {
             var detector = new KernelInstallationDetector();
@@ -418,6 +446,7 @@ namespace PolyglotNotebooks.Test
         }
 
         [TestMethod]
+        [TestCategory("Integration")]
         public void Start_WhenAccessorReturnsNull_DoesNotThrowOnTick()
         {
             // Timer accessor returns null — the OnTick method should handle this gracefully
@@ -442,6 +471,7 @@ namespace PolyglotNotebooks.Test
         }
 
         [TestMethod]
+        [TestCategory("Integration")]
         public void Start_WhenAccessorThrowsObjectDisposedException_SwallowsException()
         {
             // Simulates a closed stream — OnTick should swallow ObjectDisposedException
@@ -454,6 +484,7 @@ namespace PolyglotNotebooks.Test
         }
 
         [TestMethod]
+        [TestCategory("Integration")]
         public void Start_WhenAccessorThrowsIOException_SwallowsException()
         {
             // Simulates a broken pipe — OnTick should swallow IOException

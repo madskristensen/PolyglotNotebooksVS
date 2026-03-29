@@ -2,7 +2,6 @@ using System;
 using System.Runtime.CompilerServices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PolyglotNotebooks.IntelliSense;
-using PolyglotNotebooks.Kernel;
 using PolyglotNotebooks.Protocol;
 
 #pragma warning disable MSTEST0037
@@ -142,52 +141,20 @@ namespace PolyglotNotebooks.Test
         // ====================================================================
 
         [TestMethod]
-        public void CompletionProvider_GetKindGlyph_Method_ReturnsM()
-            => Assert.AreEqual("M", CompletionGetKindGlyph("method"));
-
-        [TestMethod]
-        public void CompletionProvider_GetKindGlyph_Property_ReturnsP()
-            => Assert.AreEqual("P", CompletionGetKindGlyph("property"));
-
-        [TestMethod]
-        public void CompletionProvider_GetKindGlyph_Field_ReturnsF()
-            => Assert.AreEqual("F", CompletionGetKindGlyph("field"));
-
-        [TestMethod]
-        public void CompletionProvider_GetKindGlyph_Class_ReturnsC()
-            => Assert.AreEqual("C", CompletionGetKindGlyph("class"));
-
-        [TestMethod]
-        public void CompletionProvider_GetKindGlyph_Interface_ReturnsI()
-            => Assert.AreEqual("I", CompletionGetKindGlyph("interface"));
-
-        [TestMethod]
-        public void CompletionProvider_GetKindGlyph_Keyword_ReturnsK()
-            => Assert.AreEqual("K", CompletionGetKindGlyph("keyword"));
-
-        [TestMethod]
-        public void CompletionProvider_GetKindGlyph_Variable_ReturnsV()
-            => Assert.AreEqual("V", CompletionGetKindGlyph("variable"));
-
-        [TestMethod]
-        public void CompletionProvider_GetKindGlyph_Namespace_ReturnsN()
-            => Assert.AreEqual("N", CompletionGetKindGlyph("namespace"));
-
-        [TestMethod]
-        public void CompletionProvider_GetKindGlyph_CaseInsensitive_UpperMethod_ReturnsM()
-            => Assert.AreEqual("M", CompletionGetKindGlyph("Method"));
-
-        [TestMethod]
-        public void CompletionProvider_GetKindGlyph_Unknown_ReturnsDot()
-            => Assert.AreEqual("·", CompletionGetKindGlyph("unknown_kind"));
-
-        [TestMethod]
-        public void CompletionProvider_GetKindGlyph_Null_ReturnsDot()
-            => Assert.AreEqual("·", CompletionGetKindGlyph(null));
-
-        [TestMethod]
-        public void CompletionProvider_GetKindGlyph_Empty_ReturnsDot()
-            => Assert.AreEqual("·", CompletionGetKindGlyph(""));
+        [DataRow("method", "M")]
+        [DataRow("property", "P")]
+        [DataRow("field", "F")]
+        [DataRow("class", "C")]
+        [DataRow("interface", "I")]
+        [DataRow("keyword", "K")]
+        [DataRow("variable", "V")]
+        [DataRow("namespace", "N")]
+        [DataRow("Method", "M")]
+        [DataRow("unknown_kind", "·")]
+        [DataRow(null, "·")]
+        [DataRow("", "·")]
+        public void CompletionProvider_GetKindGlyph_ReturnsExpectedGlyph(string? kind, string expected)
+            => Assert.AreEqual(expected, CompletionGetKindGlyph(kind));
 
         // ====================================================================
         // DiagnosticsProvider — GetCharOffset
@@ -415,77 +382,5 @@ namespace PolyglotNotebooks.Test
         [MethodImpl(MethodImplOptions.NoInlining)]
         private static void DetachNullCell(IntelliSenseManager mgr) => mgr.DetachFromCell(null!);
 
-        // ====================================================================
-        // KernelStatusChangedEventArgs — model tests
-        // ====================================================================
-
-        [TestMethod]
-        public void KernelStatusChangedEventArgs_Constructor_StoresOldStatus()
-        {
-            var args = new KernelStatusChangedEventArgs(KernelStatus.NotStarted, KernelStatus.Starting);
-            Assert.AreEqual(KernelStatus.NotStarted, args.OldStatus);
-        }
-
-        [TestMethod]
-        public void KernelStatusChangedEventArgs_Constructor_StoresNewStatus()
-        {
-            var args = new KernelStatusChangedEventArgs(KernelStatus.Starting, KernelStatus.Ready);
-            Assert.AreEqual(KernelStatus.Ready, args.NewStatus);
-        }
-
-        [TestMethod]
-        public void KernelStatusChangedEventArgs_StartingToReady_BothStored()
-        {
-            var args = new KernelStatusChangedEventArgs(KernelStatus.Starting, KernelStatus.Ready);
-            Assert.AreEqual(KernelStatus.Starting, args.OldStatus);
-            Assert.AreEqual(KernelStatus.Ready, args.NewStatus);
-        }
-
-        [TestMethod]
-        public void KernelStatusChangedEventArgs_ReadyToBusy_BothStored()
-        {
-            var args = new KernelStatusChangedEventArgs(KernelStatus.Ready, KernelStatus.Busy);
-            Assert.AreEqual(KernelStatus.Ready, args.OldStatus);
-            Assert.AreEqual(KernelStatus.Busy, args.NewStatus);
-        }
-
-        // ====================================================================
-        // KernelCrashedEventArgs — model tests
-        // ====================================================================
-
-        [TestMethod]
-        public void KernelCrashedEventArgs_Constructor_StoresExitCode()
-        {
-            var args = new KernelCrashedEventArgs(1, "error output", 0, false);
-            Assert.AreEqual(1, args.ExitCode);
-        }
-
-        [TestMethod]
-        public void KernelCrashedEventArgs_Constructor_StoresStderr()
-        {
-            var args = new KernelCrashedEventArgs(-1, "crash details", 1, true);
-            Assert.AreEqual("crash details", args.StderrOutput);
-        }
-
-        [TestMethod]
-        public void KernelCrashedEventArgs_Constructor_StoresAttemptNumber()
-        {
-            var args = new KernelCrashedEventArgs(0, "", 2, true);
-            Assert.AreEqual(2, args.AttemptNumber);
-        }
-
-        [TestMethod]
-        public void KernelCrashedEventArgs_Constructor_StoresWillRetry()
-        {
-            var args = new KernelCrashedEventArgs(0, "", 0, true);
-            Assert.IsTrue(args.WillRetry);
-        }
-
-        [TestMethod]
-        public void KernelCrashedEventArgs_WillRetryFalse_StoredCorrectly()
-        {
-            var args = new KernelCrashedEventArgs(0, "", 3, false);
-            Assert.IsFalse(args.WillRetry);
-        }
     }
 }
