@@ -1,10 +1,6 @@
-using System;
-using System.Collections.Generic;
-using System.Collections.Specialized;
-using System.ComponentModel;
-using System.IO;
-using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PolyglotNotebooks.Models;
+
+using System.IO;
 
 #pragma warning disable MSTEST0037
 
@@ -494,6 +490,16 @@ namespace PolyglotNotebooks.Test
             Assert.AreEqual(3, output.FormattedValues.Count);
         }
 
+        [TestMethod]
+        public void CellOutputKind_AllExpectedValuesExist()
+        {
+            // Verify enum contains expected kinds
+            Assert.IsTrue(Enum.IsDefined(typeof(CellOutputKind), CellOutputKind.ReturnValue));
+            Assert.IsTrue(Enum.IsDefined(typeof(CellOutputKind), CellOutputKind.StandardOutput));
+            Assert.IsTrue(Enum.IsDefined(typeof(CellOutputKind), CellOutputKind.StandardError));
+            Assert.IsTrue(Enum.IsDefined(typeof(CellOutputKind), CellOutputKind.Display));
+            Assert.IsTrue(Enum.IsDefined(typeof(CellOutputKind), CellOutputKind.Error));
+        }
     }
 
     [TestClass]
@@ -703,7 +709,6 @@ namespace PolyglotNotebooks.Test
         public void CloseAsync_WhenDocumentClosed_FiresClosedEvent()
         {
             // Build a document, track it by using Parse (no file I/O needed for in-memory)
-            var dibContent = "#!meta\r\n{\"kernelInfo\":{\"defaultKernelName\":\"csharp\",\"items\":[]}}\r\n\r\n#!csharp\r\n// test";
             var manager = new NotebookDocumentManager();
             string? closedPath = null;
             manager.DocumentClosed += (s, e) => closedPath = e.FilePath;
