@@ -47,7 +47,23 @@ namespace PolyglotNotebooks.Editor
         {
             base.Initialize();
             _control = new NotebookControl(_document);
+            _control.IsKeyboardFocusWithinChanged += OnNotebookFocusChanged;
             Content = _control;
+        }
+
+        /// <summary>
+        /// When keyboard focus enters this notebook pane, re-bind the Variable Explorer
+        /// to this notebook's kernel so it shows the correct variables.
+        /// </summary>
+        private void OnNotebookFocusChanged(object sender, System.Windows.DependencyPropertyChangedEventArgs e)
+        {
+            if ((bool)e.NewValue && _coordinator?.KernelClient != null)
+            {
+                Variables.VariableService.Current.SetKernelClient(_coordinator.KernelClient);
+#pragma warning disable VSTHRD110
+                _ = Variables.VariableService.Current.RefreshVariablesAsync();
+#pragma warning restore VSTHRD110
+            }
         }
 
         // ── IVsPersistDocData ─────────────────────────────────────────────────────
@@ -217,6 +233,7 @@ namespace PolyglotNotebooks.Editor
 
                 if (_control != null)
                 {
+                    _control.IsKeyboardFocusWithinChanged -= OnNotebookFocusChanged;
                     _control.RunAllRequested -= OnRunAllRequested;
                     _control.RestartAndRunAllRequested -= OnRestartAndRunAllRequested;
                     _control.InterruptRequested -= OnInterruptRequested;
@@ -428,6 +445,7 @@ namespace PolyglotNotebooks.Editor
 
                 if (_control != null)
                 {
+                    _control.IsKeyboardFocusWithinChanged -= OnNotebookFocusChanged;
                     _control.RunAllRequested -= OnRunAllRequested;
                     _control.RestartAndRunAllRequested -= OnRestartAndRunAllRequested;
                     _control.InterruptRequested -= OnInterruptRequested;
