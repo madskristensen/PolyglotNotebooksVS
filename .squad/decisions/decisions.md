@@ -923,3 +923,92 @@ The notebook editor needed Document Outline support (View → Other Windows → 
 - Variable Explorer Architecture (Decision 2) — also uses NotebookControl for UI integration
 - P4 IntelliSense features may leverage FocusedCellChanged for context-aware completions
 
+---
+
+## Decision 12: VSSDK007 Suppression via Pragma
+
+**Date**: 2025-07-18  
+**Lead**: Theo (Threading & Reliability Engineer)  
+**Status**: ACTIVE  
+**Type**: Code Pattern / Analyzer Compliance
+
+### Context
+
+The VSSDK007 analyzer warns on every `ThreadHelper.JoinableTaskFactory.RunAsync(...)` call that isn't awaited or joined. The standard fix is `.FileAndForget()` from `Microsoft.VisualStudio.Threading`, but the analyzer version in this project does not recognize `FileAndForget` as a valid suppression mechanism.
+
+### Decision
+
+Use `#pragma warning disable VSSDK007` / `#pragma warning restore VSSDK007` around all intentional fire-and-forget `RunAsync` calls. Keep `.FileAndForget()` where already present for its telemetry/error-reporting value.
+
+### Rationale
+
+- All suppressed sites are genuine fire-and-forget: InfoBar display, theme updates, WebView2 init, margin collapse, deferred focus.
+- Pragma is scoped tightly (2–3 lines) with a comment explaining intent.
+- If a future analyzer version recognizes `FileAndForget`, pragmas can be removed.
+
+### Affected Files
+
+- `KernelNotInstalledDialog.cs` (2 sites)
+- `NotebookClassifier.cs` (1 site)
+- `WebView2OutputHost.cs` (2 sites)
+- `DocumentOutlineControl.cs` (1 site)
+- `CellControl.cs` (2 sites)
+- `NotebookControl.cs` (implicit pattern for similar cases)
+- `NotebookEditorPane.cs` (implicit pattern for similar cases)
+
+### Implications
+
+- Establishes consistent pattern for fire-and-forget threading across the codebase
+- Future code reviews should apply this pattern for similar VSSDK007 warnings
+- No breaking changes to public APIs or threading behavior
+
+### Related Decisions
+
+- Decision 2: Async-First Threading Model (threading patterns)
+
+---
+
+## Decision 13: Test Warning Suppression Patterns
+
+**Date**: 2025-07  
+**Lead**: Sam (Solution & Build Specialist)  
+**Status**: ACTIVE  
+**Type**: Test Code Pattern / Analyzer Compliance
+
+### Context
+
+17 build warnings across 5 test files needed fixing: CS8604 (potential null reference in dereference), CS8625 (cannot use null in type parameter), VSTHRD002 (sync over async anti-pattern), and MSTEST0032 (const string test value mismatch).
+
+### Decision
+
+1. **CS8604/CS8625 — Use `null!` in tests**: When test code intentionally passes null to a non-nullable parameter (to test null-handling behavior), use the null-forgiving operator (`null!` or `variable!`) rather than changing method signatures.
+
+2. **VSTHRD002 — Pragma suppress in tests**: `Task.Wait()` in unit tests is acceptable when testing async methods from sync test methods. Suppress with `#pragma warning disable/restore VSTHRD002` with an explanatory comment.
+
+3. **MSTEST0032 — Pragma suppress for const-verification tests**: Tests that verify `const` string/int values match expected wire names are intentional guards against accidental changes. The `(object)` cast does NOT suppress this analyzer — must use `#pragma warning disable/restore MSTEST0032`.
+
+### Affected Files
+
+- `test/PolyglotNotebooks.Test/CellExecutionEngineTests.cs` — `input!` for CS8604
+- `test/PolyglotNotebooks.Test/NotebookParserTests.cs` — `null!` for CS8625
+- `test/PolyglotNotebooks.Test/DocumentModelTests.cs` — pragma for VSTHRD002 (2 sites)
+- `test/PolyglotNotebooks.Test/ProtocolClientTests.cs` — pragma for MSTEST0032 (12 sites)
+- `test/PolyglotNotebooks.Test/MockBasedExecutionTests.cs` — pragma for MSTEST0032 (1 site)
+
+### Rationale
+
+- Null-forgiving operators make intent explicit in tests (testing null-handling, not normal code)
+- Pragma suppressions include explanatory comments per this charter
+- Test patterns should match production patterns (e.g., fire-and-forget is acceptable where declared intentional)
+- Const verification tests are essential guards; pragma scoping documents this intent
+
+### Implications
+
+- Future tests should follow these patterns for consistency
+- No changes to test logic, assertions, or coverage
+- Null-forgiving usage is confined to test-only code
+
+### Related Decisions
+
+- Decision 12: VSSDK007 Suppression via Pragma (similar scoping and documentation pattern)
+

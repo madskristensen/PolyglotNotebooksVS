@@ -719,6 +719,34 @@ Parallel session with Vince (defer install check). Both address startup/edit lat
 
 ### Learnings — Compact Code Cell Chrome (2026-03-28)
 - To hide the bottom status bar (Ln/Ch/encoding/zoom) on embedded IVsCodeWindow cells, collapse the `bottom` margin container via `textViewHost.GetTextViewMargin("bottom") as IWpfTextViewMargin` and set `VisualElement.Visibility = Collapsed`
+
+---
+
+## 2026-03-29T18:55:47Z — Warning Fixes Batch: 11 Nullability Warnings Fixed
+
+**Event**: Parallel warning-fix batch completed by Theo, Ellie, Sam. Ellie's segment focuses on editor + protocol nullability.
+
+**What Changed**: 
+- **Ellie**: 11 nullability warnings in 6 src files (editor + protocol)
+  - Files: NotebookClassifierProvider.cs, CellExecutionEngine.cs, VariableExplorerToolWindow.cs, VariableSearchTask.cs, OutputControl.cs, ThemedContextMenuHelper.cs
+  - Pattern: Type checks, null validation, null-forgiving operators where protocol contracts allow
+  - All changes preserve protocol message handling safety
+
+**Affected Infrastructure**:
+- IntelliSense provider initialization (NotebookClassifierProvider)
+- Protocol deserialization (CellExecutionEngine)
+- UI marshaling patterns (OutputControl)
+- Variable Explorer state management (VariableExplorerToolWindow, VariableSearchTask)
+- Theme/context menu helpers (ThemedContextMenuHelper)
+
+**Build Status**: ✅ 0 errors, 0 warnings (11 warnings eliminated by Ellie)
+
+**Decisions Reference**:
+- Decision 13: Test Warning Suppression Patterns (related test patterns)
+- Decision 12: VSSDK007 Suppression via Pragma (complementary threading patterns)
+
+**Status**: COMPLETE — All nullability warnings fixed, protocol contracts preserved, ready for merge
+
 - Additional `DefaultTextViewHostOptions` to disable for compact cells: `HorizontalScrollBarId`, `VerticalScrollBarId`, `ZoomControlId`, `SelectionMarginId`, `ChangeTrackingId`
 - `_codewindowbehaviorflags.CWB_DISABLEDROPDOWNBAR` (OR'd with `CWB_DISABLESPLITTER`) hides the navigation dropdown bar at the top of the code window
 - Key file: `src/Editor/CellControl.cs` lines 227-265 — code window initialization and option configuration

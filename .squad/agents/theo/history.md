@@ -275,6 +275,31 @@
 
 ---
 
+## 2026-03-29T18:55:47Z — Warning Fixes Batch: 63 Warnings Eliminated
+
+**Event**: Parallel warning-fix batch completed by Theo, Ellie, Sam.
+
+**What Changed**: 
+- **Theo**: 35 build warnings in 7 src files (threading + nullability)
+  - Files: CellControl.cs, NotebookControl.cs, NotebookEditorPane.cs, NotebookClassifier.cs, DocumentOutlineControl.cs, WebView2OutputHost.cs, KernelNotInstalledDialog.cs
+  - Pattern: VSSDK007 pragma suppression for fire-and-forget RunAsync calls (8 sites total)
+  - Nullability warnings cleaned up throughout
+
+**Decisions Finalized**:
+- Decision 12: VSSDK007 Suppression via Pragma (Theo)
+- Both merged to decisions.md with full context
+
+**Build Status**: ✅ 0 errors, 0 warnings (35 warnings eliminated by Theo)
+
+**Affected Areas**:
+- All agents: Established fire-and-forget and test patterns for future code
+- Code review: Clean baseline for review
+- Penny: Build verified clean; ready for next phase
+
+**Status**: COMPLETE — All warnings fixed, decisions documented, ready for merge
+
+---
+
 ## 2026-07-21 — Reliability Fixes #7, #8, #9
 
 **Status**: COMPLETE ✅ — Build passes, 0 new errors
