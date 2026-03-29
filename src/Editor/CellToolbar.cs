@@ -9,6 +9,8 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media; // FontFamily
+using System.Windows.Media.Animation;
+using System.Windows.Threading;
 
 namespace PolyglotNotebooks.Editor
 {
@@ -23,8 +25,12 @@ namespace PolyglotNotebooks.Editor
         private readonly ComboBox _kernelCombo;
         private readonly TextBlock _executionCounter;
         private readonly TextBlock _statusIndicator;
-        private readonly CrispImage _statusIcon;
+        private readonly CrispImage _timingIcon;
+        private readonly TextBlock _timingLabel;
+        private readonly StackPanel _timingContainer;
         private Border? _splitRunButton;
+        private DispatcherTimer? _liveTimer;
+        private DateTime _executionStartUtc;
 
         // Guard against re-entrant kernel combo ↔ cell property update loops.
         private bool _syncingKernelCombo;
@@ -117,15 +123,31 @@ namespace PolyglotNotebooks.Editor
                 Margin = new Thickness(4, 0, 0, 0),
                 Visibility = Visibility.Collapsed
             };
-            _statusIcon = new CrispImage
+
+            // Timing display elements
+            _timingIcon = new CrispImage
             {
-                Moniker = KnownMonikers.TestCoveredPassing,
-                Width = 20,
-                Height = 20,
+                Moniker = KnownMonikers.Timer,
+                Width = 14,
+                Height = 14,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0),
-                Visibility = Visibility.Collapsed
+                Margin = new Thickness(0, 0, 2, 0),
             };
+            _timingLabel = new TextBlock
+            {
+                FontSize = 11,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+            _timingLabel.SetResourceReference(TextBlock.ForegroundProperty, VsBrushes.GrayTextKey);
+            _timingContainer = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(4, 0, 4, 0),
+                Visibility = Visibility.Collapsed,
+            };
+            _timingContainer.Children.Add(_timingIcon);
+            _timingContainer.Children.Add(_timingLabel);
 
             // Cell menu (···)
             var menuBtn = isMarkdown ? BuildMarkdownMenuButton() : BuildMenuButton();
@@ -170,18 +192,13 @@ namespace PolyglotNotebooks.Editor
                 DockPanel.SetDock(_executionCounter, Dock.Right);
                 Children.Add(_executionCounter);
 
-                // Status container — Dock.Right (leftmost of right-docked items)
-                var statusContainer = new StackPanel
-                {
-                    Orientation = Orientation.Horizontal,
-                    MinWidth = 80,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    Margin = new Thickness(4, 0, 0, 0),
-                };
-                statusContainer.Children.Add(_statusIcon);
-                statusContainer.Children.Add(_statusIndicator);
-                DockPanel.SetDock(statusContainer, Dock.Right);
-                Children.Add(statusContainer);
+                // Timing display — Dock.Right (5th from right)
+                DockPanel.SetDock(_timingContainer, Dock.Right);
+                Children.Add(_timingContainer);
+
+                // Status text (Error/Queued) — Dock.Right
+                DockPanel.SetDock(_statusIndicator, Dock.Right);
+                Children.Add(_statusIndicator);
 
                 UpdateStatusIndicator();
             }
@@ -377,6 +394,17 @@ namespace PolyglotNotebooks.Editor
 
         // ── Kernel ComboBox helpers ────────────────────────────────────────────
 
+        /// <summary>
+        /// Opens the kernel language combo dropdown and gives it focus.
+        /// Called by keyboard shortcut commands (Ctrl+Shift+L).
+        /// </summary>
+        internal void FocusKernelPicker()
+        {
+            if (_kernelCombo.Visibility != Visibility.Visible) return;
+            _kernelCombo.IsDropDownOpen = true;
+            _kernelCombo.Focus();
+        }
+
         private sealed class KernelComboItem
         {
             public KernelComboItem(string kernelName, string displayName)
@@ -456,6 +484,9 @@ namespace PolyglotNotebooks.Editor
                 case nameof(NotebookCell.ExecutionStatus):
                     UpdateStatusIndicator();
                     break;
+                case nameof(NotebookCell.LastExecutionDuration):
+                    UpdateTimingDisplay();
+                    break;
             }
         }
 
@@ -468,35 +499,80 @@ namespace PolyglotNotebooks.Editor
 
         private void UpdateStatusIndicator()
         {
+            // Stop live timer whenever status changes
+            _liveTimer?.Stop();
+
             switch (_cell.ExecutionStatus)
             {
                 case CellExecutionStatus.Running:
-                    _statusIcon.Visibility = Visibility.Collapsed;
-                    _statusIndicator.Text = "⟳ Running";
-                    _statusIndicator.SetResourceReference(TextBlock.ForegroundProperty, VsBrushes.ToolWindowTextKey);
-                    _statusIndicator.Visibility = Visibility.Visible;
+                    _statusIndicator.Visibility = Visibility.Collapsed;
                     if (_splitRunButton != null) _splitRunButton.IsEnabled = false;
+
+                    // Show live counting timer
+                    _executionStartUtc = DateTime.UtcNow;
+                    _timingIcon.Moniker = KnownMonikers.StatusRunning;
+                    _timingLabel.Text = "0.0s";
+                    _timingContainer.BeginAnimation(UIElement.OpacityProperty, null);
+                    _timingContainer.Opacity = 1.0;
+                    _timingContainer.Visibility = Visibility.Visible;
+
+                    _liveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(100) };
+                    _liveTimer.Tick += (s, e) =>
+                    {
+                        var elapsed = DateTime.UtcNow - _executionStartUtc;
+                        _timingLabel.Text = FormatDuration(elapsed);
+                    };
+                    _liveTimer.Start();
                     break;
                 case CellExecutionStatus.Succeeded:
                     _statusIndicator.Visibility = Visibility.Collapsed;
-                    _statusIcon.Moniker = KnownMonikers.TestCoveredPassing;
-                    _statusIcon.Visibility = Visibility.Visible;
                     if (_splitRunButton != null) _splitRunButton.IsEnabled = true;
+                    _timingIcon.Moniker = KnownMonikers.StatusOK;
                     break;
                 case CellExecutionStatus.Failed:
-                    _statusIcon.Visibility = Visibility.Collapsed;
-                    _statusIndicator.Text = "✗ Error";
+                    _statusIndicator.Text = "Error";
                     _statusIndicator.SetResourceReference(TextBlock.ForegroundProperty, VsBrushes.ToolWindowTextKey);
                     _statusIndicator.Visibility = Visibility.Visible;
                     if (_splitRunButton != null) _splitRunButton.IsEnabled = true;
+                    _timingIcon.Moniker = KnownMonikers.StatusError;
                     break;
-                default:
-                    _statusIcon.Visibility = Visibility.Collapsed;
+                case CellExecutionStatus.Queued:
+                    _statusIndicator.Text = "Queued";
+                    _statusIndicator.SetResourceReference(TextBlock.ForegroundProperty, VsBrushes.GrayTextKey);
+                    _statusIndicator.Visibility = Visibility.Visible;
+                    if (_splitRunButton != null) _splitRunButton.IsEnabled = false;
+                    _timingContainer.BeginAnimation(UIElement.OpacityProperty, null);
+                    _timingContainer.Visibility = Visibility.Collapsed;
+                    break;
+                default: // Idle
                     _statusIndicator.Text = string.Empty;
                     _statusIndicator.Visibility = Visibility.Collapsed;
                     if (_splitRunButton != null) _splitRunButton.IsEnabled = true;
                     break;
             }
+        }
+
+        private void UpdateTimingDisplay()
+        {
+            var duration = _cell.LastExecutionDuration;
+            if (duration.HasValue)
+            {
+                _timingLabel.Text = FormatDuration(duration.Value);
+                _timingContainer.BeginAnimation(UIElement.OpacityProperty, null);
+                _timingContainer.Opacity = 1.0;
+                _timingContainer.Visibility = Visibility.Visible;
+            }
+        }
+
+        private static string FormatDuration(TimeSpan duration)
+        {
+            if (duration.TotalHours >= 1)
+                return $"{(int)duration.TotalHours}h {duration.Minutes}m";
+            if (duration.TotalSeconds >= 60)
+                return $"{(int)duration.TotalMinutes}m {duration.Seconds}s";
+            if (duration.TotalSeconds >= 10)
+                return $"{duration.TotalSeconds:F1}s";
+            return $"{duration.TotalSeconds:F2}s";
         }
 
         // ── Cell manipulation helpers ─────────────────────────────────────────

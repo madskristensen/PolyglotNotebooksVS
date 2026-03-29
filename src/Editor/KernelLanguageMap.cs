@@ -21,7 +21,8 @@ namespace PolyglotNotebooks.Editor
                 ["sql"] = "SQL Server Tools",
                 ["kql"] = "plaintext",
                 ["html"] = "HTML",
-                ["markdown"] = "markdown"
+                ["markdown"] = "markdown",
+                ["mermaid"] = "markdown"
             };
 
         private static readonly Dictionary<string, string> _extensionMap =
@@ -36,7 +37,8 @@ namespace PolyglotNotebooks.Editor
                 ["sql"] = ".sql",
                 ["kql"] = ".kql",
                 ["html"] = ".html",
-                ["markdown"] = ".md"
+                ["markdown"] = ".md",
+                ["mermaid"] = ".md"
             };
 
         /// <summary>

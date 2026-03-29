@@ -32,6 +32,7 @@ namespace PolyglotNotebooks.Editor
     internal sealed class CellControl : Border
     {
         private readonly NotebookCell _cell;
+        private CellToolbar? _cellToolbar;
         private TextBox? _editor;
         private IWpfTextViewHost? _textViewHost;
         private IVsTextView? _vsTextView;
@@ -83,6 +84,7 @@ namespace PolyglotNotebooks.Editor
 
             // Toolbar
             var toolbar = new CellToolbar(document, cell);
+            _cellToolbar = toolbar;
             toolbar.RunRequested += (s, e) => RunRequested?.Invoke(this, e);
             toolbar.RunAboveRequested += (s, e) => RunAboveRequested?.Invoke(this, e);
             toolbar.RunBelowRequested += (s, e) => RunBelowRequested?.Invoke(this, e);
@@ -760,6 +762,27 @@ namespace PolyglotNotebooks.Editor
             _editor.Visibility = Visibility.Collapsed;
             RefreshMarkdownDisplay();
             _markdownDisplay.Visibility = Visibility.Visible;
+        }
+
+        /// <summary>
+        /// Toggles a markdown cell between edit mode and rendered preview.
+        /// No-op for code cells.
+        /// </summary>
+        internal void ToggleMarkdownEditMode()
+        {
+            if (_cell.Kind != CellKind.Markdown) return;
+            if (_isMarkdownEditing)
+                ExitMarkdownEditMode();
+            else
+                EnterMarkdownEditMode();
+        }
+
+        /// <summary>
+        /// Opens/focuses the kernel language picker combo on this cell's toolbar.
+        /// </summary>
+        internal void FocusKernelPicker()
+        {
+            _cellToolbar?.FocusKernelPicker();
         }
 
         private void RefreshMarkdownDisplay()

@@ -3,6 +3,7 @@ using Microsoft.VisualStudio.Threading;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.Wpf;
 using System;
+using System.Net;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
@@ -30,7 +31,7 @@ namespace PolyglotNotebooks.Editor
         private bool _disposed;
 
         private const double DefaultHeight = 200;
-        private const double MaxContentHeight = 480; // inner cap; outer scroll wrapper adds its own cap
+        private const double MaxContentHeight = 800; // inner cap; outer scroll wrapper adds its own cap
 
         public WebView2OutputHost()
         {
@@ -52,6 +53,24 @@ namespace PolyglotNotebooks.Editor
 
             _pendingIsFullDocument = IsFullHtmlDocument(htmlContent);
             _pendingContent = htmlContent;
+
+            if (_webView == null)
+                InitializeWebView();
+            else if (_isInitialized)
+                NavigateToContent();
+        }
+
+        /// <summary>
+        /// Renders a Mermaid diagram inside a VS-themed HTML shell with mermaid.js.
+        /// Automatically selects dark/light theme based on the current VS theme.
+        /// Shows the raw source with an error message if the diagram is invalid.
+        /// </summary>
+        public void SetMermaidContent(string mermaidCode)
+        {
+            if (_initFailed) return;
+
+            _pendingContent = BuildMermaidHtml(mermaidCode);
+            _pendingIsFullDocument = true;
 
             if (_webView == null)
                 InitializeWebView();
@@ -182,14 +201,24 @@ namespace PolyglotNotebooks.Editor
                 if (json == null) return;
 
                 using var doc = JsonDocument.Parse(json);
-                if (doc.RootElement.TryGetProperty("type", out var typeEl)
-                    && typeEl.GetString() == "scroll"
-                    && doc.RootElement.TryGetProperty("deltaY", out var deltaEl))
+                if (doc.RootElement.TryGetProperty("type", out var typeEl))
                 {
-                    double deltaY = deltaEl.GetDouble();
-                    var scrollViewer = FindParentScrollViewer(this);
-                    if (scrollViewer != null)
-                        scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset + deltaY);
+                    string msgType = typeEl.GetString();
+                    if (msgType == "scroll"
+                        && doc.RootElement.TryGetProperty("deltaY", out var deltaEl))
+                    {
+                        double deltaY = deltaEl.GetDouble();
+                        var scrollViewer = FindParentScrollViewer(this);
+                        if (scrollViewer != null)
+                            scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset + deltaY);
+                    }
+                    else if (msgType == "resize"
+                        && doc.RootElement.TryGetProperty("height", out var heightEl))
+                    {
+                        double h = heightEl.GetDouble();
+                        if (h > 0)
+                            Height = Math.Min(h + 20, MaxContentHeight);
+                    }
                 }
             }
             catch { /* non-critical */ }
@@ -268,6 +297,103 @@ namespace PolyglotNotebooks.Editor
             }
             catch { }
             return fallback;
+        }
+
+        // -----------------------------------------------------------------------
+        // Mermaid HTML construction
+        // -----------------------------------------------------------------------
+
+        private string BuildMermaidHtml(string mermaidCode)
+        {
+            string bg = GetCssColor(VsBrushes.ToolWindowBackgroundKey, "#1e1e1e");
+            string fg = GetCssColor(VsBrushes.ToolWindowTextKey, "#d4d4d4");
+            bool isDark = IsDarkBackground();
+            string mermaidTheme = isDark ? "dark" : "default";
+            string errorColor = isDark ? "#f48771" : "#d32f2f";
+            string escapedContent = WebUtility.HtmlEncode(mermaidCode);
+
+            string themeVarsJs = isDark
+                ? $@",
+        themeVariables: {{
+            primaryColor: '#2d2d2d',
+            primaryTextColor: '{fg}',
+            primaryBorderColor: '#555',
+            lineColor: '#888',
+            secondaryColor: '#252525',
+            tertiaryColor: '#333'
+        }}"
+                : "";
+
+            return $@"<!DOCTYPE html>
+<html><head><meta charset='utf-8'>
+<script src=""https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js""></script>
+<style>
+  body {{ margin: 0; padding: 8px; background: {bg}; color: {fg}; }}
+  .mermaid-output {{ text-align: center; }}
+  .mermaid-error {{
+    font-family: Consolas, 'Courier New', monospace;
+    font-size: 12px;
+    color: {errorColor};
+    padding: 8px;
+    white-space: pre-wrap;
+    border: 1px solid {errorColor};
+    border-radius: 3px;
+    margin: 4px 0;
+  }}
+  .mermaid-source {{
+    font-family: Consolas, 'Courier New', monospace;
+    font-size: 12px;
+    color: {fg};
+    padding: 8px;
+    white-space: pre-wrap;
+    opacity: 0.7;
+  }}
+  .mermaid-output svg {{ background: transparent !important; }}
+</style>
+</head><body>
+<pre id=""mermaid-source"" style=""display:none"">{escapedContent}</pre>
+<div id=""mermaid-container"" class=""mermaid-output""></div>
+<script>
+  mermaid.initialize({{
+    startOnLoad: false,
+    theme: '{mermaidTheme}',
+    securityLevel: 'strict'{themeVarsJs}
+  }});
+
+  (async function() {{
+    var source = document.getElementById('mermaid-source').textContent;
+    var container = document.getElementById('mermaid-container');
+    try {{
+      var result = await mermaid.render('mermaid-svg', source);
+      container.innerHTML = result.svg;
+      await new Promise(r => setTimeout(r, 100));
+      window.chrome.webview.postMessage(JSON.stringify({{ type: 'resize', height: document.body.scrollHeight }}));
+    }} catch (err) {{
+      var safeMsg = (err.message || String(err)).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      var safeSource = source.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      container.innerHTML =
+        '<div class=""mermaid-error"">\u26a0 Mermaid rendering error: ' + safeMsg + '</div>' +
+        '<div class=""mermaid-source"">' + safeSource + '</div>';
+    }}
+  }})();
+</script>
+</body></html>";
+        }
+
+        private static bool IsDarkBackground()
+        {
+            try
+            {
+                var brush = Application.Current?.TryFindResource(VsBrushes.ToolWindowBackgroundKey) as SolidColorBrush;
+                if (brush != null)
+                {
+                    var c = brush.Color;
+                    double luminance = (0.299 * c.R + 0.587 * c.G + 0.114 * c.B) / 255.0;
+                    return luminance < 0.5;
+                }
+            }
+            catch { }
+            return true; // default to dark
         }
 
         // -----------------------------------------------------------------------

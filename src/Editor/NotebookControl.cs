@@ -29,6 +29,12 @@ namespace PolyglotNotebooks.Editor
         private IntelliSenseManager? _intelliSenseManager;
         private CellControl? _focusedCell;
 
+        /// <summary>
+        /// The most recently focused <see cref="NotebookControl"/> instance.
+        /// Used by VS command handlers to locate the active notebook editor.
+        /// </summary>
+        public static NotebookControl? ActiveInstance { get; private set; }
+
         public NotebookControl(NotebookDocument? document)
         {
             var rootBorder = new Border();
@@ -85,6 +91,8 @@ namespace PolyglotNotebooks.Editor
 
             rootBorder.Child = rootGrid;
             Content = rootBorder;
+
+            Unloaded += (s, e) => { if (ActiveInstance == this) ActiveInstance = null; };
 
             Document = document;
         }
@@ -210,6 +218,76 @@ namespace PolyglotNotebooks.Editor
         /// </summary>
         public void SetExecuting(bool executing)
             => _toolbar.SetExecuting(executing);
+
+        /// <summary>Whether a cell currently has focus in this notebook.</summary>
+        public bool HasFocusedCell => _focusedCell != null;
+
+        /// <summary>The <see cref="CellKind"/> of the currently focused cell, or null if none.</summary>
+        public CellKind? FocusedCellKind => _focusedCell?.Cell.Kind;
+
+        // ── Cell operation methods (called by VS command handlers) ────────────
+
+        public void InsertCodeCellAbove() => InsertCellRelative(0, CellKind.Code);
+
+        public void InsertCodeCellBelow() => InsertCellRelative(1, CellKind.Code);
+
+        public void InsertMarkdownCellAbove() => InsertCellRelative(0, CellKind.Markdown);
+
+        public void InsertMarkdownCellBelow() => InsertCellRelative(1, CellKind.Markdown);
+
+        public void MoveFocusedCellUp()
+        {
+            if (_document == null || _focusedCell == null) return;
+            int idx = _document.Cells.IndexOf(_focusedCell.Cell);
+            if (idx > 0) _document.MoveCell(_focusedCell.Cell, idx - 1);
+        }
+
+        public void MoveFocusedCellDown()
+        {
+            if (_document == null || _focusedCell == null) return;
+            int idx = _document.Cells.IndexOf(_focusedCell.Cell);
+            if (idx >= 0 && idx < _document.Cells.Count - 1)
+                _document.MoveCell(_focusedCell.Cell, idx + 1);
+        }
+
+        public void DeleteFocusedCell()
+        {
+            if (_document == null || _focusedCell == null) return;
+            _document.RemoveCell(_focusedCell.Cell);
+        }
+
+        public void ToggleFocusedMarkdownEdit()
+        {
+            _focusedCell?.ToggleMarkdownEditMode();
+        }
+
+        public void ClearFocusedCellOutput()
+        {
+            _focusedCell?.Cell.Outputs.Clear();
+        }
+
+        public void FocusCellLanguagePicker()
+        {
+            _focusedCell?.FocusKernelPicker();
+        }
+
+        private void InsertCellRelative(int offset, CellKind kind)
+        {
+            if (_document == null) return;
+            int idx;
+            if (_focusedCell != null)
+            {
+                idx = _document.Cells.IndexOf(_focusedCell.Cell);
+                if (idx < 0) idx = _document.Cells.Count;
+                else idx += offset;
+            }
+            else
+            {
+                idx = _document.Cells.Count;
+            }
+            var kernelName = kind == CellKind.Markdown ? "markdown" : (_document.DefaultKernelName ?? "csharp");
+            _document.AddCell(kind, kernelName, idx);
+        }
 
         // Keyboard shortcuts
         protected override void OnPreviewKeyDown(KeyEventArgs e)
@@ -366,7 +444,7 @@ namespace PolyglotNotebooks.Editor
             cellControl.RunSelectionRequested += (s, e) =>
                 RunSelectionRequested?.Invoke(this, new CellRunSelectionEventArgs(cell, e.SelectedText));
 
-            cellControl.GotFocus  += (s, e) => _focusedCell = cellControl;
+            cellControl.GotFocus  += (s, e) => { _focusedCell = cellControl; ActiveInstance = this; };
             cellControl.LostFocus += (s, e) => { if (ReferenceEquals(_focusedCell, cellControl)) _focusedCell = null; };
 
             if (cell.Kind == CellKind.Code)

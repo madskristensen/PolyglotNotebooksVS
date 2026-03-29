@@ -220,3 +220,30 @@
 - Old-style csproj requires explicit `<Content Include="...">` for each template file with `<IncludeInVSIX>true</IncludeInVSIX>`.
 
 **Build Verification**: Build succeeds with 0 errors (all warnings pre-existing).
+
+### Settings/Options Page (BaseOptionModel<T>)
+
+**What Changed**: Created a Tools → Options page for the Polyglot Notebooks extension using Community.VisualStudio.Toolkit's `BaseOptionModel<T>` pattern. Previously all values were hardcoded.
+
+**Files Created**:
+| File | Purpose |
+|------|---------|
+| `src/Options/PolyglotNotebooksOptions.cs` | Options model with 10 settings (General, Editor, Execution categories), `DefaultKernel` and `DefaultFileFormat` enums, and `OptionsProvider.GeneralOptions` dialog page provider |
+
+**Files Modified**:
+| File | Change |
+|------|--------|
+| `src/PolyglotNotebooksPackage.cs` | Added `[ProvideOptionPage(typeof(OptionsProvider.GeneralOptions), "Polyglot Notebooks", "General", 0, 0, true)]` attribute |
+| `src/PolyglotNotebooks.csproj` | Added `<Compile Include="Options\PolyglotNotebooksOptions.cs" />` |
+| `src/Editor/ImageOutputControl.cs` | Replaced hardcoded `MaxWidth = 800` with `Options.PolyglotNotebooksOptions.Instance.MaxImageWidth` |
+| `src/Protocol/KernelClient.cs` | Replaced hardcoded 30-second kernel timeout (both `CommandTimeoutMs` init and `WaitForKernelReadyAsync`) with `Options.PolyglotNotebooksOptions.Instance.KernelStartupTimeoutSeconds` |
+
+**Key Patterns**:
+- `BaseOptionModel<T>` provides `Instance` singleton for reading settings anywhere in the codebase.
+- `OptionsProvider.GeneralOptions` is a manual `BaseOptionPage<T>` wrapper (not relying on source generator) — safe across all toolkit versions.
+- Enum properties use `[TypeConverter(typeof(EnumConverter))]` with `[Description]` on enum members for friendly display names.
+- `[ProvideOptionPage]` on the package class registers the page under Tools → Options → Polyglot Notebooks → General.
+- Named the file format enum `DefaultFileFormat` (not `NotebookFormat`) to avoid collision with the existing `Models.NotebookFormat` enum.
+- Old-style csproj requires explicit `<Compile Include="Options\PolyglotNotebooksOptions.cs" />`.
+
+**Build Verification**: Build succeeds with 0 C# errors. DLL and VSIX produced.

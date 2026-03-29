@@ -78,6 +78,8 @@ namespace PolyglotNotebooks.Protocol
         public KernelClient(Process process)
         {
             _process = process ?? throw new ArgumentNullException(nameof(process));
+
+            CommandTimeoutMs = Options.PolyglotNotebooksOptions.Instance.KernelStartupTimeoutSeconds * 1000;
         }
 
         /// <summary>
@@ -155,9 +157,10 @@ namespace PolyglotNotebooks.Protocol
                 if (e.EventType == KernelEventTypes.KernelReady)
                     tcs.TrySetResult(true);
             }));
-            var completed = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(30), ct)).ConfigureAwait(false);
+            var timeoutSeconds = Options.PolyglotNotebooksOptions.Instance.KernelStartupTimeoutSeconds;
+            var completed = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(timeoutSeconds), ct)).ConfigureAwait(false);
             if (completed != tcs.Task)
-                throw new TimeoutException("Kernel did not send KernelReady within 30 seconds.");
+                throw new TimeoutException($"Kernel did not send KernelReady within {timeoutSeconds} seconds.");
             await tcs.Task.ConfigureAwait(false); // propagate cancellation
         }
 

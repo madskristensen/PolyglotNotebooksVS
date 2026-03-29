@@ -941,3 +941,39 @@ Setting `hostControl.Height` inside the `LayoutChanged` handler caused layout re
 PolyglotNotebooksPackage.InitializeAsync() now calls VariableExplorerToolWindow.Initialize(this) to satisfy a Community.VisualStudio.Toolkit requirement. All future tool windows must follow this pattern, or ShowAsync() fails silently.
 
 **Your Action**: When adding new BaseToolWindow<T> subclasses, ensure they're initialized during InitializeAsync. This is NOT optional—the toolkit has no auto-discovery mechanism.
+
+---
+
+## Learnings — Mermaid Diagram Rendering Support
+
+### Output Routing Pattern for New MIME Types
+- To add a new output type, modify both OutputControl.cs (detection/routing) and WebView2OutputHost.cs (rendering)
+- Use ResolveEffectiveMimeType() to upgrade 	ext/plain to a richer MIME type when context (kernel name, content keywords) allows
+- New MIME cases go in the switch block in CreateElementForMimeType()
+- WebView2OutputHost supports multiple public methods: SetHtmlContent() for raw HTML, SetMermaidContent() for diagrams
+
+### Mermaid Detection Logic (3-tier)
+1. **MIME type**: 	ext/vnd.mermaid — direct match from dotnet-interactive's #!mermaid kernel
+2. **Kernel name**: Cell KernelName == ""mermaid"" with 	ext/plain output → treat as mermaid
+3. **Content keywords**: 	ext/plain starting with Mermaid keywords (graph, sequenceDiagram, classDiagram, etc.) → auto-detect
+
+### VS Theme Integration for Mermaid
+- IsDarkBackground() checks luminance of VsBrushes.ToolWindowBackgroundKey (threshold 0.5)
+- Maps to mermaid themes: dark → ""dark"", light → ""default""
+- Error color adapts: dark → #f48771, light → #d32f2f
+
+### Mermaid Rendering Architecture
+- Uses CDN: https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js
+- securityLevel: 'strict' — prevents script execution in diagrams
+- Mermaid content stored in hidden <pre> element, read by JS to avoid string escaping issues
+- Uses mermaid.render() async API (mermaid v10+) with try/catch for error display
+- Invalid diagrams show error message + raw source text (not blank output)
+
+### Key File Paths
+- src/Editor/OutputControl.cs — ResolveEffectiveMimeType(), StartsWithMermaidKeyword(), MermaidKeywords[]
+- src/Editor/WebView2OutputHost.cs — SetMermaidContent(), BuildMermaidHtml(), IsDarkBackground()
+
+### Build Commands
+- MSBuild (VS 2022): `& ""C:\Program Files\Microsoft Visual Studio\2022\Preview\MSBuild\Current\Bin\MSBuild.exe"" src\PolyglotNotebooks.csproj /t:Build`
+- Tests: `dotnet test test\PolyglotNotebooks.Test --no-build`
+- Note: `dotnet build` fails with pre-existing NuGet/SDK resolution issues; use MSBuild directly

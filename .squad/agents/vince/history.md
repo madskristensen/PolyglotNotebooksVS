@@ -383,3 +383,49 @@ Move installation check from LoadDocData → ExecutionCoordinator.EnsureKernelSt
 
 ### Coordination
 Parallel session with Ellie (incremental cells). Both address startup/edit latency independently.
+
+---
+
+## Learnings (VS Command Table Keyboard Shortcuts)
+
+### .vsct Command Table Pattern for Keyboard-Only Commands
+- Use `<CommandFlag>CommandWellOnly</CommandFlag>` for commands that should appear in Tools > Options > Keyboard but NOT in any menu or toolbar.
+- No `<Parent>` element needed — CommandWellOnly ensures discoverability without menu placement.
+- `<KeyBinding editor="guidVSStd97" ... />` registers shortcuts in Global scope.
+- Commands are auto-discovered by `RegisterCommandsAsync()` in the ToolkitPackage — no manual registration needed.
+
+### Command ID Numbering
+- Existing: `ShowVariableExplorer = 0x0105`
+- New cell operation commands: `0x0200` through `0x0209` (10 commands)
+- All under the same GUID: `{7a8b905d-687d-4b8c-8842-85067272e3ab}`
+
+### ActiveInstance Pattern for Editor-Scoped Commands
+- `NotebookControl.ActiveInstance` static property tracks the most recently focused notebook control.
+- Set via `CellControl.GotFocus` event (piggybacks on existing `_focusedCell` tracking).
+- Cleared via `Unloaded` event on the NotebookControl.
+- Command handlers use `BeforeQueryStatus` to disable when `ActiveInstance` is null — effectively scopes Global keybindings to notebook context.
+
+### Cell Operation Methods on NotebookControl
+- Public methods: `InsertCodeCellAbove/Below`, `InsertMarkdownCellAbove/Below`, `MoveFocusedCellUp/Down`, `DeleteFocusedCell`, `ToggleFocusedMarkdownEdit`, `ClearFocusedCellOutput`, `FocusCellLanguagePicker`
+- All delegate to `NotebookDocument` model methods (AddCell, MoveCell, RemoveCell) or `CellControl` internal methods.
+- `HasFocusedCell` and `FocusedCellKind` properties support command enable/disable logic.
+
+### CellControl/CellToolbar Extensions
+- `CellControl.ToggleMarkdownEditMode()` — internal method toggling between `EnterMarkdownEditMode()` and `ExitMarkdownEditMode()`.
+- `CellToolbar.FocusKernelPicker()` — opens the kernel ComboBox dropdown programmatically.
+- `CellControl._cellToolbar` field added to store toolbar reference for command delegation.
+
+### Key File Paths
+- Command table: `src/VSCommandTable.vsct`
+- Auto-generated IDs: `src/VSCommandTable.cs`
+- Command handlers: `src/Editor/Commands/*.cs` (10 files)
+- Cell operations API: `src/Editor/NotebookControl.cs` (ActiveInstance + public methods)
+- Markdown toggle: `src/Editor/CellControl.cs` (ToggleMarkdownEditMode)
+- Language picker: `src/Editor/CellToolbar.cs` (FocusKernelPicker)
+
+### Shortcut Conflict Notes
+- `Ctrl+Shift+A` conflicts with Project.AddExistingItem — mitigated by BeforeQueryStatus disabling when not in notebook.
+- `Ctrl+Shift+B` conflicts with Build.BuildSolution — same mitigation.
+- `Ctrl+Alt+Up/Down` used instead of `Alt+Up/Down` to avoid conflict with Edit.MoveLineUp/Down.
+- `F2` used for ToggleMarkdownEdit (standard "edit" key in VS) — only enabled for markdown cells.
+- All shortcuts appear in Tools > Options > Keyboard as "Polyglot Notebooks: *" and can be remapped by users.

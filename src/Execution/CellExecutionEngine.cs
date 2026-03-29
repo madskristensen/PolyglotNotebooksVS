@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -51,6 +52,7 @@ namespace PolyglotNotebooks.Execution
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(effectiveCt);
                 cell.ExecutionStatus = CellExecutionStatus.Running;
                 cell.Outputs.Clear();
+                cell.LastExecutionDuration = null;
 
                 // ── 2. Build the SubmitCode command envelope ──────────────────
                 var kernelName = MapKernelName(cell.KernelName);
@@ -92,6 +94,7 @@ namespace PolyglotNotebooks.Execution
                     }));
 
                 // ── 4. Send command — ConfigureAwait(false) leaves the UI thread ──
+                var sw = Stopwatch.StartNew();
                 await _kernelClient.SendCommandAsync(envelope, effectiveCt).ConfigureAwait(false);
 
                 // ── 5. Await the terminal event on a background thread ────────
@@ -108,8 +111,11 @@ namespace PolyglotNotebooks.Execution
                     return;
                 }
 
+                sw.Stop();
+
                 // ── 6. Update final cell state on the UI thread ───────────────
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                cell.LastExecutionDuration = sw.Elapsed;
 
                 if (terminal.EventType == KernelEventTypes.CommandSucceeded)
                 {
@@ -220,6 +226,7 @@ namespace PolyglotNotebooks.Execution
                     }));
 #pragma warning restore VSTHRD110, VSSDK007
 
+                var sw = Stopwatch.StartNew();
                 await _kernelClient.SendCommandAsync(envelope, effectiveCt).ConfigureAwait(false);
 
                 KernelEventEnvelope terminal;
@@ -235,7 +242,10 @@ namespace PolyglotNotebooks.Execution
                     return;
                 }
 
+                sw.Stop();
+
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                cell.LastExecutionDuration = sw.Elapsed;
 
                 if (terminal.EventType == KernelEventTypes.CommandSucceeded)
                 {

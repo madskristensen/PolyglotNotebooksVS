@@ -33,6 +33,13 @@
 - Status text colors: use `VsBrushes.ToolWindowTextKey` (not VizSurface* keys) so text is readable on all VS themes. The ⟳/✗ symbols already convey state visually.
 - DockPanel Dock.Right ordering: items added LAST appear LEFTMOST. To put status indicator left of execution counter, add statusContainer after _executionCounter.
 - `_executionCounter` TextBlock must be created before the `if (!isMarkdown)` block since it's used inside it for DockPanel.SetDock/Children.Add.
+- Execution timing: `Stopwatch` in `CellExecutionEngine` measures from SendCommand to terminal event. Duration stored in `NotebookCell.LastExecutionDuration` (TimeSpan?). CellToolbar listens via PropertyChanged.
+- Status icons: `KnownMonikers.StatusOK` (success), `KnownMonikers.StatusError` (failed), `KnownMonikers.StatusRunning` (running), `KnownMonikers.StatusInformation` (queued). `KnownMonikers.Hourglass` does NOT exist in VSSDK 17.14.
+- `KnownMonikers.Timer` works for timing icon (14×14 CrispImage next to timing label).
+- WPF animations: `DoubleAnimation` for opacity fade-in/out, `QuadraticEase` for smooth easing. Cancel pending animations with `element.BeginAnimation(prop, null)` before starting new ones.
+- Success icon fade: `DispatcherTimer` (4s delay) triggers `DoubleAnimation` (600ms opacity 1→0), then hides icon and resets opacity. Timer must be stopped on status change to avoid stale fades.
+- `FormatDuration()`: <10s → "0.34s" (F2), 10-59s → "12.3s" (F1), 1-59m → "1m 23s", ≥1h → "1h 2m".
+- CellToolbar timing container is created outside `if (!isMarkdown)` (like status elements) but only added to DockPanel children inside the code-cell branch.
 
 ## 2026-03-27T23:02:37Z — Cell Auto-Sizing Implementation Complete
 

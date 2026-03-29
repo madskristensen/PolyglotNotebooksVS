@@ -1,5 +1,5 @@
 #!meta
-{"kernelInfo":{"defaultKernelName":"csharp","items":[{"name":"csharp"},{"name":"fsharp"},{"name":"pwsh"},{"name":"html"},{"name":"javascript"}]}}
+{"kernelInfo":{"defaultKernelName":"csharp","items":[{"name":"csharp"},{"name":"fsharp"},{"name":"pwsh"},{"name":"html"},{"name":"javascript"},{"name":"mermaid"}]}}
 
 #!markdown
 # Kitchen Sink Test
@@ -55,6 +55,17 @@ console.log("Sum:", nums.reduce((a,b) => a+b, 0));
 using Newtonsoft.Json;
 var obj = new { Name = "Test", Value = 42 };
 Console.WriteLine(JsonConvert.SerializeObject(obj));
+
+#!markdown
+## Mermaid Diagram
+
+#!mermaid
+graph TD
+    A[Start] --> B{Is it working?}
+    B -->|Yes| C[Great!]
+    B -->|No| D[Debug]
+    D --> B
+    C --> E[Ship it 🚀]
 
 #!markdown
 ## Multi-Cell State Sharing (C#)

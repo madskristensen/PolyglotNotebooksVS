@@ -6,5 +6,5 @@ namespace PolyglotNotebooks.Models
 
     public enum CellOutputKind { ReturnValue, StandardOutput, StandardError, Display, Error }
 
-    public enum CellExecutionStatus { Idle, Running, Succeeded, Failed }
+    public enum CellExecutionStatus { Idle, Running, Succeeded, Failed, Queued }
 }

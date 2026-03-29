@@ -119,6 +119,7 @@
     <Compile Include="Models\NotebookDocument.cs" />
     <Compile Include="Models\NotebookDocumentManager.cs" />
     <Compile Include="Models\NotebookParser.cs" />
+    <Compile Include="Options\PolyglotNotebooksOptions.cs" />
     <Compile Include="PolyglotNotebooksPackage.cs" />
     <Compile Include="VSCommandTable.cs">
       <AutoGen>True</AutoGen>

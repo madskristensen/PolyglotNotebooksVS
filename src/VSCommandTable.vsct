@@ -15,12 +15,98 @@
           <ButtonText>Polyglot Variables</ButtonText>
         </Strings>
       </Button>
+
+      <!-- Notebook cell operation commands (keyboard-only, not placed in menus) -->
+      <Button guid="PolyglotNotebooks" id="InsertCodeCellAbove" priority="0x0100" type="Button">
+        <CommandFlag>CommandWellOnly</CommandFlag>
+        <Strings>
+          <ButtonText>Polyglot Notebooks: Insert Code Cell Above</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="PolyglotNotebooks" id="InsertCodeCellBelow" priority="0x0100" type="Button">
+        <CommandFlag>CommandWellOnly</CommandFlag>
+        <Strings>
+          <ButtonText>Polyglot Notebooks: Insert Code Cell Below</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="PolyglotNotebooks" id="InsertMarkdownCellAbove" priority="0x0100" type="Button">
+        <CommandFlag>CommandWellOnly</CommandFlag>
+        <Strings>
+          <ButtonText>Polyglot Notebooks: Insert Markdown Cell Above</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="PolyglotNotebooks" id="InsertMarkdownCellBelow" priority="0x0100" type="Button">
+        <CommandFlag>CommandWellOnly</CommandFlag>
+        <Strings>
+          <ButtonText>Polyglot Notebooks: Insert Markdown Cell Below</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="PolyglotNotebooks" id="MoveCellUp" priority="0x0100" type="Button">
+        <CommandFlag>CommandWellOnly</CommandFlag>
+        <Strings>
+          <ButtonText>Polyglot Notebooks: Move Cell Up</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="PolyglotNotebooks" id="MoveCellDown" priority="0x0100" type="Button">
+        <CommandFlag>CommandWellOnly</CommandFlag>
+        <Strings>
+          <ButtonText>Polyglot Notebooks: Move Cell Down</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="PolyglotNotebooks" id="DeleteCell" priority="0x0100" type="Button">
+        <CommandFlag>CommandWellOnly</CommandFlag>
+        <Strings>
+          <ButtonText>Polyglot Notebooks: Delete Cell</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="PolyglotNotebooks" id="ToggleMarkdownEdit" priority="0x0100" type="Button">
+        <CommandFlag>CommandWellOnly</CommandFlag>
+        <Strings>
+          <ButtonText>Polyglot Notebooks: Toggle Markdown Edit</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="PolyglotNotebooks" id="ClearCellOutput" priority="0x0100" type="Button">
+        <CommandFlag>CommandWellOnly</CommandFlag>
+        <Strings>
+          <ButtonText>Polyglot Notebooks: Clear Cell Output</ButtonText>
+        </Strings>
+      </Button>
+      <Button guid="PolyglotNotebooks" id="ChangeCellLanguage" priority="0x0100" type="Button">
+        <CommandFlag>CommandWellOnly</CommandFlag>
+        <Strings>
+          <ButtonText>Polyglot Notebooks: Change Cell Language</ButtonText>
+        </Strings>
+      </Button>
     </Buttons>
   </Commands>
 
+  <KeyBindings>
+    <KeyBinding guid="PolyglotNotebooks" id="InsertCodeCellAbove" editor="PolyglotNotebookEditor" key1="a" mod1="Control Shift" />
+    <KeyBinding guid="PolyglotNotebooks" id="InsertCodeCellBelow" editor="PolyglotNotebookEditor" key1="b" mod1="Control Shift" />
+    <KeyBinding guid="PolyglotNotebooks" id="InsertMarkdownCellAbove" editor="PolyglotNotebookEditor" key1="a" mod1="Control Shift Alt" />
+    <KeyBinding guid="PolyglotNotebooks" id="InsertMarkdownCellBelow" editor="PolyglotNotebookEditor" key1="b" mod1="Control Shift Alt" />
+    <KeyBinding guid="PolyglotNotebooks" id="MoveCellUp" editor="PolyglotNotebookEditor" key1="VK_UP" mod1="Control Alt" />
+    <KeyBinding guid="PolyglotNotebooks" id="MoveCellDown" editor="PolyglotNotebookEditor" key1="VK_DOWN" mod1="Control Alt" />
+    <KeyBinding guid="PolyglotNotebooks" id="DeleteCell" editor="PolyglotNotebookEditor" key1="VK_DELETE" mod1="Control Shift" />
+    <KeyBinding guid="PolyglotNotebooks" id="ToggleMarkdownEdit" editor="PolyglotNotebookEditor" key1="VK_F2" />
+    <KeyBinding guid="PolyglotNotebooks" id="ClearCellOutput" editor="PolyglotNotebookEditor" key1="VK_BACK" mod1="Control Shift" />
+    <KeyBinding guid="PolyglotNotebooks" id="ChangeCellLanguage" editor="PolyglotNotebookEditor" key1="l" mod1="Control Shift" />
+  </KeyBindings>
+
   <Symbols>
+    <GuidSymbol name="PolyglotNotebookEditor" value="{52746fdf-4a26-4633-a712-74470fe70bd4}"/>
     <GuidSymbol name="PolyglotNotebooks" value="{7a8b905d-687d-4b8c-8842-85067272e3ab}">
       <IDSymbol name="ShowVariableExplorer" value="0x0105"/>
+      <IDSymbol name="InsertCodeCellAbove" value="0x0200"/>
+      <IDSymbol name="InsertCodeCellBelow" value="0x0201"/>
+      <IDSymbol name="InsertMarkdownCellAbove" value="0x0202"/>
+      <IDSymbol name="InsertMarkdownCellBelow" value="0x0203"/>
+      <IDSymbol name="MoveCellUp" value="0x0204"/>
+      <IDSymbol name="MoveCellDown" value="0x0205"/>
+      <IDSymbol name="DeleteCell" value="0x0206"/>
+      <IDSymbol name="ToggleMarkdownEdit" value="0x0207"/>
+      <IDSymbol name="ClearCellOutput" value="0x0208"/>
+      <IDSymbol name="ChangeCellLanguage" value="0x0209"/>
     </GuidSymbol>
   </Symbols>
 

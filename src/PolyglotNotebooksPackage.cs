@@ -17,6 +17,7 @@ namespace PolyglotNotebooks
     [ProvideMenuResource("Menus.ctmenu", 1)]
     [Guid(PackageGuids.PolyglotNotebooksString)]
 
+    [ProvideKeyBindingTable("52746fdf-4a26-4633-a712-74470fe70bd4", 110)]
     [ProvideEditorFactory(typeof(Editor.NotebookEditorFactory), 101)]
     [ProvideEditorExtension(typeof(Editor.NotebookEditorFactory), ".dib", 50)]
     [ProvideEditorExtension(typeof(Editor.NotebookEditorFactory), ".ipynb", 50)]
@@ -24,6 +25,7 @@ namespace PolyglotNotebooks
     [ProvideToolWindow(typeof(Variables.VariableExplorerToolWindow.Pane), DockedHeight = 500, DocumentLikeTool = false, Orientation = ToolWindowOrientation.Bottom, Style = VsDockStyle.Linked, Window = WindowGuids.SolutionExplorer)]
     [ProvideFileIcon(".dib", "KnownMonikers.ActionLog")]
     [ProvideFileIcon(".ipynb", "KnownMonikers.ActionLog")]
+    [ProvideOptionPage(typeof(OptionsProvider.GeneralOptions), "Polyglot Notebooks", "General", 0, 0, true)]
     public sealed class PolyglotNotebooksPackage : ToolkitPackage
     {
         protected override async Task InitializeAsync(CancellationToken cancellationToken, IProgress<ServiceProgressData> progress)

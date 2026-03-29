@@ -12,6 +12,7 @@ namespace PolyglotNotebooks.Models
         private string _contents;
         private int? _executionOrder;
         private CellExecutionStatus _executionStatus;
+        private TimeSpan? _lastExecutionDuration;
         private bool _isDirty;
 
         public NotebookCell(CellKind kind, string kernelName, string contents = "")
@@ -89,6 +90,19 @@ namespace PolyglotNotebooks.Models
                 if (_executionStatus != value)
                 {
                     _executionStatus = value;
+                    OnPropertyChanged();
+                }
+            }
+        }
+
+        public TimeSpan? LastExecutionDuration
+        {
+            get => _lastExecutionDuration;
+            set
+            {
+                if (_lastExecutionDuration != value)
+                {
+                    _lastExecutionDuration = value;
                     OnPropertyChanged();
                 }
             }

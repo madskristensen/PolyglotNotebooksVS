@@ -17,7 +17,7 @@ namespace PolyglotNotebooks.Editor
     /// Renders the output(s) of a single notebook cell.
     /// Routes each output by MIME type and supports expand/collapse.
     /// Supported MIME types: text/plain, text/html, text/markdown, text/csv,
-    /// application/json, image/png, image/jpeg, image/gif, image/svg+xml.
+    /// application/json, text/vnd.mermaid, image/png, image/jpeg, image/gif, image/svg+xml.
     /// </summary>
     internal sealed class OutputControl : Border
     {
@@ -31,6 +31,14 @@ namespace PolyglotNotebooks.Editor
         // Matches ANSI escape sequences (e.g. \x1b[32;1m, \x1b[0m) so they can be stripped from output text.
         private static readonly Regex AnsiEscapePattern =
             new Regex(@"\x1b\[[0-9;]*[a-zA-Z]", RegexOptions.Compiled);
+
+        // Known Mermaid diagram keywords used for content-based detection.
+        private static readonly string[] MermaidKeywords = new[]
+        {
+            "graph", "sequenceDiagram", "classDiagram", "stateDiagram",
+            "erDiagram", "gantt", "pie", "flowchart",
+            "gitgraph", "journey", "mindmap", "timeline"
+        };
 
         // Tracks WebView2OutputHost instances so we can dispose them on rebuild.
         private readonly List<IDisposable> _disposables = new List<IDisposable>();
@@ -138,7 +146,7 @@ namespace PolyglotNotebooks.Editor
             var toggleBtn = new Button
             {
                 Content = _isExpanded ? "▼ Output" : "▶ Output",
-                Padding = new Thickness(4, 1, 4, 1),
+                Padding = new Thickness(0, 1, 4, 1),
                 BorderThickness = new Thickness(0),
                 Background = Brushes.Transparent,
                 Cursor = Cursors.Hand,
@@ -234,7 +242,8 @@ namespace PolyglotNotebooks.Editor
                 if (formatted.SuppressDisplay)
                     continue;
 
-                container.Children.Add(CreateElementForMimeType(formatted.MimeType, formatted.Value, isError));
+                string effectiveMimeType = ResolveEffectiveMimeType(formatted.MimeType, formatted.Value);
+                container.Children.Add(CreateElementForMimeType(effectiveMimeType, formatted.Value, isError));
             }
 
             return container;
@@ -248,6 +257,14 @@ namespace PolyglotNotebooks.Editor
 
             switch (mimeType.ToLowerInvariant())
             {
+                case "text/vnd.mermaid":
+                {
+                    var host = new WebView2OutputHost();
+                    host.SetMermaidContent(value);
+                    _disposables.Add(host);
+                    return host;
+                }
+
                 case "text/html":
                 {
                     var host = new WebView2OutputHost();
@@ -278,6 +295,47 @@ namespace PolyglotNotebooks.Editor
                 default:
                     return RenderText(value, isError);
             }
+        }
+
+        // -----------------------------------------------------------------------
+        // Mermaid detection
+        // -----------------------------------------------------------------------
+
+        /// <summary>
+        /// Determines the effective MIME type, upgrading text/plain to text/vnd.mermaid
+        /// when the cell kernel is "mermaid" or the content starts with a Mermaid keyword.
+        /// </summary>
+        private string ResolveEffectiveMimeType(string mimeType, string value)
+        {
+            if (string.Equals(mimeType, "text/vnd.mermaid", StringComparison.OrdinalIgnoreCase))
+                return "text/vnd.mermaid";
+
+            if (string.Equals(mimeType, "text/plain", StringComparison.OrdinalIgnoreCase))
+            {
+                if (_cell != null && string.Equals(_cell.KernelName, "mermaid", StringComparison.OrdinalIgnoreCase))
+                    return "text/vnd.mermaid";
+
+                if (StartsWithMermaidKeyword(value))
+                    return "text/vnd.mermaid";
+            }
+
+            return mimeType;
+        }
+
+        private static bool StartsWithMermaidKeyword(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return false;
+
+            var trimmed = text.TrimStart();
+            foreach (var keyword in MermaidKeywords)
+            {
+                if (trimmed.StartsWith(keyword, StringComparison.Ordinal)
+                    && (trimmed.Length == keyword.Length
+                        || char.IsWhiteSpace(trimmed[keyword.Length])))
+                    return true;
+            }
+            return false;
         }
 
         // -----------------------------------------------------------------------

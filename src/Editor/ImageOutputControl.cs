@@ -50,7 +50,7 @@ namespace PolyglotNotebooks.Editor
                     Stretch = Stretch.Uniform,
                     StretchDirection = StretchDirection.DownOnly,
                     HorizontalAlignment = HorizontalAlignment.Left,
-                    MaxWidth = 800,
+                    MaxWidth = Options.PolyglotNotebooksOptions.Instance.MaxImageWidth,
                     Margin = new Thickness(4),
                 };
             }
