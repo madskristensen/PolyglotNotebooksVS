@@ -15,6 +15,8 @@ Write and run C#, JavaScript, SQL, and more — right inside Visual Studio. Poly
 
 ![Notebook editor](art/notebook-editor.png)
 
+📖 **[Read the full documentation](docs/index.md)** — getting started guide, feature walkthroughs, keyboard shortcuts, and troubleshooting.
+
 ## What You Get
 
 **Multi-language cells** - Write C#, JavaScript, and SQL side by side in one notebook. Switch languages per cell with a dropdown or `#!` magic commands.

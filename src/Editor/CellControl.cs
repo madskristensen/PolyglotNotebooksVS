@@ -375,6 +375,15 @@ namespace PolyglotNotebooks.Editor
 
                     int lineCount = Math.Max(1, textView.TextSnapshot.LineCount);
                     double desired = Math.Ceiling(lineCount * actualLineH + editorVerticalPadding);
+
+                    // Account for extra chrome injected by language services (e.g. REST
+                    // extension adds env dropdown / Send Request bar). Measure the host
+                    // control's desired size and use whichever is taller.
+                    hostControl.Measure(new System.Windows.Size(hostControl.ActualWidth > 0 ? hostControl.ActualWidth : double.PositiveInfinity, double.PositiveInfinity));
+                    double measuredH = hostControl.DesiredSize.Height;
+                    if (measuredH > desired)
+                        desired = measuredH;
+
                     desired = Math.Max(actualMinH, Math.Min(desired, actualMaxH));
 
                     if (Math.Abs(hostControl.Height - desired) > 0.5)
