@@ -494,19 +494,8 @@ namespace PolyglotNotebooks.Editor
 
         private void OnRestartKernelRequested(object sender, EventArgs e)
         {
-            if (_kernelProcessManager == null) return;
-
-#pragma warning disable VSTHRD110, VSSDK007
-            _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
-            {
-                try { await _kernelProcessManager.RestartAsync().ConfigureAwait(false); }
-                catch (Exception ex)
-                {
-                    ExtensionLogger.LogException(nameof(NotebookEditorPane),
-                        "Kernel restart failed.", ex);
-                }
-            });
-#pragma warning restore VSTHRD110, VSSDK007
+            if (_coordinator == null) return;
+            _coordinator.HandleRestartKernelRequested();
         }
 
         private void OnClearAllOutputsRequested(object sender, EventArgs e)

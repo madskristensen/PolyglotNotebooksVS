@@ -140,6 +140,42 @@ namespace PolyglotNotebooks.Execution
             FireAndForget(ct => RestartAndRunAllAsync(document, ct), "Restart and Run All");
         }
 
+        /// <summary>
+        /// Fire-and-forget entry point for "Restart Kernel" (without running cells afterwards).
+        /// Resets the coordinator's KernelClient/ExecutionEngine so the next execution
+        /// creates a fresh connection to the new kernel process.
+        /// </summary>
+        public void HandleRestartKernelRequested()
+        {
+            FireAndForget(async ct =>
+            {
+                await _startupLock.WaitAsync(ct).ConfigureAwait(false);
+                try
+                {
+                    _executionEngine?.Dispose();
+                    _kernelClient?.Dispose();
+                    _executionEngine = null;
+                    _kernelClient = null;
+                    _kernelStarted = false;
+
+                    if (_kernelProcessManager.IsRunning)
+                        await _kernelProcessManager.StopAsync().ConfigureAwait(false);
+
+                    KernelInfoCache.Default.Reset();
+                }
+                finally
+                {
+                    _startupLock.Release();
+                }
+
+                // Start a fresh kernel immediately so it's warm when the user runs a cell.
+                await _kernelProcessManager.StartAsync(ct).ConfigureAwait(false);
+
+                ExtensionLogger.LogInfo(nameof(ExecutionCoordinator),
+                    "Kernel restarted. Coordinator state reset.");
+            }, "Restart Kernel");
+        }
+
         /// <summary>Cancels any currently running or pending cell execution.</summary>
         public void CancelCurrentExecution()
         {

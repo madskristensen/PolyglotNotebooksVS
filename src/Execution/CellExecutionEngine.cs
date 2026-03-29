@@ -54,14 +54,22 @@ namespace PolyglotNotebooks.Execution
 
                 // ── 2. Build the SubmitCode command envelope ──────────────────
                 var kernelName = MapKernelName(cell.KernelName);
+                var code = cell.Contents;
                 var envelope = KernelCommandEnvelope.Create(CommandTypes.SubmitCode, new SubmitCode
                 {
-                    Code = cell.Contents,
+                    Code = code,
                     TargetKernelName = kernelName
                 });
 
+                // Diagnostic logging: capture raw inputs so we can trace #r "nuget:" failures.
+                var codeSnippet = code?.Length > 120 ? code.Substring(0, 120) + "…" : code;
                 ExtensionLogger.LogInfo(nameof(CellExecutionEngine),
-                    $"SubmitCode token={envelope.Token} kernel={kernelName}.");
+                    $"SubmitCode token={envelope.Token} kernel={kernelName} " +
+                    $"cellKernel={cell.KernelName} codeLen={code?.Length} code=[{codeSnippet}]");
+
+                var json = JsonSerializer.Serialize(envelope, ProtocolSerializerOptions.Default);
+                ExtensionLogger.LogInfo(nameof(CellExecutionEngine),
+                    $"SubmitCode JSON ({json.Length} chars): {(json.Length > 300 ? json.Substring(0, 300) + "…" : json)}");
 
                 // ── 3. Subscribe to events before sending to avoid races ──────
                 // EventObserver handles terminal event detection for this token.
@@ -123,8 +131,17 @@ namespace PolyglotNotebooks.Execution
                             CellOutputKind.Error,
                             new List<FormattedOutput> { new FormattedOutput("text/plain", failed!.Message) }));
                     }
+
+                    // Full diagnostic dump for failed commands
+                    var rawEvent = terminal.Event.GetRawText();
+                    var rawCmd = terminal.Command != null
+                        ? JsonSerializer.Serialize(terminal.Command, ProtocolSerializerOptions.Default)
+                        : "null";
                     ExtensionLogger.LogWarning(nameof(CellExecutionEngine),
-                        $"Cell execution failed. Token={envelope.Token}. Error={failed?.Message}.");
+                        $"Cell execution failed. Token={envelope.Token}.\n" +
+                        $"  Error={failed?.Message}\n" +
+                        $"  RawEvent({rawEvent.Length} chars)={rawEvent.Substring(0, Math.Min(rawEvent.Length, 500))}\n" +
+                        $"  RawCommand({rawCmd.Length} chars)={rawCmd.Substring(0, Math.Min(rawCmd.Length, 500))}");
                 }
             }
             catch (OperationCanceledException)
@@ -369,6 +386,8 @@ namespace PolyglotNotebooks.Execution
                     if (envelope.Event.TryGetProperty("message", out var msgEl))
                     {
                         var message = msgEl.GetString() ?? string.Empty;
+                        ExtensionLogger.LogWarning(nameof(CellExecutionEngine),
+                            $"ErrorProduced: {message}\n  RawEvent: {envelope.Event.GetRawText()}");
                         if (!string.IsNullOrEmpty(message))
                         {
                             cell.Outputs.Add(new CellOutput(
