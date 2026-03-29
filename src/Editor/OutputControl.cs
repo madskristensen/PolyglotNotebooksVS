@@ -28,6 +28,10 @@ namespace PolyglotNotebooks.Editor
         // The live container that holds per-output panels (may be null when collapsed).
         private StackPanel? _outputContainer;
 
+        // Matches ANSI escape sequences (e.g. \x1b[32;1m, \x1b[0m) so they can be stripped from output text.
+        private static readonly Regex AnsiEscapePattern =
+            new Regex(@"\x1b\[[0-9;]*[a-zA-Z]", RegexOptions.Compiled);
+
         // Tracks WebView2OutputHost instances so we can dispose them on rebuild.
         private readonly List<IDisposable> _disposables = new List<IDisposable>();
 
@@ -280,11 +284,22 @@ namespace PolyglotNotebooks.Editor
         // MIME-specific renderers
         // -----------------------------------------------------------------------
 
+        /// <summary>
+        /// Strips ANSI escape sequences from text so they are not rendered as literal characters.
+        /// </summary>
+        private static string StripAnsiEscapeCodes(string text)
+        {
+            if (string.IsNullOrEmpty(text))
+                return text;
+
+            return AnsiEscapePattern.Replace(text, string.Empty);
+        }
+
         private static UIElement RenderText(string text, bool isError)
         {
             var tb = new TextBlock
             {
-                Text = text,
+                Text = StripAnsiEscapeCodes(text),
                 FontFamily = new FontFamily("Consolas, Courier New"),
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
@@ -313,7 +328,7 @@ namespace PolyglotNotebooks.Editor
 
             var tb = new TextBlock
             {
-                Text = formatted,
+                Text = StripAnsiEscapeCodes(formatted),
                 FontFamily = new FontFamily("Consolas, Courier New"),
                 FontSize = 12,
                 TextWrapping = TextWrapping.Wrap,
