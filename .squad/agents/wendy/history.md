@@ -626,3 +626,41 @@ CellControl now branches on CellKind in constructor:
 **Status**: ACTIVE — All future tool windows must follow this pattern
 
 **Rule Established**: Any new BaseToolWindow<T> subclass requires a corresponding Initialize(this) call in the package's InitializeAsync, or ShowAsync() will fail silently.
+
+## Document Outline Window Implementation
+
+**Status**: COMPLETE ✅ — Document Outline tool window shows navigable flat list of notebook cells
+
+**What Changed**:
+- **DocumentOutlineControl.cs** (NEW): WPF UserControl built entirely in C# (no XAML). Flat TreeView of cell items with CrispImage icons (KnownMonikers.MarkdownFile / KnownMonikers.Code), kernel display name in brackets for code cells, execution status icons (StatusRunning/StatusOK/StatusError), bold heading cells. VS theme via TreeViewColors brush keys.
+- **NotebookEditorPane.cs**: Added `IVsDocOutlineProvider` + `[ComVisible(true)]`. Implements GetOutline (creates DocumentOutlineControl in ElementHost), ReleaseOutline, GetOutlineCaption, OnOutlineStateChange. Cleans up outline on Close/Dispose.
+- **NotebookControl.cs**: Added `FocusedCellChanged` event (raised on GotFocus) and `ScrollToCell(NotebookCell)` method for outline navigation.
+- **PolyglotNotebooks.csproj**: Added `WindowsFormsIntegration` reference and `DocumentOutlineControl.cs` compile item.
+
+**Key Patterns**:
+- IVsDocOutlineProvider on the editor pane — VS queries this when Document Outline window opens
+- ElementHost wraps WPF control for the HWND-based outline API
+- CellOutlineItem (private TreeViewItem subclass) subscribes to cell INotifyPropertyChanged for live updates
+- Theming uses TreeViewColors (BackgroundBrushKey, SelectedItemActiveBrushKey, etc.) matching VS native look
+- Kernel display name map separate from KernelLanguageMap content type map (display-only)
+
+**Learnings**:
+- IVsDocOutlineProvider is in Microsoft.VisualStudio.Shell.Interop namespace, available via Microsoft.VisualStudio.Interop NuGet
+- VSOUTLINECAPTION enum: OUTLINECAPTION_SIMPLE (0) = name, OUTLINECAPTION_FULL (1) = name + doc name
+- TreeViewColors brush keys for themed selection: SelectedItemActiveBrushKey, SelectedItemInactiveBrushKey
+- MultiTrigger needed for IsSelected+!IsSelectionActive (inactive selection background)
+- DynamicResourceExtension used in Setter.Value for theme-responsive brush binding in code-behind styles
+
+## Document Outline Visual Fixes
+
+**Status**: COMPLETE ✅ — Fixed three visual issues in DocumentOutlineControl.cs
+
+**What Changed**:
+- **Issue 1 (Selection theming)**: Moved selection color logic from C# code-behind (OnSelected/OnUnselected overrides with SetResourceReference) into ControlTemplate XAML triggers using DynamicResource with x:Static references to VS TreeViewColors. Removed OnSelected, OnUnselected, and ApplySelectionColors methods from CellOutlineItem. The ControlTemplate triggers now properly apply SelectedItemActiveBrushKey/SelectedItemInactiveBrushKey.
+- **Issue 2 (Full-width selection)**: Replaced StackPanel root in ControlTemplate with Grid (two Auto rows) so the selection Border stretches to full panel width. Grid naturally stretches children horizontally unlike StackPanel.
+- **Issue 3 (Better padding)**: Increased TreeViewItem padding from (2,1,2,1) to (4,2,4,2) and item content margins from (2,1,2,1) to (4,2,4,2) for a cleaner, more professional look.
+
+**Learnings**:
+- SetResourceReference on TreeViewItem after template application does NOT reliably propagate through TemplateBinding Background. The ControlTemplate XAML triggers are the correct approach.
+- XamlReader.Parse can include VS platform namespace (clr-namespace:Microsoft.VisualStudio.PlatformUI) and use DynamicResource with x:Static — this bridges the gap between pure C# code-behind and proper XAML theming.
+- Grid is preferred over StackPanel as ControlTemplate root when horizontal stretching of children is needed.

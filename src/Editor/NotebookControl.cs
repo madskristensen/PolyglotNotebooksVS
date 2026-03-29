@@ -172,6 +172,30 @@ namespace PolyglotNotebooks.Editor
         public event EventHandler? ClearAllOutputsRequested;
 
         /// <summary>
+        /// Raised when the focused cell changes. Used by Document Outline for sync.
+        /// </summary>
+        public event EventHandler<NotebookCell>? FocusedCellChanged;
+
+        /// <summary>
+        /// Scrolls to and focuses the CellControl for the given cell.
+        /// Used by the Document Outline for click-to-navigate.
+        /// </summary>
+        public void ScrollToCell(NotebookCell cell)
+        {
+            if (cell == null) return;
+
+            foreach (var child in _cellStack.Children)
+            {
+                if (child is CellControl cc && cc.Cell == cell)
+                {
+                    cc.BringIntoView();
+                    cc.Focus();
+                    return;
+                }
+            }
+        }
+
+        /// <summary>
         /// Returns the IOleCommandTarget of the currently focused cell's IVsTextView,
         /// or null if no cell has keyboard focus or no cell uses the IVsCodeWindow path.
         /// </summary>
@@ -455,7 +479,7 @@ namespace PolyglotNotebooks.Editor
             cellControl.RunSelectionRequested += (s, e) =>
                 RunSelectionRequested?.Invoke(this, new CellRunSelectionEventArgs(cell, e.SelectedText));
 
-            cellControl.GotFocus  += (s, e) => { _focusedCell = cellControl; ActiveInstance = this; };
+            cellControl.GotFocus  += (s, e) => { _focusedCell = cellControl; ActiveInstance = this; FocusedCellChanged?.Invoke(this, cell); };
             cellControl.LostFocus += (s, e) => { if (ReferenceEquals(_focusedCell, cellControl)) _focusedCell = null; };
 
             if (cell.Kind == CellKind.Code)

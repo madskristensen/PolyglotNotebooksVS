@@ -6,7 +6,33 @@
   <Include href="KnownImageIds.vsct"/>
 
   <Commands package="PolyglotNotebooks">
+
+    <!-- Tool window toolbar -->
+    <Menus>
+      <Menu guid="PolyglotNotebooks" id="VariableExplorerToolbar" type="ToolWindowToolbar">
+        <Strings>
+          <CommandName>Polyglot Variables Toolbar</CommandName>
+        </Strings>
+      </Menu>
+    </Menus>
+
+    <Groups>
+      <Group guid="PolyglotNotebooks" id="VariableExplorerToolbarGroup" priority="0x0100">
+        <Parent guid="PolyglotNotebooks" id="VariableExplorerToolbar"/>
+      </Group>
+    </Groups>
+
     <Buttons>
+      <!-- Toolbar: Refresh Variables -->
+      <Button guid="PolyglotNotebooks" id="RefreshVariables" priority="0x0100" type="Button">
+        <Parent guid="PolyglotNotebooks" id="VariableExplorerToolbarGroup"/>
+        <Icon guid="ImageCatalogGuid" id="Refresh"/>
+        <CommandFlag>IconIsMoniker</CommandFlag>
+        <Strings>
+          <ButtonText>Refresh</ButtonText>
+          <LocCanonicalName>.PolyglotNotebooks.RefreshVariables</LocCanonicalName>
+        </Strings>
+      </Button>
       <Button guid="PolyglotNotebooks" id="ShowVariableExplorer" priority="0x0100" type="Button">
         <Parent guid="guidSHLMainMenu" id="IDG_VS_WNDO_OTRWNDWS1"/>
         <Icon guid="ImageCatalogGuid" id="VariableProperty"/>
@@ -97,6 +123,9 @@
     <GuidSymbol name="PolyglotNotebookEditor" value="{52746fdf-4a26-4633-a712-74470fe70bd4}"/>
     <GuidSymbol name="PolyglotNotebooks" value="{7a8b905d-687d-4b8c-8842-85067272e3ab}">
       <IDSymbol name="ShowVariableExplorer" value="0x0105"/>
+      <IDSymbol name="VariableExplorerToolbar" value="0x0010"/>
+      <IDSymbol name="VariableExplorerToolbarGroup" value="0x0020"/>
+      <IDSymbol name="RefreshVariables" value="0x0106"/>
       <IDSymbol name="InsertCodeCellAbove" value="0x0200"/>
       <IDSymbol name="InsertCodeCellBelow" value="0x0201"/>
       <IDSymbol name="InsertMarkdownCellAbove" value="0x0202"/>

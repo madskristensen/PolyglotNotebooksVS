@@ -23,6 +23,9 @@ namespace PolyglotNotebooks
     internal sealed partial class PackageIds
     {
         public const int ShowVariableExplorer = 0x0105;
+        public const int VariableExplorerToolbar = 0x0010;
+        public const int VariableExplorerToolbarGroup = 0x0020;
+        public const int RefreshVariables = 0x0106;
         public const int InsertCodeCellAbove = 0x0200;
         public const int InsertCodeCellBelow = 0x0201;
         public const int InsertMarkdownCellAbove = 0x0202;

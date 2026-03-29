@@ -1,17 +1,19 @@
 using System.Collections.Specialized;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Media;
 using Community.VisualStudio.Toolkit;
-using Microsoft.VisualStudio.Imaging;
+using Microsoft.VisualStudio.PlatformUI;
 using Microsoft.VisualStudio.Shell;
 
 namespace PolyglotNotebooks.Variables
 {
     /// <summary>
     /// Code-only WPF control for the Variable Explorer tool window.
-    /// Shows a DataGrid (Name / Type / Value / Kernel), a refresh button,
+    /// Shows a DataGrid (Name / Type / Value / Kernel)
     /// and a detail pane that displays the full value for the selected row.
     /// </summary>
     internal sealed class VariableExplorerControl : UserControl
@@ -21,51 +23,17 @@ namespace PolyglotNotebooks.Variables
         private readonly Border _detailBorder;
         private readonly TextBlock _emptyState;
         private readonly VariableService? _service;
+        private string _filterText = string.Empty;
 
         public VariableExplorerControl(VariableService? service = null)
         {
             _service = service;
 
-            // ── Root container ─────────────────────────────────────────────
             var root = new DockPanel { LastChildFill = true };
             Themes.SetUseVsTheme(root, true);
             root.SetResourceReference(BackgroundProperty, VsBrushes.ToolWindowBackgroundKey);
 
-            // ── Toolbar ────────────────────────────────────────────────────
-            var toolbar = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Margin = new Thickness(4, 4, 4, 2)
-            };
-            toolbar.SetResourceReference(BackgroundProperty, VsBrushes.ButtonFaceKey);
-            DockPanel.SetDock(toolbar, Dock.Top);
-
-            var refreshIcon = new CrispImage
-            {
-                Moniker = KnownMonikers.Refresh,
-                Width = 14,
-                Height = 14,
-                Margin = new Thickness(0, 0, 4, 0)
-            };
-            var refreshLabel = new TextBlock { Text = "Refresh", VerticalAlignment = VerticalAlignment.Center };
-            var refreshPanel = new StackPanel { Orientation = Orientation.Horizontal };
-            refreshPanel.Children.Add(refreshIcon);
-            refreshPanel.Children.Add(refreshLabel);
-
-            var refreshBtn = new Button
-            {
-                Content = refreshPanel,
-                Padding = new Thickness(6, 3, 8, 3),
-                BorderThickness = new Thickness(1),
-                Cursor = System.Windows.Input.Cursors.Hand
-            };
-            refreshBtn.SetResourceReference(ForegroundProperty, VsBrushes.ToolWindowTextKey);
-            refreshBtn.SetResourceReference(BackgroundProperty, VsBrushes.ButtonFaceKey);
-            refreshBtn.Click += OnRefreshClicked;
-            toolbar.Children.Add(refreshBtn);
-            root.Children.Add(toolbar);
-
-            // ── Detail pane (bottom) ───────────────────────────────────────
+            // Detail pane (bottom)
             _detailBorder = new Border
             {
                 MinHeight = 36,
@@ -88,7 +56,7 @@ namespace PolyglotNotebooks.Variables
             _detailBorder.Child = _detailBlock;
             root.Children.Add(_detailBorder);
 
-            // ── DataGrid ──────────────────────────────────────────────────
+            // DataGrid
             _grid = new DataGrid
             {
                 AutoGenerateColumns = false,
@@ -96,15 +64,17 @@ namespace PolyglotNotebooks.Variables
                 CanUserSortColumns = true,
                 CanUserResizeRows = false,
                 HeadersVisibility = DataGridHeadersVisibility.Column,
-                GridLinesVisibility = DataGridGridLinesVisibility.Horizontal,
+                GridLinesVisibility = DataGridGridLinesVisibility.None,
                 SelectionMode = DataGridSelectionMode.Single,
                 SelectionUnit = DataGridSelectionUnit.FullRow,
-                BorderThickness = new Thickness(0)
+                BorderThickness = new Thickness(0),
+                ColumnHeaderStyle = CreateColumnHeaderStyle(),
+                RowStyle = CreateRowStyle(),
+                CellStyle = CreateCellStyle()
             };
             _grid.SetResourceReference(BackgroundProperty, VsBrushes.ToolWindowBackgroundKey);
             _grid.SetResourceReference(ForegroundProperty, VsBrushes.ToolWindowTextKey);
             _grid.SetResourceReference(DataGrid.RowBackgroundProperty, VsBrushes.ToolWindowBackgroundKey);
-            _grid.SetResourceReference(DataGrid.HorizontalGridLinesBrushProperty, VsBrushes.ToolWindowBorderKey);
 
             AddColumn("Name", "Name", new DataGridLength(1, DataGridLengthUnitType.Star));
             AddColumn("Type", "TypeName", new DataGridLength(1, DataGridLengthUnitType.Star));
@@ -113,7 +83,7 @@ namespace PolyglotNotebooks.Variables
 
             _grid.SelectionChanged += OnSelectionChanged;
 
-            // ── Empty state overlay ───────────────────────────────────────
+            // Empty state overlay
             _emptyState = new TextBlock
             {
                 Text = "Run a cell to see variables",
@@ -131,7 +101,7 @@ namespace PolyglotNotebooks.Variables
 
             Content = root;
 
-            // ── Bind to service ───────────────────────────────────────────
+            // Bind to service
             if (_service != null)
             {
                 _grid.ItemsSource = _service.Variables;
@@ -142,54 +112,180 @@ namespace PolyglotNotebooks.Variables
             this.Unloaded += OnUnloaded;
         }
 
-        // ── Helpers ───────────────────────────────────────────────────────────
+        // ── Filter support ─────────────────────────────────────────────
+
+        /// <summary>Filters the DataGrid to show only variables matching the search text.</summary>
+        internal void ApplyFilter(string searchText)
+        {
+            _filterText = searchText ?? string.Empty;
+            RefreshFilter();
+        }
+
+        /// <summary>Clears the current filter and shows all variables.</summary>
+        internal void ClearFilter()
+        {
+            _filterText = string.Empty;
+            RefreshFilter();
+        }
+
+        private void RefreshFilter()
+        {
+            if (_service == null) return;
+
+            if (string.IsNullOrWhiteSpace(_filterText))
+            {
+                _grid.ItemsSource = _service.Variables;
+            }
+            else
+            {
+                var filter = _filterText;
+                var filtered = _service.Variables
+                    .Where(v => MatchesFilter(v, filter))
+                    .ToList();
+                _grid.ItemsSource = filtered;
+            }
+
+            UpdateEmptyState();
+        }
+
+        private static bool MatchesFilter(VariableInfo variable, string filter)
+        {
+            return variable.Name.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0
+                || variable.TypeName.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0
+                || variable.Value.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0
+                || variable.KernelName.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        // ── Helpers ────────────────────────────────────────────────────
 
         private void AddColumn(string header, string binding, DataGridLength width)
         {
-            _grid.Columns.Add(new DataGridTextColumn
+            var col = new DataGridTextColumn
             {
                 Header = header,
                 Binding = new Binding(binding),
                 Width = width,
-                SortMemberPath = binding
-            });
+                SortMemberPath = binding,
+                ElementStyle = CreateCellTextStyle()
+            };
+            _grid.Columns.Add(col);
         }
 
         private void UpdateEmptyState()
         {
-            bool empty = _service == null || _service.Variables.Count == 0;
+            var source = _grid.ItemsSource as System.Collections.ICollection;
+            bool empty = source == null || source.Count == 0;
             _emptyState.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
         }
 
-        // ── Event handlers ────────────────────────────────────────────────────
+        // ── Style factories ────────────────────────────────────────────
+
+        /// <summary>Creates a VS-themed column header style with a full ControlTemplate override.</summary>
+        private static Style CreateColumnHeaderStyle()
+        {
+            var style = new Style(typeof(DataGridColumnHeader));
+            style.Setters.Add(new Setter(Control.FontWeightProperty, FontWeights.SemiBold));
+            style.Setters.Add(new Setter(Control.SnapsToDevicePixelsProperty, true));
+
+            var template = new ControlTemplate(typeof(DataGridColumnHeader));
+
+            var border = new FrameworkElementFactory(typeof(Border));
+            border.Name = "HeaderBorder";
+            border.SetValue(Border.PaddingProperty, new Thickness(8, 6, 8, 6));
+            border.SetValue(Border.BorderThicknessProperty, new Thickness(0, 0, 1, 1));
+            border.SetResourceReference(Border.BackgroundProperty, VsBrushes.CommandBarGradientBeginKey);
+            border.SetResourceReference(Border.BorderBrushProperty, VsBrushes.CommandBarGradientEndKey);
+
+            var content = new FrameworkElementFactory(typeof(ContentPresenter));
+            content.SetValue(FrameworkElement.HorizontalAlignmentProperty, HorizontalAlignment.Left);
+            content.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+            content.SetResourceReference(TextBlock.ForegroundProperty, VsBrushes.ToolWindowTextKey);
+            border.AppendChild(content);
+
+            template.VisualTree = border;
+
+            var hoverTrigger = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
+            hoverTrigger.Setters.Add(new Setter(Border.BackgroundProperty,
+                new DynamicResourceExtension(EnvironmentColors.CommandBarMenuItemMouseOverBrushKey), "HeaderBorder"));
+            template.Triggers.Add(hoverTrigger);
+
+            style.Setters.Add(new Setter(Control.TemplateProperty, template));
+            style.Seal();
+            return style;
+        }
+
+        /// <summary>Creates a VS-themed row style with selection and hover highlighting.</summary>
+        private static Style CreateRowStyle()
+        {
+            var style = new Style(typeof(DataGridRow));
+            style.Setters.Add(new Setter(Control.BackgroundProperty,
+                new DynamicResourceExtension(VsBrushes.ToolWindowBackgroundKey)));
+            style.Setters.Add(new Setter(Control.ForegroundProperty,
+                new DynamicResourceExtension(VsBrushes.ToolWindowTextKey)));
+            style.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0)));
+            style.Setters.Add(new Setter(Control.SnapsToDevicePixelsProperty, true));
+
+            var selectedTrigger = new Trigger { Property = DataGridRow.IsSelectedProperty, Value = true };
+            selectedTrigger.Setters.Add(new Setter(Control.BackgroundProperty,
+                new DynamicResourceExtension(VsBrushes.HighlightKey)));
+            selectedTrigger.Setters.Add(new Setter(Control.ForegroundProperty,
+                new DynamicResourceExtension(VsBrushes.HighlightTextKey)));
+            style.Triggers.Add(selectedTrigger);
+
+            var hoverTrigger = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
+            hoverTrigger.Setters.Add(new Setter(Control.BackgroundProperty,
+                new DynamicResourceExtension(EnvironmentColors.CommandBarMenuItemMouseOverBrushKey)));
+            style.Triggers.Add(hoverTrigger);
+
+            style.Seal();
+            return style;
+        }
+
+        /// <summary>Creates a VS-themed cell style with transparent background so row colors show through.</summary>
+        private static Style CreateCellStyle()
+        {
+            var style = new Style(typeof(DataGridCell));
+            style.Setters.Add(new Setter(Control.BorderThicknessProperty, new Thickness(0)));
+            style.Setters.Add(new Setter(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center));
+            style.Setters.Add(new Setter(Control.BackgroundProperty, Brushes.Transparent));
+            style.Setters.Add(new Setter(Control.ForegroundProperty,
+                new DynamicResourceExtension(VsBrushes.ToolWindowTextKey)));
+
+            var selectedTrigger = new Trigger { Property = DataGridCell.IsSelectedProperty, Value = true };
+            selectedTrigger.Setters.Add(new Setter(Control.BackgroundProperty, Brushes.Transparent));
+            selectedTrigger.Setters.Add(new Setter(Control.ForegroundProperty,
+                new DynamicResourceExtension(VsBrushes.HighlightTextKey)));
+            style.Triggers.Add(selectedTrigger);
+
+            style.Seal();
+            return style;
+        }
+
+        /// <summary>Creates a style for TextBlock elements inside DataGrid cells (padding + ellipsis).</summary>
+        private static Style CreateCellTextStyle()
+        {
+            var style = new Style(typeof(TextBlock));
+            style.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(6, 4, 6, 4)));
+            style.Setters.Add(new Setter(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis));
+            style.Seal();
+            return style;
+        }
+
+        // ── Event handlers ─────────────────────────────────────────────
 
         private void OnVariablesChanged(object sender, NotifyCollectionChangedEventArgs e)
-            => UpdateEmptyState();
-
-        private void OnRefreshClicked(object sender, RoutedEventArgs e)
         {
-            if (_service == null) return;
-#pragma warning disable VSTHRD110, VSSDK007
-            _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
-            {
-                try
-                {
-                    await _service.RefreshVariablesAsync().ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    Diagnostics.ExtensionLogger.LogWarning(nameof(VariableExplorerControl),
-                        $"Manual refresh failed: {ex.Message}");
-                }
-            });
-#pragma warning restore VSTHRD110, VSSDK007
+            // Re-apply filter when the underlying collection changes
+            if (!string.IsNullOrWhiteSpace(_filterText))
+                RefreshFilter();
+            else
+                UpdateEmptyState();
         }
 
         private void OnSelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
         {
             if (_grid.SelectedItem is VariableInfo info)
             {
-                // Show truncated value immediately, then fetch full value.
                 _detailBlock.Text = $"{info.Name} = {info.Value}";
                 _detailBorder.Visibility = Visibility.Visible;
 
@@ -205,7 +301,6 @@ namespace PolyglotNotebooks.Variables
                                 .ConfigureAwait(false);
 
                             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                            // Guard: selection may have changed while awaiting.
                             if (_grid.SelectedItem is VariableInfo current &&
                                 current.Name == info.Name &&
                                 current.KernelName == info.KernelName)

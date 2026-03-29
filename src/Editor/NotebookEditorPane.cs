@@ -9,6 +9,8 @@ using PolyglotNotebooks.Kernel;
 using PolyglotNotebooks.Models;
 
 using System.IO;
+using System.Runtime.InteropServices;
+using System.Windows.Forms.Integration;
 
 namespace PolyglotNotebooks.Editor
 {
@@ -16,7 +18,8 @@ namespace PolyglotNotebooks.Editor
     /// Custom editor pane that hosts the notebook WPF UI and manages document persistence.
     /// Serves as both the view (IVsWindowPane via WindowPane) and the document data (IVsPersistDocData).
     /// </summary>
-    public sealed class NotebookEditorPane : WindowPane, IVsPersistDocData, IOleCommandTarget
+    [ComVisible(true)]
+    public sealed class NotebookEditorPane : WindowPane, IVsPersistDocData, IOleCommandTarget, IVsDocOutlineProvider
     {
 
         // GUID of NotebookEditorFactory — returned by GetGuidEditorType.
@@ -31,6 +34,8 @@ namespace PolyglotNotebooks.Editor
         private ExecutionCoordinator? _coordinator;
         private IntelliSenseManager? _intelliSenseManager;
         private bool _closed;
+        private ElementHost? _outlineHost;
+        private DocumentOutlineControl? _outlineControl;
 
         public NotebookEditorPane(
             PolyglotNotebooksPackage package,
@@ -256,6 +261,15 @@ namespace PolyglotNotebooks.Editor
                 _intelliSenseManager?.Dispose();
                 _intelliSenseManager = null;
 
+                _outlineControl?.Cleanup();
+                _outlineControl = null;
+                if (_outlineHost != null)
+                {
+                    _outlineHost.Child = null;
+                    _outlineHost.Dispose();
+                    _outlineHost = null;
+                }
+
                 _coordinator?.Dispose();
                 _coordinator = null;
 
@@ -407,6 +421,59 @@ namespace PolyglotNotebooks.Editor
             }
 
             return base.PreProcessMessage(ref m);
+        }
+
+        // ── IVsDocOutlineProvider ─────────────────────────────────────────────────
+
+        public int GetOutline(out IntPtr phwnd, out IOleCommandTarget ppCmdTarget)
+        {
+            ThreadHelper.ThrowIfNotOnUIThread();
+            ppCmdTarget = null!;
+
+            if (_document == null || _control == null)
+            {
+                phwnd = IntPtr.Zero;
+                return VSConstants.E_UNEXPECTED;
+            }
+
+            _outlineControl = new DocumentOutlineControl(_document, _control);
+            _outlineHost = new ElementHost
+            {
+                Dock = System.Windows.Forms.DockStyle.Fill,
+                Child = _outlineControl
+            };
+
+            phwnd = _outlineHost.Handle;
+            return VSConstants.S_OK;
+        }
+
+        public int ReleaseOutline(IntPtr hwnd, IOleCommandTarget pCmdTarget)
+        {
+            if (_outlineControl != null)
+            {
+                _outlineControl.Cleanup();
+                _outlineControl = null;
+            }
+
+            if (_outlineHost != null)
+            {
+                _outlineHost.Child = null;
+                _outlineHost.Dispose();
+                _outlineHost = null;
+            }
+
+            return VSConstants.S_OK;
+        }
+
+        public int GetOutlineCaption(VSOUTLINECAPTION nCaptionType, out string pbstrCaption)
+        {
+            pbstrCaption = "Document Outline";
+            return VSConstants.S_OK;
+        }
+
+        public int OnOutlineStateChange(uint dwMask, uint dwState)
+        {
+            return VSConstants.S_OK;
         }
 
         // ── Helpers ───────────────────────────────────────────────────────────────

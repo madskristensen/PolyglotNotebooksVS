@@ -63,6 +63,7 @@
     <Reference Include="System.Xaml" />
     <Reference Include="System.Xml" />
     <Reference Include="WindowsBase" />
+    <Reference Include="WindowsFormsIntegration" />
   </ItemGroup>
   <!-- NuGet PackageReferences -->
   <ItemGroup>
@@ -85,6 +86,7 @@
   <ItemGroup>
     <Compile Include="Diagnostics\ExtensionLogger.cs" />
     <Compile Include="Editor\CellControl.cs" />
+    <Compile Include="Editor\DocumentOutlineControl.cs" />
     <Compile Include="Editor\KernelLanguageMap.cs" />
     <Compile Include="Editor\CellToolbar.cs" />
     <Compile Include="Editor\ImageOutputControl.cs" />
@@ -122,6 +124,7 @@
     <Compile Include="Models\NotebookParser.cs" />
     <Compile Include="Options\PolyglotNotebooksOptions.cs" />
     <Compile Include="PolyglotNotebooksPackage.cs" />
+    <Compile Include="Variables\RefreshVariablesCommand.cs" />
     <Compile Include="VSCommandTable.cs">
       <AutoGen>True</AutoGen>
       <DesignTime>True</DesignTime>
@@ -143,6 +146,7 @@
     <Compile Include="Variables\ShowVariableExplorerCommand.cs" />
     <Compile Include="Variables\VariableExplorerControl.cs" />
     <Compile Include="Variables\VariableExplorerToolWindow.cs" />
+    <Compile Include="Variables\VariableSearchTask.cs" />
     <Compile Include="Variables\VariableInfo.cs" />
     <Compile Include="Variables\VariableService.cs" />
   </ItemGroup>
