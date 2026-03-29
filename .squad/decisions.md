@@ -1436,3 +1436,31 @@ The previous approach — removing the existing ITextDocument from buffer.Proper
 
 Changed HTML content type mapping from `"htmlx"` (doesn't exist in VS 2022) to `"HTML"` (registered name).
 
+
+## Decision 19: Deferred Content Type for REST Buffers
+
+**Date**: 2026-07-25
+**Lead**: Ellie (Editor Extension Specialist)
+**Status**: ACTIVE
+
+### Problem
+
+Opening .dib files with HTTP cells (#!http kernel) crashed with System.ArgumentException: The path is not of a legal form from VS's built-in REST extension (Microsoft.WebTools.Languages.Rest).
+
+The crash occurred because RestDocument.FromTextBuffer hooks into ContentTypeChanged and calls FindHttpEnvironmentFiles(folder, envFileName), which expects a valid file path from the buffer's ITextDocument. In the original code, the buffer was created with content type "Rest" before the ITextDocument was associated, so the path was null/empty.
+
+### Solution
+
+For the "Rest" content type, use a **deferred content type pattern**:
+
+1. Create the text buffer with "text" (neutral) content type
+2. Attach the ITextDocument with the valid fake .http file path
+3. Only then switch the content type to "Rest"
+
+This ensures that when the REST extension's ContentTypeChanged handler fires, a valid document path is already available.
+
+### Implications
+
+- All non-Rest content types (C#, F#, PowerShell, HTML, JS, SQL, etc.) continue to use the original direct-assignment flow — no behavior change for them.
+- If future language services exhibit the same issue (needing ITextDocument during ContentTypeChanged), the same deferred pattern should be applied by adding their content type name to the isDeferredContentType check in BuildCodeCellContent.
+- The fix is in src/Editor/CellControl.cs, method BuildCodeCellContent.

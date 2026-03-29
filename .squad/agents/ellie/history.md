@@ -977,3 +977,13 @@ PolyglotNotebooksPackage.InitializeAsync() now calls VariableExplorerToolWindow.
 - MSBuild (VS 2022): `& ""C:\Program Files\Microsoft Visual Studio\2022\Preview\MSBuild\Current\Bin\MSBuild.exe"" src\PolyglotNotebooks.csproj /t:Build`
 - Tests: `dotnet test test\PolyglotNotebooks.Test --no-build`
 - Note: `dotnet build` fails with pre-existing NuGet/SDK resolution issues; use MSBuild directly
+
+## Learnings — REST Content Type Deferred Init (2026-07-25)
+
+**Bug**: Opening .dib files with HTTP cells crashed because VS's REST language service (`Microsoft.WebTools.Languages.Rest`) hooks into `ContentTypeChanged` and calls `FindHttpEnvironmentFiles`, which needs the `ITextDocument` file path. But in our original flow, the content type was set to "Rest" *before* the `ITextDocument` was created, so the path was null → `ArgumentException`.
+
+**Fix**: For the "Rest" content type specifically, the buffer is now created with "text" content type first. The `ITextDocument` is attached (with a valid fake `.http` path), and only *then* is the content type switched to "Rest". This ensures the REST extension's `ContentTypeChanged` handler always finds a valid document path.
+
+**Pattern**: Any VS language service that inspects `ITextDocument.FilePath` during `ContentTypeChanged` can hit this same issue. The deferred content type pattern (create with neutral type → attach doc → switch to real type) is the general solution.
+
+**Key files**: `src/Editor/CellControl.cs` (BuildCodeCellContent method), `src/Editor/KernelLanguageMap.cs` (kernel "http" → content type "Rest").
