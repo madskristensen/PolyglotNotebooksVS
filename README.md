@@ -31,6 +31,8 @@ Write and run C#, JavaScript, SQL, and more — right inside Visual Studio. Poly
 
 **Variable Explorer** - Inspect all live variables across kernels in a dedicated tool window. See names, types, values, and which kernel owns each variable.
 
+**Document Outline** - See the structure of your notebook at a glance in the standard Document Outline window. Markdown headings group related code cells into a navigable tree.
+
 **Zero setup** - The extension detects and installs `dotnet-interactive` automatically when needed. Open a notebook file and start coding.
 
 **Item template** - Create new `.dib` notebooks directly from the **Add New Item** dialog. No need to leave the IDE or copy files manually.
@@ -59,6 +61,10 @@ Each cell has a language selector in its toolbar. Pick **C#**, **JavaScript**, *
 ### Inspect Variables
 
 Open **View > Variable Explorer** to see every variable across all kernels. Click any row to see its full value in the detail pane. Hit **Refresh** after running cells to update.
+
+### Navigate with Document Outline
+
+Open **View > Other Windows > Document Outline** to see a tree view of your notebook. Markdown cells act as section headings with code cells nested beneath them. Click any item to jump straight to that cell.
 
 ### Manage the Notebook
 

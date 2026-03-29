@@ -36,6 +36,7 @@ That's your first notebook. Now try something more interesting — [follow the G
 | [**Running Code**](running-code.md) | Execution order, kernel lifecycle, NuGet packages, and HTTP requests |
 | [**Rich Output**](rich-output.md) | HTML, tables, images, JSON, SVG, CSV, and Mermaid diagrams |
 | [**Variable Sharing**](variable-sharing.md) | Pass data between C#, JavaScript, SQL, and other kernels |
+| [**Document Outline**](document-outline.md) | Navigate your notebook structure with the Document Outline tree view |
 | [**Keyboard Shortcuts**](keyboard-shortcuts.md) | Complete shortcut reference for power users |
 | [**Settings & Configuration**](settings.md) | Default kernel, file format, timeouts, and editor behavior |
 | [**Troubleshooting**](troubleshooting.md) | Common problems and step-by-step solutions |
