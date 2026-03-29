@@ -1,5 +1,4 @@
 using System;
-using System.Reflection;
 using System.Runtime.CompilerServices;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PolyglotNotebooks.IntelliSense;
@@ -14,8 +13,8 @@ namespace PolyglotNotebooks.Test
     /// Tests for IntelliSense components (Phase 3).
     ///
     /// CompletionProvider, DiagnosticsProvider, HoverProvider, and SignatureHelpProvider
-    /// are WPF-heavy and use VsBrushes/ThreadHelper (VS SDK).  We test only the private
-    /// static helper methods — pure logic with no VS SDK references — via reflection.
+    /// are WPF-heavy and use VsBrushes/ThreadHelper (VS SDK).  We test only the internal
+    /// static helper methods — pure logic with no VS SDK references — via direct calls.
     ///
     /// IntelliSenseManager construction and null-guard paths are also tested; they do
     /// not reference VS SDK types in their executed code paths.
@@ -29,29 +28,14 @@ namespace PolyglotNotebooks.Test
         // CompletionProvider — CaretToLinePosition
         // ====================================================================
 
-        private static readonly MethodInfo _completionCaretToLinePosition =
-            typeof(CompletionProvider)
-                .GetMethod("CaretToLinePosition", BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new InvalidOperationException("CompletionProvider.CaretToLinePosition not found.");
-
-        private static readonly MethodInfo _completionFindWordStart =
-            typeof(CompletionProvider)
-                .GetMethod("FindWordStart", BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new InvalidOperationException("CompletionProvider.FindWordStart not found.");
-
-        private static readonly MethodInfo _completionGetKindGlyph =
-            typeof(CompletionProvider)
-                .GetMethod("GetKindGlyph", BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new InvalidOperationException("CompletionProvider.GetKindGlyph not found.");
-
         private static LinePosition CompletionCaretToLine(string text, int caretIndex)
-            => (LinePosition)_completionCaretToLinePosition.Invoke(null, new object[] { text, caretIndex })!;
+            => CompletionProvider.CaretToLinePosition(text, caretIndex);
 
         private static int CompletionFindWordStart(string text, int caretIndex)
-            => (int)_completionFindWordStart.Invoke(null, new object[] { text, caretIndex })!;
+            => CompletionProvider.FindWordStart(text, caretIndex);
 
         private static string CompletionGetKindGlyph(string? kind)
-            => (string)_completionGetKindGlyph.Invoke(null, new object?[] { kind })!;
+            => CompletionProvider.GetKindGlyph(kind);
 
         [TestMethod]
         public void CompletionProvider_CaretToLinePosition_IndexZero_ReturnsLine0Char0()
@@ -209,13 +193,8 @@ namespace PolyglotNotebooks.Test
         // DiagnosticsProvider — GetCharOffset
         // ====================================================================
 
-        private static readonly MethodInfo _diagGetCharOffset =
-            typeof(DiagnosticsProvider)
-                .GetMethod("GetCharOffset", BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new InvalidOperationException("DiagnosticsProvider.GetCharOffset not found.");
-
         private static int DiagGetCharOffset(string text, int line, int character)
-            => (int)_diagGetCharOffset.Invoke(null, new object[] { text, line, character })!;
+            => DiagnosticsProvider.GetCharOffset(text, line, character);
 
         [TestMethod]
         public void DiagnosticsProvider_GetCharOffset_Line0_ReturnsCharacter()
@@ -259,21 +238,11 @@ namespace PolyglotNotebooks.Test
         // HoverProvider — CaretToLinePosition
         // ====================================================================
 
-        private static readonly MethodInfo _hoverCaretToLinePosition =
-            typeof(HoverProvider)
-                .GetMethod("CaretToLinePosition", BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new InvalidOperationException("HoverProvider.CaretToLinePosition not found.");
-
-        private static readonly MethodInfo _hoverStripHtml =
-            typeof(HoverProvider)
-                .GetMethod("StripHtml", BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new InvalidOperationException("HoverProvider.StripHtml not found.");
-
         private static LinePosition HoverCaretToLine(string text, int charIndex)
-            => (LinePosition)_hoverCaretToLinePosition.Invoke(null, new object[] { text, charIndex })!;
+            => HoverProvider.CaretToLinePosition(text, charIndex);
 
         private static string HoverStripHtml(string html)
-            => (string)_hoverStripHtml.Invoke(null, new object[] { html })!;
+            => HoverProvider.StripHtml(html);
 
         [TestMethod]
         public void HoverProvider_CaretToLinePosition_SingleLine_ReturnsLine0()
@@ -478,19 +447,6 @@ namespace PolyglotNotebooks.Test
             var args = new KernelStatusChangedEventArgs(KernelStatus.Ready, KernelStatus.Busy);
             Assert.AreEqual(KernelStatus.Ready, args.OldStatus);
             Assert.AreEqual(KernelStatus.Busy, args.NewStatus);
-        }
-
-        [TestMethod]
-        public void KernelStatus_AllValuesDefinedAsExpected()
-        {
-            // Verify the enum values the toolbar and coordinator rely on are present
-            _ = KernelStatus.NotStarted;
-            _ = KernelStatus.Starting;
-            _ = KernelStatus.Ready;
-            _ = KernelStatus.Busy;
-            _ = KernelStatus.Restarting;
-            _ = KernelStatus.Stopped;
-            _ = KernelStatus.Error;
         }
 
         // ====================================================================

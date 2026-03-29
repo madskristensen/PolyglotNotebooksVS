@@ -400,7 +400,7 @@ namespace PolyglotNotebooks.Editor
         // Markdown → HTML (lightweight converter for common constructs)
         // -----------------------------------------------------------------------
 
-        private static string MarkdownToHtml(string markdown)
+        internal static string MarkdownToHtml(string markdown)
         {
             var sb = new StringBuilder();
             var lines = markdown.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
@@ -458,7 +458,7 @@ namespace PolyglotNotebooks.Editor
             return sb.ToString();
         }
 
-        private static string InlineMarkdown(string text)
+        internal static string InlineMarkdown(string text)
         {
             // HTML-encode first to avoid injections, then apply markdown patterns.
             text = WebUtility.HtmlEncode(text);
@@ -475,7 +475,7 @@ namespace PolyglotNotebooks.Editor
         // CSV → HTML table
         // -----------------------------------------------------------------------
 
-        private static string CsvToHtmlTable(string csv)
+        internal static string CsvToHtmlTable(string csv)
         {
             var lines = csv.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
             if (lines.Length == 0) return "<p><em>Empty CSV</em></p>";
@@ -497,7 +497,7 @@ namespace PolyglotNotebooks.Editor
             return sb.ToString();
         }
 
-        private static string[] ParseCsvLine(string line)
+        internal static string[] ParseCsvLine(string line)
         {
             var result = new List<string>();
             var current = new StringBuilder();

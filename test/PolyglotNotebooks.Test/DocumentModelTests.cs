@@ -494,16 +494,6 @@ namespace PolyglotNotebooks.Test
             Assert.AreEqual(3, output.FormattedValues.Count);
         }
 
-        [TestMethod]
-        public void CellOutputKind_AllExpectedValuesExist()
-        {
-            // Verify enum contains expected kinds
-            Assert.IsTrue(Enum.IsDefined(typeof(CellOutputKind), CellOutputKind.ReturnValue));
-            Assert.IsTrue(Enum.IsDefined(typeof(CellOutputKind), CellOutputKind.StandardOutput));
-            Assert.IsTrue(Enum.IsDefined(typeof(CellOutputKind), CellOutputKind.StandardError));
-            Assert.IsTrue(Enum.IsDefined(typeof(CellOutputKind), CellOutputKind.Display));
-            Assert.IsTrue(Enum.IsDefined(typeof(CellOutputKind), CellOutputKind.Error));
-        }
     }
 
     [TestClass]

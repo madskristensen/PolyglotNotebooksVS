@@ -185,12 +185,12 @@ namespace PolyglotNotebooks.IntelliSense
             _popup.IsOpen = false;
         }
 
-        private static string StripHtml(string html)
+        internal static string StripHtml(string html)
         {
             return Regex.Replace(html, "<[^>]+>", string.Empty).Trim();
         }
 
-        private static LinePosition CaretToLinePosition(string text, int charIndex)
+        internal static LinePosition CaretToLinePosition(string text, int charIndex)
         {
             int line = 0, character = 0;
             for (int i = 0; i < charIndex && i < text.Length; i++)

@@ -97,7 +97,7 @@ namespace PolyglotNotebooks.Editor
         // Helpers
         // -----------------------------------------------------------------------
 
-        private static string StripDataUri(string data)
+        internal static string StripDataUri(string data)
         {
             int commaIdx = data.IndexOf(',');
             return commaIdx >= 0 ? data.Substring(commaIdx + 1) : data;

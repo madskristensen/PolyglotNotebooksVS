@@ -182,7 +182,7 @@ namespace PolyglotNotebooks.IntelliSense
                 : null;
         }
 
-        private static int GetCharOffset(string text, int line, int character)
+        internal static int GetCharOffset(string text, int line, int character)
         {
             int currentLine = 0;
             int i = 0;

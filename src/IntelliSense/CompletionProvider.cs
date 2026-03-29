@@ -275,7 +275,7 @@ namespace PolyglotNotebooks.IntelliSense
 #pragma warning restore VSTHRD110, VSTHRD001
         }
 
-        private static string GetKindGlyph(string? kind)
+        internal static string GetKindGlyph(string? kind)
         {
             if (string.IsNullOrEmpty(kind)) return "·";
             switch (kind!.ToLowerInvariant())
@@ -295,7 +295,7 @@ namespace PolyglotNotebooks.IntelliSense
             }
         }
 
-        private static LinePosition CaretToLinePosition(string text, int caretIndex)
+        internal static LinePosition CaretToLinePosition(string text, int caretIndex)
         {
             int line = 0, character = 0;
             for (int i = 0; i < caretIndex && i < text.Length; i++)
@@ -313,7 +313,7 @@ namespace PolyglotNotebooks.IntelliSense
             return new LinePosition { Line = line, Character = character };
         }
 
-        private static int FindWordStart(string text, int caretIndex)
+        internal static int FindWordStart(string text, int caretIndex)
         {
             int i = caretIndex - 1;
             while (i >= 0 && (char.IsLetterOrDigit(text[i]) || text[i] == '_'))

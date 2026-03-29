@@ -429,7 +429,7 @@ namespace PolyglotNotebooks.Execution
         /// Maps a cell's kernel name (as stored in the notebook model) to the canonical
         /// dotnet-interactive target kernel name used on the wire.
         /// </summary>
-        private static string MapKernelName(string kernelName)
+        internal static string MapKernelName(string kernelName)
         {
             if (string.IsNullOrEmpty(kernelName))
                 return "csharp";
@@ -463,7 +463,7 @@ namespace PolyglotNotebooks.Execution
             }
         }
 
-        private static bool IsTerminalEvent(string eventType) =>
+        internal static bool IsTerminalEvent(string eventType) =>
             eventType == KernelEventTypes.CommandSucceeded ||
             eventType == KernelEventTypes.CommandFailed;
 

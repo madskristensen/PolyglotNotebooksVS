@@ -1,5 +1,4 @@
 using System;
-using System.Reflection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 using PolyglotNotebooks.Editor;
 
@@ -12,50 +11,30 @@ namespace PolyglotNotebooks.Test
     /// (Phase 3 / Phase 4 rich output rendering).
     ///
     /// OutputControl's UI methods (Rebuild, RenderOutput, etc.) reference VsBrushes and
-    /// WebView2OutputHost and are not testable in the unit-test runner.  The static helpers
-    /// (MarkdownToHtml, InlineMarkdown, CsvToHtmlTable, ParseCsvLine) are pure string
-    /// processing with no VS SDK references and are accessed safely via reflection.
+    /// WebView2OutputHost and are not testable in the unit-test runner.  The internal static
+    /// helpers (MarkdownToHtml, InlineMarkdown, CsvToHtmlTable, ParseCsvLine) are pure string
+    /// processing with no VS SDK references and are called directly.
     ///
-    /// ImageOutputControl.StripDataUri is likewise a pure static helper tested via reflection.
+    /// ImageOutputControl.StripDataUri is likewise a pure internal static helper tested directly.
     /// </summary>
     [TestClass]
     public class RichOutputHelperTests
     {
         // ====================================================================
-        // Reflection handles — OutputControl private static helpers
+        // Direct call wrappers — OutputControl internal static helpers
         // ====================================================================
 
-        private static readonly MethodInfo _markdownToHtml =
-            typeof(OutputControl)
-                .GetMethod("MarkdownToHtml", BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new InvalidOperationException("OutputControl.MarkdownToHtml not found.");
-
-        private static readonly MethodInfo _inlineMarkdown =
-            typeof(OutputControl)
-                .GetMethod("InlineMarkdown", BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new InvalidOperationException("OutputControl.InlineMarkdown not found.");
-
-        private static readonly MethodInfo _csvToHtmlTable =
-            typeof(OutputControl)
-                .GetMethod("CsvToHtmlTable", BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new InvalidOperationException("OutputControl.CsvToHtmlTable not found.");
-
-        private static readonly MethodInfo _parseCsvLine =
-            typeof(OutputControl)
-                .GetMethod("ParseCsvLine", BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new InvalidOperationException("OutputControl.ParseCsvLine not found.");
-
         private static string MarkdownToHtml(string markdown)
-            => (string)_markdownToHtml.Invoke(null, new object[] { markdown })!;
+            => OutputControl.MarkdownToHtml(markdown);
 
         private static string InlineMarkdown(string text)
-            => (string)_inlineMarkdown.Invoke(null, new object[] { text })!;
+            => OutputControl.InlineMarkdown(text);
 
         private static string CsvToHtmlTable(string csv)
-            => (string)_csvToHtmlTable.Invoke(null, new object[] { csv })!;
+            => OutputControl.CsvToHtmlTable(csv);
 
         private static string[] ParseCsvLine(string line)
-            => (string[])_parseCsvLine.Invoke(null, new object[] { line })!;
+            => OutputControl.ParseCsvLine(line);
 
         // ====================================================================
         // MarkdownToHtml — ATX headings
@@ -336,13 +315,8 @@ namespace PolyglotNotebooks.Test
         // ImageOutputControl — StripDataUri (static private helper)
         // ====================================================================
 
-        private static readonly MethodInfo _stripDataUri =
-            typeof(ImageOutputControl)
-                .GetMethod("StripDataUri", BindingFlags.NonPublic | BindingFlags.Static)
-            ?? throw new InvalidOperationException("ImageOutputControl.StripDataUri not found.");
-
         private static string StripDataUri(string data)
-            => (string)_stripDataUri.Invoke(null, new object[] { data })!;
+            => ImageOutputControl.StripDataUri(data);
 
         [TestMethod]
         public void ImageOutputControl_StripDataUri_WithDataPrefix_ReturnsPayload()
