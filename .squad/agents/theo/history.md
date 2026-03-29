@@ -300,6 +300,11 @@
 - `Process` objects in .NET hold OS handles. Always use `using` even when awaiting async completion via TCS+Exited event. On cancellation, kill the process before disposing.
 - `Task.Run()` fire-and-forget bypasses JoinableTaskFactory's shutdown tracking. In VS extensions, always use `ThreadHelper.JoinableTaskFactory.RunAsync()` for fire-and-forget async work, even when the work doesn't need the UI thread — JTF ensures proper join-on-shutdown behavior.
 - Suppress both `VSTHRD110` (fire-and-forget) and `VSSDK007` (un-awaited JTF.RunAsync) together when intentionally discarding the JoinableTask.
+- **VS InfoBar pattern**: `VS.InfoBar.CreateAsync(InfoBarModel)` (from Community.VisualStudio.Toolkit) creates in main window. Call `TryShowInfoBarUIAsync()` to display. Subscribe `ActionItemClicked` (`EventHandler<InfoBarActionItemEventArgs>`). `e.ActionItem.ActionContext as string` retrieves context passed to `InfoBarHyperlink(text, context)`. Close with `infoBar.Close()`.
+- **Non-blocking notifications**: For errors discovered during background execution (e.g. kernel not installed), show a VS InfoBar and immediately throw — the cell shows the error, the InfoBar gives action buttons. Never show a modal `MessageBox.Show` from a background thread's code path; it blocks the UI for the duration.
+- **InfoBar fire-and-forget**: When the current execution context is background (already `.ConfigureAwait(false)`) and InfoBar creation needs the UI thread, wrap in `ThreadHelper.JoinableTaskFactory.RunAsync(async () => await ShowInfoBarAsync())` so it's non-blocking and JTF-tracked.
+- **KnownMonikers** is in `Microsoft.VisualStudio.Imaging` namespace (pulled in transitively via `Microsoft.VisualStudio.SDK` → `Microsoft.VisualStudio.ImageCatalog`). No extra NuGet reference needed.
+- **InfoBarModel constructors**: `InfoBarModel(string text, IEnumerable<IVsInfoBarActionItem> actionItems, ImageMoniker image, bool isCloseButtonVisible)` for text+buttons. `IVsInfoBarActionItem` = action item interface from `Microsoft.VisualStudio.Shell.Interop`; `InfoBarHyperlink` (from `Microsoft.VisualStudio.Shell`) implements it.
 
 ---
 

@@ -625,3 +625,260 @@ Registered in the build system:
 - Clean build with 0 errors
 - All template files correctly included in VSIX package
 - Ready for testing and marketplace distribution
+
+
+### 2026-03-29T02:48:46Z: User directive — Execution timing UX pattern
+**By:** Mads Kristensen (via Copilot)
+**What:** The execution timing display should match the VS Code Polyglot Notebooks pattern:
+1. **While running**: Show a rotating/spinning icon with a live-counting timer that counts up seconds (e.g., "0.1s", "0.2s", "0.3s"...)
+2. **When complete**: Replace the spinner with a checkmark (✓) and show the final elapsed time (e.g., "✓ 0.7s")
+3. The reference screenshot shows a green checkmark with "0.7s" in a subtle, compact format next to the cell
+**Why:** User request — this is the established UX pattern from the VS Code extension that users already know and expect. Captures the "running → done" state transition clearly.
+
+
+
+# Decision: Mermaid Diagram Rendering via CDN + WebView2
+
+**Date**: 2025-07-26
+**Lead**: Ellie (Editor Extension Specialist)
+**Status**: PROPOSED
+
+## Context
+
+Added Mermaid diagram rendering support to notebook outputs. Users can create flowcharts, sequence diagrams, etc. using the `#!mermaid` kernel or `text/vnd.mermaid` MIME type.
+
+## Decision
+
+1. **CDN-based mermaid.js** — Load from `https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js` rather than bundling. The extension already requires internet for kernel communication, so this adds no new connectivity requirement.
+
+2. **3-tier content detection** — Mermaid output is detected via: (a) `text/vnd.mermaid` MIME type, (b) cell kernel name `"mermaid"`, (c) content starting with known Mermaid keywords. The keyword-based detection is a convenience fallback for text/plain output that looks like mermaid syntax.
+
+3. **Security: `securityLevel: 'strict'`** — Mermaid's strict mode prevents any script execution within diagram definitions, matching the security posture of our WebView2 content rendering.
+
+4. **VS theme auto-detection** — Uses luminance calculation on `VsBrushes.ToolWindowBackgroundKey` to select mermaid's `dark` or `default` theme, ensuring diagrams are readable in both VS dark and light themes.
+
+5. **Error handling** — Invalid mermaid content shows the raw source with an error message rather than a blank output, so users can debug their diagram syntax.
+
+## Implications
+
+- Extension requires internet to render Mermaid diagrams (CDN dependency)
+- No new NuGet packages or bundled assets needed
+- Keyword-based detection could theoretically false-positive on text/plain output that starts with words like "graph" or "pie" — considered acceptable since these are uncommon as output text
+- Mermaid version floats with CDN latest — could pin to specific version if stability issues arise
+
+## Files Changed
+
+- `src/Editor/OutputControl.cs` — MIME detection and routing
+- `src/Editor/WebView2OutputHost.cs` — Mermaid HTML rendering
+
+
+
+# Decision: Settings/Options Page Pattern
+
+**Date**: 2026-03-28
+**Lead**: Sam (Solution & Build Integration Specialist)
+**Status**: ACTIVE
+
+## Context
+
+The extension had no settings page — all configurable values (kernel timeout, image max width, etc.) were hardcoded. Created a proper Tools → Options page using `BaseOptionModel<T>`.
+
+## Decision
+
+1. **Named the file format enum `DefaultFileFormat`** instead of `NotebookFormat` to avoid collision with the existing `Models.NotebookFormat` enum used throughout the codebase.
+
+2. **Manual `OptionsProvider` class** rather than relying on the toolkit source generator — ensures compatibility regardless of toolkit version and makes the registration explicit.
+
+3. **`PolyglotNotebooksOptions.Instance`** is the singleton access point. Any code needing a setting value reads from this (e.g., `Options.PolyglotNotebooksOptions.Instance.MaxImageWidth`).
+
+4. **Settings not yet wired**: `DefaultKernel`, `DefaultFileFormat`, `ClearOutputsOnRestart`, `AutoSaveBeforeRun`, `ShowExecutionTiming`, `ShowCellStatusIndicators`, `EnableMermaidDiagrams`, `MaxOutputLength` — these exist in the options model but are not yet consumed by any runtime code. They should be wired as the corresponding features are built.
+
+## Impact
+
+- **All team members**: When adding configurable behavior, add a property to `PolyglotNotebooksOptions` and read via `Instance`. Do not hardcode new values.
+- **Wendy/Editor team**: Editor settings (timing, status indicators, Mermaid) are ready to be consumed from the options model.
+- **Theo/Reliability**: Kernel timeout is now user-configurable via the options page.
+
+
+
+# Decision: Replace Blocking MessageBox with VS InfoBar for Kernel Install Prompt
+
+**Date**: 2026-07-21  
+**Author**: Theo (Threading & Reliability Engineer)  
+**Status**: IMPLEMENTED ✅  
+**Triggered by**: VS UI delay detection flagging 6-second block during `EnsureKernelStartedAsync`
+
+---
+
+## Problem
+
+When dotnet-interactive was not installed, `KernelNotInstalledDialog.ShowAsync()` would:
+1. Switch to the main thread via `SwitchToMainThreadAsync()`
+2. Show a modal `System.Windows.MessageBox.Show()` on the UI thread
+3. Block the UI thread until the user responded (up to 6+ seconds without interaction)
+
+VS's UI delay detection flagged this as a blocking extension violation.
+
+## Decision
+
+**Replace the blocking `MessageBox.Show()` with a non-blocking VS InfoBar.**
+
+### Rationale
+- Modal `MessageBox.Show()` on the UI thread is the canonical UI-blocking anti-pattern in VS extensions
+- VS InfoBar is the VS-native standard for extension notifications — non-blocking, dismissible, actionable
+- The cell execution should fail immediately with a clear error (shown in cell output); the InfoBar gives the user action buttons without blocking VS
+- Community.VisualStudio.Toolkit already in the project provides `VS.InfoBar.CreateAsync()` — no new dependencies needed
+
+## Implementation
+
+### `KernelNotInstalledDialog.cs`
+- `ShowAsync()` now fires-and-forgets the InfoBar creation via `ThreadHelper.JoinableTaskFactory.RunAsync()` and returns `false` immediately
+- InfoBar has **Install** and **Open Docs** hyperlinks plus the native close button
+- `ActionItemClicked` handler: closes the InfoBar, then either starts `RunInstallAsync` (in JTF-tracked background task) or calls `OpenDocs()`
+- Existing `RunInstallAsync` logic is preserved; its error MessageBoxes are acceptable (they're post-user-action on a non-critical path, not blocking the execution flow)
+- `KnownMonikers.StatusWarning` used as icon; `InfoBarHyperlink(text, context)` used for typed context dispatch
+
+### `ExecutionCoordinator.cs` (`EnsureKernelStartedAsync`)
+- Removed the `if (installed)` re-verify block — `ShowAsync` never returns `true` now
+- Flow: show InfoBar → immediately throw `InvalidOperationException` → cell shows error message
+- After user installs via InfoBar, they re-run the cell; `IsInstalledAsync` now finds the tool and execution proceeds
+
+## API Reference (Community.VisualStudio.Toolkit InfoBar)
+
+```csharp
+// Create and show
+var model = new InfoBarModel(
+    "message text",
+    new IVsInfoBarActionItem[] { new InfoBarHyperlink("Label", "context-string") },
+    KnownMonikers.StatusWarning,
+    isCloseButtonVisible: true);
+var infoBar = await VS.InfoBar.CreateAsync(model);  // null if VS frame unavailable
+await infoBar.TryShowInfoBarUIAsync();
+
+// Handle clicks
+infoBar.ActionItemClicked += (s, e) => {
+    var ctx = e.ActionItem.ActionContext as string; // "context-string"
+    infoBar.Close();
+    if (ctx == "context-string") { /* ... */ }
+};
+```
+
+- `ActionItemClicked` is `EventHandler<InfoBarActionItemEventArgs>` (from `Microsoft.VisualStudio.Shell`)
+- `e.ActionItem` is `IVsInfoBarActionItem`; `.ActionContext` returns the context object passed to `InfoBarHyperlink`
+- `KnownMonikers` is in `Microsoft.VisualStudio.Imaging` (transitively available via CVT → SDK → ImageCatalog)
+
+## Constraints Honored
+- UI thread never blocked by this code path
+- JTF.RunAsync() used for all fire-and-forget async work (VSTHRD110/VSSDK007 compliant)
+- Cell execution fails immediately with descriptive error in cell output
+- InfoBar persists until user acts or dismisses
+- Build: ✅ 0 errors | Tests: ✅ 346/346 passing
+
+
+
+# Decision: VS-Level Keyboard Shortcuts for Notebook Cell Operations
+
+**Date**: 2026-07-16
+**Lead**: Vince (Extension Architect)
+**Status**: IMPLEMENTED
+
+## Context
+
+The extension previously handled keyboard shortcuts entirely through WPF `OnPreviewKeyDown` handlers in `NotebookControl.cs`. This meant shortcuts were invisible in Tools → Options → Keyboard and could not be customized by users.
+
+## Decision
+
+Add 10 notebook cell operation commands to the `.vsct` command table with default keybindings, complementing (not replacing) existing WPF handlers.
+
+### Architecture
+
+1. **Command Table** (`VSCommandTable.vsct`): 10 new `<Button>` entries with `CommandWellOnly` flag (no menu placement). `<KeyBinding>` entries in Global scope (`guidVSStd97`).
+
+2. **Command Handlers** (`src/Editor/Commands/*.cs`): 10 `BaseCommand<T>` subclasses following the existing `ShowVariableExplorerCommand` pattern. Each uses `BeforeQueryStatus` to disable when no notebook is active.
+
+3. **ActiveInstance Pattern**: `NotebookControl.ActiveInstance` static property tracks the most recently focused notebook. Set on `CellControl.GotFocus`, cleared on `Unloaded`. This effectively scopes Global keybindings to notebook context without `ProvideUIContextRule`.
+
+4. **Cell Operations API**: New public methods on `NotebookControl` delegate to `NotebookDocument` model (AddCell, MoveCell, RemoveCell) and `CellControl` internals (ToggleMarkdownEditMode, FocusKernelPicker).
+
+### Default Shortcuts
+
+| Command | Shortcut | Scope |
+|---------|----------|-------|
+| Insert Code Cell Above | Ctrl+Shift+A | Global (notebook-only via BeforeQueryStatus) |
+| Insert Code Cell Below | Ctrl+Shift+B | Global (notebook-only via BeforeQueryStatus) |
+| Insert Markdown Cell Above | Ctrl+Shift+Alt+A | Global |
+| Insert Markdown Cell Below | Ctrl+Shift+Alt+B | Global |
+| Move Cell Up | Ctrl+Alt+Up | Global |
+| Move Cell Down | Ctrl+Alt+Down | Global |
+| Delete Cell | Ctrl+Shift+Delete | Global |
+| Toggle Markdown Edit | F2 | Global (markdown cells only) |
+| Clear Cell Output | Ctrl+Shift+Backspace | Global |
+| Change Cell Language | Ctrl+Shift+L | Global |
+
+### Shortcut Conflict Handling
+
+- `Ctrl+Shift+A` and `Ctrl+Shift+B` conflict with VS defaults (Add Existing Item, Build Solution). Mitigated by BeforeQueryStatus disabling outside notebook context.
+- `Alt+Up/Down` changed to `Ctrl+Alt+Up/Down` to avoid conflict with Edit.MoveLineUp/Down.
+- `F2` for ToggleMarkdownEdit — only enabled when a markdown cell is focused.
+
+## Implications
+
+1. All 10 shortcuts appear in Tools → Options → Keyboard as "Polyglot Notebooks: *"
+2. Users can remap any shortcut to their preference
+3. Existing WPF handlers (Ctrl+Shift+Backspace for clear output) remain as complementary fallback
+4. Command IDs 0x0200–0x0209 reserved for cell operations
+5. VSIX Synchronizer will regenerate `VSCommandTable.cs` on next sync
+
+## Files Modified
+
+- `src/VSCommandTable.vsct` — Command definitions + keybindings
+- `src/VSCommandTable.cs` — Updated with new PackageIds
+- `src/Editor/NotebookControl.cs` — ActiveInstance + cell operation methods
+- `src/Editor/CellControl.cs` — ToggleMarkdownEditMode + FocusKernelPicker + _cellToolbar field
+- `src/Editor/CellToolbar.cs` — FocusKernelPicker method
+- `src/Editor/Commands/*.cs` — 10 new command handler files (created)
+
+
+
+# Decision: Execution Timing Display & Cell Status Icons
+
+**Date**: 2025-07-24
+**Lead**: Wendy (UI Specialist)
+**Status**: PROPOSED
+
+## Context
+
+Added execution timing display and enhanced status indicators to notebook cell toolbars.
+
+## Decisions Made
+
+### 1. Timing measured at kernel command level
+Stopwatch wraps `SendCommandAsync` → `WaitForTerminalEventAsync`, measuring actual kernel execution time (excludes UI thread switching overhead). Duration stored in `NotebookCell.LastExecutionDuration` (nullable TimeSpan).
+
+### 2. Status icons use KnownMonikers
+Replaced text-based status indicators (⟳/✗) with VS-native `CrispImage` icons:
+- Running → `KnownMonikers.StatusRunning`
+- Success → `KnownMonikers.StatusOK` (auto-fades after 4s)
+- Error → `KnownMonikers.StatusError` (persists until next run)
+- Queued → `KnownMonikers.StatusInformation` (Hourglass not available in VSSDK 17.14)
+- Idle → no icon
+
+### 3. Success icon fades after 4 seconds
+DispatcherTimer + DoubleAnimation (600ms opacity fade). Prevents toolbar clutter while still giving visual feedback on completion.
+
+### 4. Timing display uses opacity fade-in animation
+300ms QuadraticEase fade when duration appears. Hidden during Running/Queued states, shown for Succeeded/Failed.
+
+### 5. Added `Queued` to CellExecutionStatus enum
+Not yet used by ExecutionCoordinator but available for future use (e.g., Run All could set cells to Queued before executing sequentially).
+
+## Affected Files
+- `src/Models/Enums.cs` — Added `Queued` enum value
+- `src/Models/NotebookCell.cs` — Added `LastExecutionDuration` property
+- `src/Execution/CellExecutionEngine.cs` — Stopwatch timing for both ExecuteCellAsync and ExecuteSelectionAsync
+- `src/Editor/CellToolbar.cs` — Timing display, enhanced status icons, fade animations
+
+## Implications
+- Other team members can use `CellExecutionStatus.Queued` in ExecutionCoordinator when ready
+- Timing data is available on the model for potential future display in other UI surfaces
+
