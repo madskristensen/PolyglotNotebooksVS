@@ -90,6 +90,7 @@ namespace PolyglotNotebooks.Editor
                 {
                     HorizontalAlignment = HorizontalAlignment.Stretch,
                     VerticalAlignment = VerticalAlignment.Stretch,
+                    DefaultBackgroundColor = GetThemeBackgroundColor(),
                 };
                 Child = _webView;
 
@@ -162,12 +163,16 @@ namespace PolyglotNotebooks.Editor
                 {
                     if (_webView?.CoreWebView2 == null) return;
 
-                    // Query the actual rendered content height and resize the host.
-                    string result = await _webView.CoreWebView2.ExecuteScriptAsync(
-                        "document.body ? document.body.scrollHeight : 0");
+                    // For full documents (mermaid, etc.) the page script handles resize via
+                    // postMessage — measuring here would fire before async rendering finishes.
+                    if (!_pendingIsFullDocument)
+                    {
+                        string result = await _webView.CoreWebView2.ExecuteScriptAsync(
+                            "document.body ? document.body.scrollHeight : 0");
 
-                    if (double.TryParse(result, out double contentHeight) && contentHeight > 0)
-                        Height = Math.Min(contentHeight + 20, MaxContentHeight);
+                        if (double.TryParse(result, out double contentHeight) && contentHeight > 0)
+                            Height = Math.Min(contentHeight + 20, MaxContentHeight);
+                    }
 
                     // Inject overflow-aware wheel forwarding: only forward to notebook
                     // when the WebView content can't scroll further in that direction.
@@ -299,6 +304,26 @@ namespace PolyglotNotebooks.Editor
             return fallback;
         }
 
+        /// <summary>
+        /// Returns the VS theme background as a <see cref="System.Drawing.Color"/> for
+        /// <see cref="WebView2CompositionControl.DefaultBackgroundColor"/>, which prevents
+        /// a white flash while the WebView2 content is loading.
+        /// </summary>
+        private static System.Drawing.Color GetThemeBackgroundColor()
+        {
+            try
+            {
+                var brush = Application.Current?.TryFindResource(VsBrushes.ToolWindowBackgroundKey) as SolidColorBrush;
+                if (brush != null)
+                {
+                    var c = brush.Color;
+                    return System.Drawing.Color.FromArgb(c.A, c.R, c.G, c.B);
+                }
+            }
+            catch { }
+            return System.Drawing.Color.FromArgb(255, 30, 30, 30);
+        }
+
         // -----------------------------------------------------------------------
         // Mermaid HTML construction
         // -----------------------------------------------------------------------
@@ -308,27 +333,48 @@ namespace PolyglotNotebooks.Editor
             string bg = GetCssColor(VsBrushes.ToolWindowBackgroundKey, "#1e1e1e");
             string fg = GetCssColor(VsBrushes.ToolWindowTextKey, "#d4d4d4");
             bool isDark = IsDarkBackground();
-            string mermaidTheme = isDark ? "dark" : "default";
             string errorColor = isDark ? "#f48771" : "#d32f2f";
             string escapedContent = WebUtility.HtmlEncode(mermaidCode);
 
+            // Use 'base' theme for full control via themeVariables — the 'dark' and
+            // 'default' themes override our colours with their own hard-coded palette.
             string themeVarsJs = isDark
-                ? $@",
-        themeVariables: {{
+                ? $@"themeVariables: {{
             primaryColor: '#2d2d2d',
             primaryTextColor: '{fg}',
-            primaryBorderColor: '#555',
-            lineColor: '#888',
-            secondaryColor: '#252525',
-            tertiaryColor: '#333'
+            primaryBorderColor: '#555555',
+            lineColor: '#888888',
+            secondaryColor: '#252526',
+            tertiaryColor: '#333333',
+            mainBkg: '#2d2d2d',
+            nodeBorder: '#555555',
+            clusterBkg: '#252526',
+            clusterBorder: '#555555',
+            titleColor: '{fg}',
+            edgeLabelBackground: '{bg}',
+            nodeTextColor: '{fg}'
         }}"
-                : "";
+                : $@"themeVariables: {{
+            primaryColor: '#e8e8e8',
+            primaryTextColor: '#1e1e1e',
+            primaryBorderColor: '#c8c8c8',
+            lineColor: '#666666',
+            secondaryColor: '#f0f0f0',
+            tertiaryColor: '#fafafa',
+            mainBkg: '#e8e8e8',
+            nodeBorder: '#c8c8c8',
+            clusterBkg: '#f5f5f5',
+            clusterBorder: '#c8c8c8',
+            titleColor: '#1e1e1e',
+            edgeLabelBackground: '{bg}',
+            nodeTextColor: '#1e1e1e'
+        }}";
 
             return $@"<!DOCTYPE html>
 <html><head><meta charset='utf-8'>
-<script src=""https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js""></script>
+<script src=""https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js""></script>
 <style>
-  body {{ margin: 0; padding: 8px; background: {bg}; color: {fg}; }}
+  html, body {{ margin: 0; padding: 8px; background: {bg}; color: {fg}; overflow: hidden; }}
   .mermaid-output {{ text-align: center; }}
   .mermaid-error {{
     font-family: Consolas, 'Courier New', monospace;
@@ -348,7 +394,6 @@ namespace PolyglotNotebooks.Editor
     white-space: pre-wrap;
     opacity: 0.7;
   }}
-  .mermaid-output svg {{ background: transparent !important; }}
 </style>
 </head><body>
 <pre id=""mermaid-source"" style=""display:none"">{escapedContent}</pre>
@@ -356,9 +401,17 @@ namespace PolyglotNotebooks.Editor
 <script>
   mermaid.initialize({{
     startOnLoad: false,
-    theme: '{mermaidTheme}',
-    securityLevel: 'strict'{themeVarsJs}
+    theme: 'base',
+    securityLevel: 'loose',
+    {themeVarsJs}
   }});
+
+  function notifyHeight() {{
+    var h = document.body.scrollHeight;
+    if (h > 0) {{
+      window.chrome.webview.postMessage(JSON.stringify({{ type: 'resize', height: h }}));
+    }}
+  }}
 
   (async function() {{
     var source = document.getElementById('mermaid-source').textContent;
@@ -366,14 +419,19 @@ namespace PolyglotNotebooks.Editor
     try {{
       var result = await mermaid.render('mermaid-svg', source);
       container.innerHTML = result.svg;
-      await new Promise(r => setTimeout(r, 100));
-      window.chrome.webview.postMessage(JSON.stringify({{ type: 'resize', height: document.body.scrollHeight }}));
+      // Multiple resize notifications — mermaid SVG layout settles asynchronously
+      notifyHeight();
+      await new Promise(r => setTimeout(r, 200));
+      notifyHeight();
+      await new Promise(r => setTimeout(r, 500));
+      notifyHeight();
     }} catch (err) {{
       var safeMsg = (err.message || String(err)).replace(/</g, '&lt;').replace(/>/g, '&gt;');
       var safeSource = source.replace(/</g, '&lt;').replace(/>/g, '&gt;');
       container.innerHTML =
         '<div class=""mermaid-error"">\u26a0 Mermaid rendering error: ' + safeMsg + '</div>' +
         '<div class=""mermaid-source"">' + safeSource + '</div>';
+      notifyHeight();
     }}
   }})();
 </script>

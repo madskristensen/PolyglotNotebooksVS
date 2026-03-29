@@ -22,7 +22,8 @@ namespace PolyglotNotebooks.Editor
                 ["kql"] = "plaintext",
                 ["html"] = "HTML",
                 ["markdown"] = "markdown",
-                ["mermaid"] = "markdown"
+                ["mermaid"] = "markdown",
+                ["http"] = "Rest"
             };
 
         private static readonly Dictionary<string, string> _extensionMap =
@@ -38,7 +39,8 @@ namespace PolyglotNotebooks.Editor
                 ["kql"] = ".kql",
                 ["html"] = ".html",
                 ["markdown"] = ".md",
-                ["mermaid"] = ".md"
+                ["mermaid"] = ".md",
+                ["http"] = ".http"
             };
 
         /// <summary>

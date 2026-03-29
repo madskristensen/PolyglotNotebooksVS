@@ -79,7 +79,14 @@ namespace PolyglotNotebooks.Protocol
         {
             _process = process ?? throw new ArgumentNullException(nameof(process));
 
-            CommandTimeoutMs = Options.PolyglotNotebooksOptions.Instance.KernelStartupTimeoutSeconds * 1000;
+            try
+            {
+                CommandTimeoutMs = Options.PolyglotNotebooksOptions.Instance.KernelStartupTimeoutSeconds * 1000;
+            }
+            catch
+            {
+                // Options unavailable outside VS (e.g. unit tests) — keep default
+            }
         }
 
         /// <summary>
