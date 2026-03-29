@@ -81,8 +81,7 @@ namespace PolyglotNotebooks.Editor
 
         private void OnOutputsChanged(object sender, NotifyCollectionChangedEventArgs e)
         {
-            // For Replace (e.g. DisplayedValueUpdated live-updating a chart), update only
-            // the affected slot to avoid destroying and re-initialising WebView2 instances.
+            // Replace: update only the affected slot (e.g. DisplayedValueUpdated).
             if (e.Action == NotifyCollectionChangedAction.Replace
                 && _outputContainer != null
                 && e.NewStartingIndex >= 0
@@ -90,11 +89,26 @@ namespace PolyglotNotebooks.Editor
                 && e.NewItems?.Count == 1)
             {
                 ReplaceOutputAt(e.NewStartingIndex, (CellOutput)e.NewItems[0]!);
+                return;
             }
-            else
+
+            // Add: append incrementally when the output container already exists.
+            if (e.Action == NotifyCollectionChangedAction.Add
+                && _outputContainer != null
+                && _isExpanded
+                && e.NewItems != null)
             {
-                Rebuild();
+                foreach (CellOutput output in e.NewItems)
+                    _outputContainer.Children.Add(RenderOutput(output));
+
+                // Make sure we're visible (in case the first output was added after
+                // a previous clear left us collapsed).
+                Visibility = Visibility.Visible;
+                return;
             }
+
+            // Everything else (Remove, Reset, or first Add when container is null): full rebuild.
+            Rebuild();
         }
 
         private void ReplaceOutputAt(int index, CellOutput newOutput)

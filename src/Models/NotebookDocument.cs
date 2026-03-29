@@ -83,7 +83,6 @@ namespace PolyglotNotebooks.Models
         public NotebookCell AddCell(CellKind kind, string kernelName, int? index = null)
         {
             var cell = new NotebookCell(kind, kernelName);
-            cell.PropertyChanged += OnCellPropertyChanged;
 
             if (index.HasValue && index.Value >= 0 && index.Value <= Cells.Count)
                 Cells.Insert(index.Value, cell);
@@ -142,7 +141,6 @@ namespace PolyglotNotebooks.Models
 
         internal void AddCellInternal(NotebookCell cell)
         {
-            cell.PropertyChanged += OnCellPropertyChanged;
             Cells.Add(cell);
         }
 

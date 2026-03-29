@@ -440,8 +440,9 @@ namespace PolyglotNotebooks.Editor
                 buffer.Changed += (s, e) =>
                 {
                     if (_suppressBufferSync) return;
-                    cell.Contents = buffer.CurrentSnapshot.GetText();
-                    ParseMagicCommand(buffer.CurrentSnapshot.GetText(), cell);
+                    var text = buffer.CurrentSnapshot.GetText();
+                    cell.Contents = text;
+                    ParseMagicCommand(text, cell);
                 };
 
                 // Two-way sync: Model → Buffer (for external changes)

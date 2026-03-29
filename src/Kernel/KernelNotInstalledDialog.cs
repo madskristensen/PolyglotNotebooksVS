@@ -182,7 +182,7 @@ namespace PolyglotNotebooks.Kernel
                 CreateNoWindow = true
             };
 
-            var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
+            using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
             var stdoutBuilder = new StringBuilder();
             var stderrBuilder = new StringBuilder();
             var tcs = new TaskCompletionSource<int>();
