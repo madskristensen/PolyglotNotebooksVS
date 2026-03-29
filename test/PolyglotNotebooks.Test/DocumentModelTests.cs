@@ -660,7 +660,9 @@ namespace PolyglotNotebooks.Test
 
             // Should not throw even when document isn't tracked
             var task = manager.CloseAsync(@"C:\test\notebook.dib");
+#pragma warning disable VSTHRD002 // Sync wait is acceptable in unit tests
             task.Wait();
+#pragma warning restore VSTHRD002
         }
 
         [TestMethod]
@@ -715,7 +717,9 @@ namespace PolyglotNotebooks.Test
 
             // CloseAsync on a path not tracked should be a no-op — no event
             var task = manager.CloseAsync(@"C:\test\not-tracked.dib");
+#pragma warning disable VSTHRD002 // Sync wait is acceptable in unit tests
             task.Wait();
+#pragma warning restore VSTHRD002
             Assert.IsNull(closedPath, "No close event for untracked document");
         }
     }

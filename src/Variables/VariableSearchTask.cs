@@ -26,7 +26,7 @@ namespace PolyglotNotebooks.Variables
         {
             ErrorCode = VSConstants.S_OK;
 
-            string searchText = SearchQuery?.SearchString?.Trim();
+            string? searchText = SearchQuery?.SearchString?.Trim();
 
             if (string.IsNullOrEmpty(searchText))
             {
@@ -37,7 +37,7 @@ namespace PolyglotNotebooks.Variables
                 ThreadHelper.JoinableTaskFactory.Run(async () =>
                 {
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                    _pane.ApplyFilter(searchText);
+                    _pane.ApplyFilter(searchText!);
                 });
 
                 SearchResults = 1;

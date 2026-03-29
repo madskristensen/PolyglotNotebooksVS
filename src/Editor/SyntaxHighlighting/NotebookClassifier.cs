@@ -1,3 +1,4 @@
+using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Classification;
 
@@ -24,10 +25,10 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
         private readonly IClassificationType _comment;
         private readonly IClassificationType _number;
         private readonly IClassificationType _typeName;
-        private LanguagePattern _language;
+        private LanguagePattern? _language;
         private readonly SynchronizationContext? _syncContext;
 
-        public event EventHandler<ClassificationChangedEventArgs> ClassificationChanged;
+        public event EventHandler<ClassificationChangedEventArgs> ClassificationChanged = delegate { };
 
         internal NotebookClassifier(ITextBuffer buffer, IClassificationTypeRegistryService registry)
         {
@@ -96,7 +97,13 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
             var args = new ClassificationChangedEventArgs(span);
             if (_syncContext != null && SynchronizationContext.Current != _syncContext)
             {
-                _syncContext.Post(_ => handler(this, args), null);
+#pragma warning disable VSSDK007 // Intentional fire-and-forget
+                _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+                {
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    handler(this, args);
+                });
+#pragma warning restore VSSDK007
             }
             else
             {
@@ -156,7 +163,7 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
             return result;
         }
 
-        private IClassificationType Classify(Match m)
+        private IClassificationType? Classify(Match m)
         {
             if (m.Groups["comment"].Success) return _comment;
             if (m.Groups["string"].Success) return _string;
@@ -197,7 +204,7 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
 
         private LanguagePattern(Regex pattern) => Pattern = pattern;
 
-        public static LanguagePattern Get(string kernelName)
+        public static LanguagePattern? Get(string kernelName)
         {
             if (string.IsNullOrEmpty(kernelName)) return null;
             _registry.TryGetValue(kernelName, out var lang);

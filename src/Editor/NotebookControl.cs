@@ -199,8 +199,9 @@ namespace PolyglotNotebooks.Editor
         /// Returns the IOleCommandTarget of the currently focused cell's IVsTextView,
         /// or null if no cell has keyboard focus or no cell uses the IVsCodeWindow path.
         /// </summary>
-        public IOleCommandTarget GetFocusedCommandTarget()
+        public IOleCommandTarget? GetFocusedCommandTarget()
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
             foreach (var child in _cellStack.Children)
             {
                 if (child is CellControl cc && cc.HasFocusedTextView())
@@ -226,7 +227,7 @@ namespace PolyglotNotebooks.Editor
         /// <summary>
         /// Returns the IWpfTextView that currently has WPF keyboard focus, or null.
         /// </summary>
-        public IWpfTextView GetFocusedTextView()
+        public IWpfTextView? GetFocusedTextView()
         {
             foreach (var child in _cellStack.Children)
             {
@@ -471,7 +472,7 @@ namespace PolyglotNotebooks.Editor
         /// </summary>
         private CellControl CreateWiredCellControl(NotebookCell cell)
         {
-            var cellControl = new CellControl(_document, cell);
+            var cellControl = new CellControl(_document!, cell);
 
             cellControl.RunRequested      += (s, e) => CellRunRequested?.Invoke(this, new CellRunEventArgs(cell));
             cellControl.RunAboveRequested += (s, e) => RunCellAboveRequested?.Invoke(this, new CellRunEventArgs(cell));

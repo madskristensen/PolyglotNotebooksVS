@@ -417,7 +417,9 @@ namespace PolyglotNotebooks.Test
         [TestMethod]
         public void ProcessManager_MaxRestartAttempts_IsThree()
         {
-            Assert.AreEqual(3, KernelProcessManager.MaxRestartAttempts);
+#pragma warning disable MSTEST0032 // Intentionally verifying const value hasn't changed
+            Assert.AreEqual(3, (object)KernelProcessManager.MaxRestartAttempts);
+#pragma warning restore MSTEST0032
         }
 
         [TestMethod]

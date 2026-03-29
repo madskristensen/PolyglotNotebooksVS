@@ -276,6 +276,14 @@
 - **HTML content type**: VS resolves lowercase `"html"` to `"WebForms"`, not the modern HTML editor. Changed the `_kernelContentTypeMap` entry to `"htmlx"`, which is VS's modern HTML content type. If `"htmlx"` isn't available, the existing fallback-to-`"text"` logic handles it gracefully.
 - **Root cause of "Unexpected buffer without document"**: This VS-internal error was a downstream consequence of the `ITextDocument` duplicate-key failure. With the document properly created, VS's tagger and margin controllers can now find it through the factory's registry.
 
+### Nullable Warning Fix Patterns (2026-07-22)
+- **CS8618 (MEF [Import] properties)**: Use `= null!` initializer — MEF guarantees assignment before use.
+- **CS8618 (lazy-initialized static fields)**: Make field nullable with `?` when the code already does null-checks before assignment.
+- **CS8603 (null return from VS SDK interface methods)**: If the interface predates nullable annotations and null is a valid return, make the return type nullable (`IClassifier?`). For VS-overridden methods where signature can't change, use `null!`.
+- **CS8601 (nullable-to-nonnull assignment)**: Use `?? string.Empty` or `?? default` to coalesce.
+- **CS8600 (null conversion)**: Change the local variable type to nullable (`string?`).
+- **CS8604 (null argument after null guard)**: Use `!` post-fix when control flow guarantees non-null (e.g., after `IsNullOrEmpty` check).
+
 ---
 
 ## 2026-03-28 — IWpfTextViewHost Runtime Fixes (Ellie-7)

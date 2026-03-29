@@ -43,7 +43,7 @@ namespace PolyglotNotebooks.Test
         [DataRow("md", "markdown")]
         [DataRow("mycustomkernel", "mycustomkernel")]
         public void MapKernelName_ReturnsExpectedResult(string? input, string expected)
-            => Assert.AreEqual(expected, CellExecutionEngine.MapKernelName(input));
+            => Assert.AreEqual(expected, CellExecutionEngine.MapKernelName(input!));
 
         // ── IsTerminalEvent ───────────────────────────────────────────────────
 

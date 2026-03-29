@@ -313,3 +313,18 @@
 **Status**: COMPLETE ✅ — All three fixes applied, builds passing
 
 **Team Coordination**: Part of perf-reliability-round3 with Ellie (UI optimization). Documented decision: Reliability Fix Patterns for Resource Leaks & JTF Compliance. All fixes follow established patterns now applied squad-wide.
+
+---
+
+## Learnings
+
+### Warning Fix Patterns (Build Warning Audit)
+
+- **CS8603 (possible null return)**: Make return type nullable (e.g., `IWpfTextView?`) when the method legitimately returns null. Use `!` (null-forgiving) only when the value is guaranteed non-null at runtime (e.g., `registry.GetContentType("text")` always exists in VS).
+- **CS8618 (non-nullable field uninitialized)**: Use `= null!` for fields set immediately after construction (e.g., WPF controls assigned in constructor body). Use `= delegate { }` for events required by interfaces.
+- **CS8600/CS8601/CS8604 (null assignments/arguments)**: Make parameter types nullable when null is a valid input (e.g., `KernelInstallationDetector?`). Use `?? throw` for values that must not be null at runtime.
+- **CS8602 (null dereference)**: Add `?? throw new InvalidOperationException(...)` when the API contract guarantees non-null but the type system doesn't.
+- **VSTHRD010 (main thread access)**: Add `ThreadHelper.ThrowIfNotOnUIThread()` at method entry for COM interface methods (IOleCommandTarget, IObjectWithSite, IServiceProvider) and WPF constructors that call VS services.
+- **VSTHRD001 (use SwitchToMainThreadAsync)**: Replace `Dispatcher.BeginInvoke` with `ThreadHelper.JoinableTaskFactory.RunAsync` + `SwitchToMainThreadAsync`. For deferred focus, use `await Task.Yield()` to achieve the same deferral effect.
+- **VSSDK007 (await/join RunAsync)**: The `FileAndForget()` extension from `Microsoft.VisualStudio.Threading` does NOT suppress VSSDK007 in this project's analyzer version. Use `#pragma warning disable VSSDK007` around intentional fire-and-forget `RunAsync` calls.
+- **CS1998 (async without await)**: Remove `async` keyword and return `Task.FromResult(value)` when the method body is synchronous.

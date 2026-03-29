@@ -6,6 +6,7 @@ using Community.VisualStudio.Toolkit;
 using Microsoft.VisualStudio.Imaging;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
+using Microsoft.VisualStudio.Threading;
 using PolyglotNotebooks.Diagnostics;
 
 namespace PolyglotNotebooks.Kernel
@@ -32,19 +33,22 @@ namespace PolyglotNotebooks.Kernel
         /// May be <c>null</c> if cache invalidation is not needed.
         /// </param>
         /// <returns>Always <c>false</c>; the InfoBar handles install asynchronously.</returns>
-        public static async Task<bool> ShowAsync(KernelInstallationDetector detector = null)
+        public static Task<bool> ShowAsync(KernelInstallationDetector? detector = null)
         {
             ExtensionLogger.LogWarning(nameof(KernelNotInstalledDialog),
                 "dotnet-interactive is not installed; showing InfoBar.");
 
             // Fire and forget — create the InfoBar on the UI thread without blocking the caller.
+#pragma warning disable VSSDK007 // Intentional fire-and-forget
             ThreadHelper.JoinableTaskFactory.RunAsync(
-                async () => await ShowInfoBarAsync(detector).ConfigureAwait(false));
+                async () => await ShowInfoBarAsync(detector).ConfigureAwait(false))
+                .FileAndForget(nameof(KernelNotInstalledDialog));
+#pragma warning restore VSSDK007
 
-            return false;
+            return Task.FromResult(false);
         }
 
-        private static async Task ShowInfoBarAsync(KernelInstallationDetector detector)
+        private static async Task ShowInfoBarAsync(KernelInstallationDetector? detector)
         {
             try
             {
@@ -76,7 +80,7 @@ namespace PolyglotNotebooks.Kernel
 
         private static void OnInfoBarActionClicked(
             IVsInfoBarActionItem actionItem,
-            KernelInstallationDetector detector,
+            KernelInstallationDetector? detector,
             InfoBar infoBar)
         {
             infoBar.Close();
@@ -84,8 +88,11 @@ namespace PolyglotNotebooks.Kernel
             var context = actionItem?.ActionContext as string;
             if (context == "install")
             {
+#pragma warning disable VSSDK007 // Intentional fire-and-forget
                 ThreadHelper.JoinableTaskFactory.RunAsync(
-                    async () => await RunInstallAsync(detector).ConfigureAwait(false));
+                    async () => await RunInstallAsync(detector).ConfigureAwait(false))
+                    .FileAndForget(nameof(KernelNotInstalledDialog));
+#pragma warning restore VSSDK007
             }
             else if (context == "docs")
             {
@@ -93,7 +100,7 @@ namespace PolyglotNotebooks.Kernel
             }
         }
 
-        private static async Task<bool> RunInstallAsync(KernelInstallationDetector detector)
+        private static async Task<bool> RunInstallAsync(KernelInstallationDetector? detector)
         {
             await SetStatusBarTextAsync("Installing dotnet-interactive…").ConfigureAwait(false);
 

@@ -542,7 +542,7 @@ namespace PolyglotNotebooks.Editor
             return result.ToArray();
         }
 
-        private static ScrollViewer FindParentScrollViewer(DependencyObject child)
+        private static ScrollViewer? FindParentScrollViewer(DependencyObject child)
         {
             var parent = VisualTreeHelper.GetParent(child);
             while (parent != null)

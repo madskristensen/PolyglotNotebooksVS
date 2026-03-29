@@ -57,7 +57,7 @@ namespace PolyglotNotebooks.Variables
             public override IVsSearchTask CreateSearch(uint dwCookie, IVsSearchQuery pSearchQuery, IVsSearchCallback pSearchCallback)
             {
                 if (pSearchQuery == null || pSearchCallback == null)
-                    return null;
+                    return null!;
 
                 return new VariableSearchTask(dwCookie, pSearchQuery, pSearchCallback, this);
             }

@@ -1,5 +1,6 @@
 using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.OLE.Interop;
+using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 
 using PolyglotNotebooks.Diagnostics;
@@ -338,6 +339,7 @@ namespace PolyglotNotebooks.Editor
 
         int IOleCommandTarget.Exec(ref Guid pguidCmdGroup, uint nCmdID, uint nCmdexecopt, IntPtr pvaIn, IntPtr pvaOut)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
             if (_control != null)
             {
                 // Use HasFocusedTextView (checks IWpfTextView.HasAggregateFocus)
@@ -351,6 +353,7 @@ namespace PolyglotNotebooks.Editor
 
         int IOleCommandTarget.QueryStatus(ref Guid pguidCmdGroup, uint cCmds, OLECMD[] prgCmds, IntPtr pCmdText)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
             if (_control != null)
             {
                 var cmdTarget = _control.GetFocusedCommandTarget();
@@ -371,6 +374,7 @@ namespace PolyglotNotebooks.Editor
         /// </summary>
         protected override bool PreProcessMessage(ref System.Windows.Forms.Message m)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
             // WM_KEYDOWN (0x100) through WM_UNICHAR (0x109)
             if (m.Msg >= 0x0100 && m.Msg <= 0x0109)
             {

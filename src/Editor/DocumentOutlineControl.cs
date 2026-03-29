@@ -2,6 +2,7 @@ using Microsoft.VisualStudio.Imaging;
 using Microsoft.VisualStudio.Imaging.Interop;
 using Microsoft.VisualStudio.PlatformUI;
 using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.Threading;
 
 using PolyglotNotebooks.Models;
 
@@ -113,11 +114,13 @@ namespace PolyglotNotebooks.Editor
 
         private void OnThemeChanged(ThemeChangedEventArgs e)
         {
-            _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+#pragma warning disable VSSDK007 // Intentional fire-and-forget
+            ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 UpdateImageThemeColors();
-            });
+            }).FileAndForget(nameof(DocumentOutlineControl));
+#pragma warning restore VSSDK007
         }
 
         // ── Item creation ────────────────────────────────────────────────────────
@@ -129,7 +132,7 @@ namespace PolyglotNotebooks.Editor
 
             _treeView.Items.Clear();
 
-            CellOutlineItem currentMarkdownParent = null;
+            CellOutlineItem? currentMarkdownParent = null;
 
             foreach (var cell in _document.Cells)
             {

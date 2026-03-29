@@ -299,12 +299,14 @@ namespace PolyglotNotebooks.Test
         [TestMethod]
         public void CommandTypes_Constants_MatchExpectedWireNames()
         {
-            Assert.AreEqual("SubmitCode", CommandTypes.SubmitCode);
-            Assert.AreEqual("RequestCompletions", CommandTypes.RequestCompletions);
-            Assert.AreEqual("RequestHoverText", CommandTypes.RequestHoverText);
-            Assert.AreEqual("RequestDiagnostics", CommandTypes.RequestDiagnostics);
-            Assert.AreEqual("RequestKernelInfo", CommandTypes.RequestKernelInfo);
-            Assert.AreEqual("Cancel", CommandTypes.CancelCommand);
+#pragma warning disable MSTEST0032 // Intentionally verifying const wire-name values haven't changed
+            Assert.AreEqual("SubmitCode", (object)CommandTypes.SubmitCode);
+            Assert.AreEqual("RequestCompletions", (object)CommandTypes.RequestCompletions);
+            Assert.AreEqual("RequestHoverText", (object)CommandTypes.RequestHoverText);
+            Assert.AreEqual("RequestDiagnostics", (object)CommandTypes.RequestDiagnostics);
+            Assert.AreEqual("RequestKernelInfo", (object)CommandTypes.RequestKernelInfo);
+            Assert.AreEqual("Cancel", (object)CommandTypes.CancelCommand);
+#pragma warning restore MSTEST0032
         }
 
         [TestMethod]
@@ -427,12 +429,14 @@ namespace PolyglotNotebooks.Test
         [TestMethod]
         public void KernelEventTypes_Constants_MatchExpectedWireNames()
         {
-            Assert.AreEqual("KernelReady", KernelEventTypes.KernelReady);
-            Assert.AreEqual("CommandSucceeded", KernelEventTypes.CommandSucceeded);
-            Assert.AreEqual("CommandFailed", KernelEventTypes.CommandFailed);
-            Assert.AreEqual("CompletionsProduced", KernelEventTypes.CompletionsProduced);
-            Assert.AreEqual("StandardOutputValueProduced", KernelEventTypes.StandardOutputValueProduced);
-            Assert.AreEqual("StandardErrorValueProduced", KernelEventTypes.StandardErrorValueProduced);
+#pragma warning disable MSTEST0032 // Intentionally verifying const wire-name values haven't changed
+            Assert.AreEqual("KernelReady", (object)KernelEventTypes.KernelReady);
+            Assert.AreEqual("CommandSucceeded", (object)KernelEventTypes.CommandSucceeded);
+            Assert.AreEqual("CommandFailed", (object)KernelEventTypes.CommandFailed);
+            Assert.AreEqual("CompletionsProduced", (object)KernelEventTypes.CompletionsProduced);
+            Assert.AreEqual("StandardOutputValueProduced", (object)KernelEventTypes.StandardOutputValueProduced);
+            Assert.AreEqual("StandardErrorValueProduced", (object)KernelEventTypes.StandardErrorValueProduced);
+#pragma warning restore MSTEST0032
         }
 
         [TestMethod]

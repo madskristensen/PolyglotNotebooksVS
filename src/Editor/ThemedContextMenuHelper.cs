@@ -15,9 +15,9 @@ namespace PolyglotNotebooks.Editor
     /// </summary>
     internal static class ThemedContextMenuHelper
     {
-        private static Style _contextMenuStyle;
-        private static Style _menuItemStyle;
-        private static Style _separatorStyle;
+        private static Style? _contextMenuStyle;
+        private static Style? _menuItemStyle;
+        private static Style? _separatorStyle;
 
         /// <summary>
         /// Applies the VS-themed style to a <see cref="ContextMenu"/> and its items.

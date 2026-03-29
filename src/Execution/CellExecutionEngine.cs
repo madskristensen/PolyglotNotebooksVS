@@ -65,7 +65,7 @@ namespace PolyglotNotebooks.Execution
                 var code = cell.Contents?.TrimStart('\uFEFF');
                 var envelope = KernelCommandEnvelope.Create(CommandTypes.SubmitCode, new SubmitCode
                 {
-                    Code = code,
+                    Code = code ?? string.Empty,
                     TargetKernelName = kernelName
                 });
 

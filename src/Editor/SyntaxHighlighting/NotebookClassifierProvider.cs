@@ -20,9 +20,9 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
     internal sealed class NotebookClassifierProvider : IClassifierProvider
     {
         [Import]
-        internal IClassificationTypeRegistryService ClassificationRegistry { get; set; }
+        internal IClassificationTypeRegistryService ClassificationRegistry { get; set; } = null!;
 
-        public IClassifier GetClassifier(ITextBuffer buffer)
+        public IClassifier? GetClassifier(ITextBuffer buffer)
         {
             if (buffer == null)
                 return null;

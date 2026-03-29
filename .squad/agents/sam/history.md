@@ -45,6 +45,12 @@
 
 ## Learnings
 
+### Test Warning Fix Patterns (2025-07)
+
+- **CS8604/CS8625 (null reference in tests)**: Use `null!` (null-forgiving operator) when test code intentionally passes null to non-nullable parameters. E.g. `Method(null!)` or `Method(input!)`.
+- **VSTHRD002 (sync wait in tests)**: Wrap `task.Wait()` with `#pragma warning disable VSTHRD002` / `#pragma warning restore VSTHRD002` with a comment explaining sync wait is acceptable in unit tests.
+- **MSTEST0032 (assertion always true for const values)**: `(object)` cast alone does NOT suppress MSTEST0032 — the analyzer sees through it. Must use `#pragma warning disable MSTEST0032` / `#pragma warning restore MSTEST0032`. These tests intentionally verify const wire-name values haven't drifted.
+
 ### .ipynb Format Support (p4-ipynb)
 
 **What was already in place**:

@@ -80,7 +80,7 @@ namespace PolyglotNotebooks.Test
         [TestMethod]
         public void NormalizeKernelName_NullInput_ReturnsNull()
         {
-            var result = NotebookParser.NormalizeKernelName(null);
+            var result = NotebookParser.NormalizeKernelName(null!);
 
             Assert.IsNull(result);
         }

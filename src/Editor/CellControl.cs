@@ -1,5 +1,6 @@
 using Microsoft.VisualStudio.ComponentModelHost;
 using Microsoft.VisualStudio.Editor;
+using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Text;
 using Microsoft.VisualStudio.Text.Editor;
@@ -17,6 +18,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -53,7 +55,7 @@ namespace PolyglotNotebooks.Editor
             new Regex(@"\*\*(.+?)\*\*|__(.+?)__|`(.+?)`|\*(.+?)\*|_([^_\s](?:[^_]*[^_\s])?)_", RegexOptions.Compiled);
 
         // Markdown cell state
-        private StackPanel _markdownDisplay;
+        private StackPanel _markdownDisplay = null!;
         private bool _isMarkdownEditing;
         private Grid _contentGrid;
 
@@ -71,6 +73,7 @@ namespace PolyglotNotebooks.Editor
 
         public CellControl(NotebookDocument document, NotebookCell cell)
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
             _cell = cell;
 
             // Outer card border
@@ -174,7 +177,7 @@ namespace PolyglotNotebooks.Editor
         /// <summary>
         /// Returns the hosted IWpfTextView if it currently has keyboard focus, otherwise null.
         /// </summary>
-        internal IWpfTextView GetFocusedIWpfTextView()
+        internal IWpfTextView? GetFocusedIWpfTextView()
         {
             if (_textViewHost?.TextView != null
                 && (_textViewHost.TextView.VisualElement?.IsKeyboardFocusWithin == true
@@ -238,7 +241,8 @@ namespace PolyglotNotebooks.Editor
                 }
 
                 // Get the MEF ITextBuffer for event subscription and content type changes
-                var buffer = editorAdapterFactory.GetDataBuffer((IVsTextBuffer)bufferAdapter);
+                var buffer = editorAdapterFactory.GetDataBuffer((IVsTextBuffer)bufferAdapter)
+                    ?? throw new InvalidOperationException("Failed to get MEF ITextBuffer from VS buffer adapter.");
 
                 // Mark buffer as a notebook cell so the MEF classifier engages
                 if (!buffer.Properties.ContainsProperty("PolyglotNotebook.KernelName"))
@@ -344,7 +348,8 @@ namespace PolyglotNotebooks.Editor
                     codeWindow.GetPrimaryView(out vsTextView));
 
                 // Get the WPF host from the VS text view
-                var textViewHost = editorAdapterFactory.GetWpfTextViewHost(vsTextView);
+                var textViewHost = editorAdapterFactory.GetWpfTextViewHost(vsTextView)
+                    ?? throw new InvalidOperationException("Failed to get WPF text view host from VS text view.");
                 var textView = textViewHost.TextView;
 
                 // Configure editor display options — keep cells compact
@@ -498,7 +503,7 @@ namespace PolyglotNotebooks.Editor
                         // Update the cached classifier's language pattern
                         if (buffer.Properties.TryGetProperty(typeof(NotebookClassifier), out NotebookClassifier classifier))
                         {
-                            classifier.UpdateLanguage(cell.KernelName);
+                            classifier.UpdateLanguage(cell.KernelName ?? "text");
                         }
 
                         var newContentType = ResolveContentType(contentTypeRegistry, cell.KernelName);
@@ -508,8 +513,10 @@ namespace PolyglotNotebooks.Editor
 
                             // Content type changes can cause VS to rebuild margin containers,
                             // re-showing previously collapsed margins. Re-hide them.
-                            hostControl.Dispatcher.BeginInvoke(new Action(() =>
+#pragma warning disable VSSDK007 // Intentional fire-and-forget
+                            _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
                             {
+                                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                                 var bm = textViewHost.GetTextViewMargin("bottom") as IWpfTextViewMargin;
                                 if (bm?.VisualElement != null)
                                     bm.VisualElement.Visibility = Visibility.Collapsed;
@@ -519,7 +526,8 @@ namespace PolyglotNotebooks.Editor
                                     lm.VisualElement.Visibility = Visibility.Collapsed;
 
                                 CollapseSuggestionMargins(textViewHost);
-                            }), System.Windows.Threading.DispatcherPriority.Render);
+                            });
+#pragma warning restore VSSDK007
                         }
                     }
                 };
@@ -606,7 +614,7 @@ namespace PolyglotNotebooks.Editor
             var fallback = registry.GetContentType("text") ?? registry.GetContentType("plaintext");
             ExtensionLogger.LogInfo(nameof(CellControl),
                 $"Using fallback content type '{fallback?.TypeName ?? "null"}' for kernel '{kernelName ?? "null"}'");
-            return fallback;
+            return fallback!;
         }
 
         /// <summary>
@@ -623,6 +631,7 @@ namespace PolyglotNotebooks.Editor
         /// </summary>
         private static Microsoft.VisualStudio.OLE.Interop.IServiceProvider GetOleServiceProvider()
         {
+            ThreadHelper.ThrowIfNotOnUIThread();
             var objWithSite = (Microsoft.VisualStudio.OLE.Interop.IObjectWithSite)
                 Microsoft.VisualStudio.Shell.ServiceProvider.GlobalProvider;
             Guid interfaceIID = typeof(Microsoft.VisualStudio.OLE.Interop.IServiceProvider).GUID;
@@ -802,11 +811,14 @@ namespace PolyglotNotebooks.Editor
             _editor.Visibility = Visibility.Visible;
             AdjustEditorHeight(_editor);
             // Defer focus until after WPF completes the layout pass for the newly-visible editor
-            Dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Input, new Action(() =>
+#pragma warning disable VSSDK007 // Intentional fire-and-forget
+            _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
             {
+                await Task.Yield();
                 _editor.Focus();
                 _editor.CaretIndex = _editor.Text?.Length ?? 0;
-            }));
+            });
+#pragma warning restore VSSDK007
         }
 
         private void ExitMarkdownEditMode()
@@ -1054,7 +1066,7 @@ namespace PolyglotNotebooks.Editor
             ParseMagicCommand(editor.Text, cell);
         }
 
-        private static ScrollViewer FindParentScrollViewer(DependencyObject child)
+        private static ScrollViewer? FindParentScrollViewer(DependencyObject child)
         {
             var parent = VisualTreeHelper.GetParent(child);
             while (parent != null)

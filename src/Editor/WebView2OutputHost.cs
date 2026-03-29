@@ -96,6 +96,7 @@ namespace PolyglotNotebooks.Editor
 
                 _webView.CoreWebView2InitializationCompleted += OnWebViewInitialized;
 
+#pragma warning disable VSSDK007 // Intentional fire-and-forget
                 ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
                 {
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
@@ -114,6 +115,7 @@ namespace PolyglotNotebooks.Editor
                         _initFailed = true;
                     }
                 }).FileAndForget(nameof(WebView2OutputHost));
+#pragma warning restore VSSDK007
             }
             catch
             {
@@ -156,6 +158,7 @@ namespace PolyglotNotebooks.Editor
 
         private void OnNavigationCompleted(object sender, CoreWebView2NavigationCompletedEventArgs e)
         {
+#pragma warning disable VSSDK007 // Intentional fire-and-forget
             ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
@@ -196,6 +199,7 @@ namespace PolyglotNotebooks.Editor
                 }
                 catch { /* non-critical — default height remains */ }
             }).FileAndForget(nameof(WebView2OutputHost));
+#pragma warning restore VSSDK007
         }
 
         private void OnWebMessageReceived(object sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -208,7 +212,7 @@ namespace PolyglotNotebooks.Editor
                 using var doc = JsonDocument.Parse(json);
                 if (doc.RootElement.TryGetProperty("type", out var typeEl))
                 {
-                    string msgType = typeEl.GetString();
+                    string? msgType = typeEl.GetString();
                     if (msgType == "scroll"
                         && doc.RootElement.TryGetProperty("deltaY", out var deltaEl))
                     {
@@ -498,7 +502,7 @@ namespace PolyglotNotebooks.Editor
                 || trimmed.StartsWith("<html", StringComparison.OrdinalIgnoreCase);
         }
 
-        private static ScrollViewer FindParentScrollViewer(DependencyObject child)
+        private static ScrollViewer? FindParentScrollViewer(DependencyObject child)
         {
             var parent = VisualTreeHelper.GetParent(child);
             while (parent != null)
