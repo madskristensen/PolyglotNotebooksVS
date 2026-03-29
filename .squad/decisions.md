@@ -1464,3 +1464,29 @@ This ensures that when the REST extension's ContentTypeChanged handler fires, a 
 - All non-Rest content types (C#, F#, PowerShell, HTML, JS, SQL, etc.) continue to use the original direct-assignment flow — no behavior change for them.
 - If future language services exhibit the same issue (needing ITextDocument during ContentTypeChanged), the same deferred pattern should be applied by adding their content type name to the isDeferredContentType check in BuildCodeCellContent.
 - The fix is in src/Editor/CellControl.cs, method BuildCodeCellContent.
+
+---
+
+## Decision 13: Filter Save Commands from IOleCommandTarget Forwarding
+
+**Date**: 2026-03-29
+**Author**: Ellie (Editor Extension Specialist)
+**Status**: IMPLEMENTED
+
+### Context
+
+Opening a .dib file and pressing Ctrl+S did nothing — the file was not saved to disk. Additionally, when closing an unsaved notebook, clicking "Yes" on the save prompt threw an error dialog.
+
+### Problem
+
+`NotebookEditorPane.IOleCommandTarget.Exec` forwarded ALL commands to the focused cell's embedded `IVsCodeWindow` command target. This included `File.Save` and `File.SaveAs`. The embedded text view handled Save by writing the buffer contents to its fake file path (e.g., a temp `.cs` file for Roslyn), not the notebook's `.dib` file. Since the command was "handled" (S_OK returned), VS never called `IVsPersistDocData.SaveDocData()`, which is the correct save path for the notebook.
+
+### Decision
+
+Intercept `VSStd97CmdID.Save`, `VSStd97CmdID.SaveAs`, and `VSStd97CmdID.SaveProjectItem` in both `IOleCommandTarget.Exec` and `IOleCommandTarget.QueryStatus`. Return `OLECMDERR_E_NOTSUPPORTED` for these commands so VS falls through to its standard save mechanism (`IVsPersistDocData.SaveDocData()`), which correctly serializes all cells and writes the notebook to disk.
+
+### Implications
+
+- All team members should be aware that when hosting embedded IVsCodeWindow instances in a custom editor pane, document-level commands (Save, SaveAs, Close) must be filtered before forwarding to the embedded views. The embedded views have their own `ITextDocument` persistence that conflicts with the pane's `IVsPersistDocData`.
+- If future commands need similar treatment (e.g., Undo/Redo at the document level), add them to the same filter block in `IOleCommandTarget.Exec/QueryStatus`.
+- The save pipeline is: `SaveDocData()` → `NotebookDocument.Save()` → `NotebookParser.Save()` → `File.WriteAllText()`. All cells are serialized from `NotebookCell.Contents` which is kept in sync with the text buffer via the two-way binding in `CellControl`.

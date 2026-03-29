@@ -1023,3 +1023,15 @@ PolyglotNotebooksPackage.InitializeAsync() now calls VariableExplorerToolWindow.
 **Pattern**: Any VS language service that inspects `ITextDocument.FilePath` during `ContentTypeChanged` can hit this same issue. The deferred content type pattern (create with neutral type → attach doc → switch to real type) is the general solution.
 
 **Key files**: `src/Editor/CellControl.cs` (BuildCodeCellContent method), `src/Editor/KernelLanguageMap.cs` (kernel "http" → content type "Rest").
+
+## Learnings — IOleCommandTarget Save Command Interception (2026-07-25)
+
+**Bug**: Ctrl+S on a .dib notebook did nothing, and the save-on-close prompt threw an error dialog.
+
+**Root cause**: IOleCommandTarget.Exec in NotebookEditorPane forwarded ALL commands (including File.Save, File.SaveAs) to the focused cell's embedded IVsCodeWindow command target. The text view handled Save by writing the buffer to its fake .cs/.js file path — not the notebook file. Since the command was "handled" (returned S_OK), VS never called IVsPersistDocData.SaveDocData().
+
+**Fix**: Intercept VSStd97CmdID.Save, VSStd97CmdID.SaveAs, and VSStd97CmdID.SaveProjectItem in both Exec and QueryStatus. Return OLECMDERR_E_NOTSUPPORTED for these commands so VS falls through to its standard save mechanism, which calls SaveDocData() → NotebookDocument.Save() → NotebookParser.Save() → File.WriteAllText().
+
+**Pattern**: When a custom editor pane hosts embedded IVsCodeWindow instances and delegates commands to them, always filter out document-level commands (Save, SaveAs, Close, Undo/Redo at doc level) before forwarding. The embedded views have their own document persistence (ITextDocument with fake paths), which conflicts with the pane's IVsPersistDocData.
+
+**Key file**: src/Editor/NotebookEditorPane.cs (IOleCommandTarget.Exec, IOleCommandTarget.QueryStatus)
