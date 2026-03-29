@@ -54,7 +54,7 @@ namespace PolyglotNotebooks.Execution
 
                 // ── 2. Build the SubmitCode command envelope ──────────────────
                 var kernelName = MapKernelName(cell.KernelName);
-                var code = cell.Contents;
+                var code = cell.Contents?.TrimStart('\uFEFF');
                 var envelope = KernelCommandEnvelope.Create(CommandTypes.SubmitCode, new SubmitCode
                 {
                     Code = code,

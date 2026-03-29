@@ -1,0 +1,66 @@
+#!meta
+{"kernelInfo":{"defaultKernelName":"csharp","items":[{"name":"csharp"},{"name":"fsharp"},{"name":"pwsh"},{"name":"html"},{"name":"javascript"}]}}
+
+#!markdown
+# Kitchen Sink Test
+
+Exercises every supported kernel. Use **Run All** to test them in sequence.
+
+## C# — Basic
+
+#!csharp
+var greeting = "Hello from C#!";
+Console.WriteLine(greeting);
+Console.WriteLine($"DateTime: {DateTime.Now}");
+Enumerable.Range(1, 5).Select(i => i * i).ToList().ForEach(Console.WriteLine);
+
+#!markdown
+## F#
+
+#!fsharp
+let squares = [1..5] |> List.map (fun x -> x * x)
+printfn "Squares: %A" squares
+printfn "Hello from F#! %s" (System.DateTime.Now.ToString())
+
+#!markdown
+## PowerShell
+
+#!pwsh
+Write-Host "Hello from PowerShell!"
+Get-Process | Sort-Object CPU -Descending | Select-Object -First 5 Name, CPU, Id
+
+#!markdown
+## HTML
+
+#!html
+<h2 style="color: dodgerblue;">Hello from HTML!</h2>
+<ul>
+  <li>Item 1</li>
+  <li>Item 2</li>
+</ul>
+
+#!markdown
+## JavaScript
+
+#!javascript
+console.log("Hello from JavaScript!");
+let nums = [1,2,3,4,5];
+console.log("Sum:", nums.reduce((a,b) => a+b, 0));
+
+#!markdown
+## NuGet Directive (C#)
+
+#!csharp
+#r "nuget: Newtonsoft.Json, 13.0.3"
+using Newtonsoft.Json;
+var obj = new { Name = "Test", Value = 42 };
+Console.WriteLine(JsonConvert.SerializeObject(obj));
+
+#!markdown
+## Multi-Cell State Sharing (C#)
+
+#!csharp
+var message = "Shared across cells";
+
+#!csharp
+Console.WriteLine(message);

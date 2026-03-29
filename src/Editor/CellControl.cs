@@ -192,7 +192,7 @@ namespace PolyglotNotebooks.Editor
 
                 // Write temp file to disk so language services can find it
                 var fakePath = GetFakeFileName(cell.KernelName);
-                File.WriteAllText(fakePath, initialText, Encoding.UTF8);
+                File.WriteAllText(fakePath, initialText, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
 
                 // Create VS text buffer with the correct content type
                 var bufferAdapter = (IVsTextLines)editorAdapterFactory.CreateVsTextBufferAdapter(oleServiceProvider, contentType);
