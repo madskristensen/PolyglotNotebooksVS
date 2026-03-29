@@ -127,7 +127,18 @@ namespace PolyglotNotebooks.Editor
             set
             {
                 _intelliSenseManager = value;
-                RebuildCells();
+
+                // Attach IntelliSense to existing cells without rebuilding them.
+                // RebuildCells() would destroy and recreate every CellControl, which
+                // resets live execution timers that are already counting.
+                if (_intelliSenseManager != null)
+                {
+                    foreach (var child in _cellStack.Children)
+                    {
+                        if (child is CellControl cc && cc.Cell.Kind == CellKind.Code)
+                            _intelliSenseManager.AttachToCell(cc);
+                    }
+                }
             }
         }
 
