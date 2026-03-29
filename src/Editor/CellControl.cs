@@ -196,8 +196,19 @@ namespace PolyglotNotebooks.Editor
                 var fakePath = GetFakeFileName(cell.KernelName);
                 File.WriteAllText(fakePath, initialText, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
 
-                // Create VS text buffer with the correct content type
-                var bufferAdapter = (IVsTextLines)editorAdapterFactory.CreateVsTextBufferAdapter(oleServiceProvider, contentType);
+                // The "Rest" content type (HTTP cells) requires special ordering:
+                // VS's REST extension hooks into ContentTypeChanged and calls
+                // FindHttpEnvironmentFiles, which needs a valid ITextDocument path.
+                // If we create the buffer with "Rest" directly, that hook fires
+                // before ITextDocument exists → crash (ArgumentException: path not legal).
+                // Fix: create with "text", attach ITextDocument, then switch to "Rest".
+                bool isDeferredContentType = string.Equals(contentType.TypeName, "Rest", StringComparison.OrdinalIgnoreCase);
+                var creationContentType = isDeferredContentType
+                    ? contentTypeRegistry.GetContentType("text") ?? contentType
+                    : contentType;
+
+                // Create VS text buffer with the correct (or deferred) content type
+                var bufferAdapter = (IVsTextLines)editorAdapterFactory.CreateVsTextBufferAdapter(oleServiceProvider, creationContentType);
                 ((IVsTextBuffer)bufferAdapter).InitializeContent(initialText, initialText.Length);
 
                 // Set language service GUID for syntax coloring (C#, F#, JS, HTML, SQL)
@@ -214,8 +225,8 @@ namespace PolyglotNotebooks.Editor
                 if (!buffer.Properties.ContainsProperty("PolyglotNotebook.KernelName"))
                     buffer.Properties.AddProperty("PolyglotNotebook.KernelName", cell.KernelName ?? "text");
 
-                // Ensure the data buffer has the correct content type
-                if (buffer.ContentType.TypeName != contentType.TypeName)
+                // For non-deferred content types, ensure the data buffer matches now
+                if (!isDeferredContentType && buffer.ContentType.TypeName != contentType.TypeName)
                 {
                     ExtensionLogger.LogInfo(nameof(CellControl),
                         $"Data buffer content type mismatch: got '{buffer.ContentType.TypeName}', expected '{contentType.TypeName}'; forcing change");
@@ -246,6 +257,16 @@ namespace PolyglotNotebooks.Editor
                 {
                     ExtensionLogger.LogWarning(nameof(CellControl),
                         $"ITextDocument creation failed for kernel '{cell.KernelName}': {docEx.Message}");
+                }
+
+                // Now that ITextDocument is attached with a valid path, it's safe to
+                // switch deferred content types (e.g., "Rest") so language services
+                // that inspect the document path during ContentTypeChanged won't crash.
+                if (isDeferredContentType && buffer.ContentType.TypeName != contentType.TypeName)
+                {
+                    ExtensionLogger.LogInfo(nameof(CellControl),
+                        $"Deferred content type switch: '{buffer.ContentType.TypeName}' → '{contentType.TypeName}' for kernel '{cell.KernelName}'");
+                    buffer.ChangeContentType(contentType, null);
                 }
 
                 // Register in the Running Document Table

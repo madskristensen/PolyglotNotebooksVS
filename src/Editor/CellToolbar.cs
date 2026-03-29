@@ -131,7 +131,7 @@ namespace PolyglotNotebooks.Editor
                 Width = 14,
                 Height = 14,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 2, 0),
+                Margin = new Thickness(0, 0, 4, 0),
             };
             _timingLabel = new TextBlock
             {
@@ -527,7 +527,7 @@ namespace PolyglotNotebooks.Editor
                 case CellExecutionStatus.Succeeded:
                     _statusIndicator.Visibility = Visibility.Collapsed;
                     if (_splitRunButton != null) _splitRunButton.IsEnabled = true;
-                    _timingIcon.Moniker = KnownMonikers.StatusOK;
+                    _timingIcon.Moniker = KnownMonikers.TestCoveredPassing;
                     break;
                 case CellExecutionStatus.Failed:
                     _statusIndicator.Text = "Error";
@@ -572,7 +572,7 @@ namespace PolyglotNotebooks.Editor
                 return $"{(int)duration.TotalMinutes}m {duration.Seconds}s";
             if (duration.TotalSeconds >= 10)
                 return $"{duration.TotalSeconds:F1}s";
-            return $"{duration.TotalSeconds:F2}s";
+            return $"{duration.TotalSeconds:F1}s";
         }
 
         // ── Cell manipulation helpers ─────────────────────────────────────────

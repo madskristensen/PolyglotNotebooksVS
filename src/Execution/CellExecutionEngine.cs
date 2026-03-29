@@ -50,7 +50,8 @@ namespace PolyglotNotebooks.Execution
 
                 // ── 1. Set Running state on the UI thread ─────────────────────
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(effectiveCt);
-                cell.ExecutionStatus = CellExecutionStatus.Running;
+                if (cell.ExecutionStatus != CellExecutionStatus.Running)
+                    cell.ExecutionStatus = CellExecutionStatus.Running;
                 cell.Outputs.Clear();
                 cell.LastExecutionDuration = null;
 

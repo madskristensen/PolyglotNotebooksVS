@@ -2,6 +2,8 @@ using System;
 using System.Diagnostics;
 using System.Text;
 using System.Threading.Tasks;
+using Community.VisualStudio.Toolkit;
+using Microsoft.VisualStudio.Imaging;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using PolyglotNotebooks.Diagnostics;
@@ -9,8 +11,8 @@ using PolyglotNotebooks.Diagnostics;
 namespace PolyglotNotebooks.Kernel
 {
     /// <summary>
-    /// Displays an actionable message when dotnet-interactive is not installed.
-    /// Must be called from the VS UI context; switches to main thread internally.
+    /// Displays a non-blocking VS InfoBar when dotnet-interactive is not installed.
+    /// The InfoBar provides Install and Open Docs actions; it does not block the UI thread.
     /// </summary>
     public static class KernelNotInstalledDialog
     {
@@ -21,48 +23,74 @@ namespace PolyglotNotebooks.Kernel
             "dotnet tool install -g Microsoft.dotnet-interactive";
 
         /// <summary>
-        /// Shows a message box asking the user whether to install dotnet-interactive
-        /// automatically, open docs, or cancel.
-        /// Yes = Install, No = Open Docs, Cancel = dismiss.
+        /// Shows a non-blocking VS InfoBar offering Install / Open Docs / Dismiss actions
+        /// and returns <c>false</c> immediately — the caller should still throw so the cell
+        /// displays an error, while the InfoBar lets the user act at their own pace.
         /// </summary>
         /// <param name="detector">
         /// The detector whose cache should be invalidated after a successful install.
         /// May be <c>null</c> if cache invalidation is not needed.
         /// </param>
-        /// <returns>
-        /// <c>true</c> if dotnet-interactive was installed successfully; <c>false</c> if the user
-        /// cancelled, chose to open docs, or the installation failed.
-        /// </returns>
+        /// <returns>Always <c>false</c>; the InfoBar handles install asynchronously.</returns>
         public static async Task<bool> ShowAsync(KernelInstallationDetector detector = null)
         {
-            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-
             ExtensionLogger.LogWarning(nameof(KernelNotInstalledDialog),
-                "dotnet-interactive is not installed; prompting user.");
+                "dotnet-interactive is not installed; showing InfoBar.");
 
-            var message =
-                "The dotnet-interactive tool is required but not installed. " +
-                "Would you like to install it now?\n\n" +
-                "• Yes — Install automatically\n" +
-                "• No — Open installation docs in browser\n" +
-                "• Cancel — Dismiss";
+            // Fire and forget — create the InfoBar on the UI thread without blocking the caller.
+            ThreadHelper.JoinableTaskFactory.RunAsync(
+                async () => await ShowInfoBarAsync(detector).ConfigureAwait(false));
 
-            var result = System.Windows.MessageBox.Show(
-                message,
-                "dotnet-interactive Not Installed",
-                System.Windows.MessageBoxButton.YesNoCancel,
-                System.Windows.MessageBoxImage.Warning);
+            return false;
+        }
 
-            if (result == System.Windows.MessageBoxResult.Yes)
+        private static async Task ShowInfoBarAsync(KernelInstallationDetector detector)
+        {
+            try
             {
-                return await RunInstallAsync(detector).ConfigureAwait(false);
+                var model = new InfoBarModel(
+                    "dotnet-interactive is required but not installed.",
+                    new IVsInfoBarActionItem[]
+                    {
+                        new InfoBarHyperlink("Install", "install"),
+                        new InfoBarHyperlink("Open Docs", "docs"),
+                    },
+                    KnownMonikers.StatusWarning,
+                    isCloseButtonVisible: true);
+
+                var infoBar = await VS.InfoBar.CreateAsync(model).ConfigureAwait(false);
+                if (infoBar == null)
+                    return;
+
+                infoBar.ActionItemClicked += (s, e) =>
+                    OnInfoBarActionClicked(e.ActionItem, detector, infoBar);
+
+                await infoBar.TryShowInfoBarUIAsync().ConfigureAwait(false);
             }
-            else if (result == System.Windows.MessageBoxResult.No)
+            catch (Exception ex)
+            {
+                ExtensionLogger.LogException(nameof(KernelNotInstalledDialog),
+                    "Failed to show InfoBar for missing dotnet-interactive", ex);
+            }
+        }
+
+        private static void OnInfoBarActionClicked(
+            IVsInfoBarActionItem actionItem,
+            KernelInstallationDetector detector,
+            InfoBar infoBar)
+        {
+            infoBar.Close();
+
+            var context = actionItem?.ActionContext as string;
+            if (context == "install")
+            {
+                ThreadHelper.JoinableTaskFactory.RunAsync(
+                    async () => await RunInstallAsync(detector).ConfigureAwait(false));
+            }
+            else if (context == "docs")
             {
                 OpenDocs();
             }
-
-            return false;
         }
 
         private static async Task<bool> RunInstallAsync(KernelInstallationDetector detector)

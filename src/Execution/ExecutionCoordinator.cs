@@ -383,21 +383,16 @@ namespace PolyglotNotebooks.Execution
                 if (!isInstalled)
                 {
                     ExtensionLogger.LogWarning(nameof(ExecutionCoordinator),
-                        "dotnet-interactive not installed; prompting user.");
+                        "dotnet-interactive not installed; showing InfoBar notification.");
 
-                    bool installed = await KernelNotInstalledDialog.ShowAsync(_installationDetector).ConfigureAwait(false);
-                    if (installed)
-                    {
-                        // Dialog reports success — re-verify (cache was invalidated by the dialog).
-                        isInstalled = await _installationDetector.IsInstalledAsync(ct).ConfigureAwait(false);
-                    }
+                    // ShowAsync is non-blocking: it shows a VS InfoBar with Install/Open Docs
+                    // actions and returns immediately. The exception below causes the cell to
+                    // display an error; the user can then act via the InfoBar and re-run the cell.
+                    await KernelNotInstalledDialog.ShowAsync(_installationDetector).ConfigureAwait(false);
 
-                    if (!isInstalled)
-                    {
-                        throw new InvalidOperationException(
-                            "dotnet-interactive is not installed. " +
-                            $"Install it with: {KernelInstallationDetector.GetInstallCommand()}");
-                    }
+                    throw new InvalidOperationException(
+                        "dotnet-interactive is not installed. " +
+                        $"Install it with: {KernelInstallationDetector.GetInstallCommand()}");
                 }
 
                 await _kernelProcessManager.StartAsync(ct).ConfigureAwait(false);
