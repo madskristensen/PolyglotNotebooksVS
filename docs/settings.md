@@ -65,6 +65,7 @@ When enabled, output text that starts with Mermaid keywords (`graph`, `sequenceD
 | **Kernel startup timeout** | 30 seconds | Maximum time to wait for the kernel process to start |
 | **Maximum output length** | 50,000 characters | Cell output is truncated after this many characters |
 | **Maximum image width** | 800 pixels | Images wider than this are scaled down to fit |
+| **Cell execution timeout** | 0 (disabled) | Automatically cancel a cell after this many seconds. Set to 0 to disable |
 
 ### Kernel Startup Timeout
 
@@ -77,6 +78,14 @@ Prevents runaway output from consuming excessive memory. If a cell produces more
 ### Maximum Image Width
 
 Images wider than this value (in pixels) are automatically scaled down to fit within the cell output area. The default of 800px works well for most monitors. Increase it for high-DPI displays or when working with detailed diagrams.
+
+### Cell Execution Timeout
+
+Automatically cancels a cell if it runs longer than the specified number of seconds. When a cell times out, it shows an error message and its status changes to **Failed**.
+
+Set to `0` (the default) to disable automatic timeout. This is recommended for workflows involving [KQL queries](kusto-kql.md) or other long-running operations that can legitimately take several minutes. If you do enable a timeout, choose a generous value (e.g., 300–600 seconds).
+
+> **Note:** You can always cancel a running cell manually by clicking the **■ Stop** button in the cell toolbar, regardless of whether a timeout is configured.
 
 ## Tips
 

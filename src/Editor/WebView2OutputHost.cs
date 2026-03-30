@@ -31,7 +31,6 @@ namespace PolyglotNotebooks.Editor
         private bool _disposed;
 
         private const double DefaultHeight = 200;
-        private const double MaxContentHeight = 800; // inner cap; outer scroll wrapper adds its own cap
 
         public WebView2OutputHost()
         {
@@ -174,7 +173,7 @@ namespace PolyglotNotebooks.Editor
                             "document.body ? document.body.scrollHeight : 0");
 
                         if (double.TryParse(result, out double contentHeight) && contentHeight > 0)
-                            Height = Math.Min(contentHeight + 20, MaxContentHeight);
+                            Height = contentHeight + 20;
                     }
 
                     // Inject overflow-aware wheel forwarding: only forward to notebook
@@ -226,7 +225,7 @@ namespace PolyglotNotebooks.Editor
                     {
                         double h = heightEl.GetDouble();
                         if (h > 0)
-                            Height = Math.Min(h + 20, MaxContentHeight);
+                            Height = h + 20;
                     }
                 }
             }
@@ -247,6 +246,7 @@ namespace PolyglotNotebooks.Editor
 <html><head><meta charset='utf-8'>
 <style>
   * {{ box-sizing: border-box; }}
+  html {{ overflow: hidden; }}
   body {{
     background: {bg};
     color: {fg};

@@ -34,6 +34,7 @@ That's your first notebook. Now try something more interesting — [follow the G
 | [**Getting Started**](getting-started.md) | Install, create a notebook, and experience the "wow" moments in 5 minutes |
 | [**Working with Cells**](working-with-cells.md) | Create, move, delete cells and switch languages with magic commands |
 | [**Running Code**](running-code.md) | Execution order, kernel lifecycle, NuGet packages, and HTTP requests |
+| [**Querying Kusto (KQL)**](kusto-kql.md) | Connect to Azure Data Explorer, run KQL queries, and share results across kernels |
 | [**Rich Output**](rich-output.md) | HTML, tables, images, JSON, SVG, CSV, and Mermaid diagrams |
 | [**Variable Sharing**](variable-sharing.md) | Pass data between C#, JavaScript, SQL, and other kernels |
 | [**Document Outline**](document-outline.md) | Navigate your notebook structure with the Document Outline tree view |

@@ -78,12 +78,25 @@ By default, outputs are cleared on restart. You can disable this in [Settings](s
 
 ### Interrupting Execution
 
-If a cell is running too long (infinite loop, expensive computation):
+If a cell is running too long (infinite loop, expensive computation, or a long-running KQL query):
 
+- Click the **■ Stop** button that appears in the cell toolbar while the cell is running
 - Press **Ctrl+.** (Ctrl+Period), or
 - Click **Interrupt** (⏹) in the notebook toolbar
 
-This sends a cancellation signal to the kernel. Some operations may not respond immediately.
+The cell immediately returns to idle — the timer stops and the Stop button disappears. A cancellation signal is sent to the kernel to abort the running operation.
+
+> **Tip:** The per-cell Stop button is the fastest way to cancel a single cell. The toolbar Interrupt button cancels whatever is currently running across the entire notebook.
+
+### Execution Timeout
+
+You can set an automatic timeout so cells are cancelled after a fixed duration:
+
+1. Go to **Tools → Options → Polyglot Notebooks**
+2. Set **Cell execution timeout (seconds)** to your preferred limit
+3. Set to `0` (the default) to disable automatic timeout
+
+When a cell times out, it shows an error message and its status changes to **Failed**. This is useful as a safety net against runaway computations, but note that some workloads (like [KQL queries against large datasets](kusto-kql.md#handling-long-running-queries)) can legitimately take several minutes. Leave the timeout at `0` or set a generous value for those scenarios.
 
 ## Using NuGet Packages
 
@@ -113,9 +126,12 @@ Each language kernel runs independently. You can mix languages freely:
 [C# cell]       → runs in the C# kernel
 [JavaScript cell] → runs in the JavaScript kernel
 [SQL cell]      → runs in the SQL kernel
+[KQL cell]      → runs in a connected Kusto kernel
 ```
 
 Each kernel maintains its own state. A variable defined in C# is not automatically available in JavaScript. To pass data between kernels, see [Variable Sharing](variable-sharing.md).
+
+> **Working with Kusto?** See [Querying Kusto (KQL)](kusto-kql.md) for a complete guide on connecting to Azure Data Explorer clusters, running KQL queries, and sharing results into other kernels.
 
 ## HTTP Requests
 
@@ -136,6 +152,7 @@ The response is displayed as formatted output below the cell.
 
 ## Next Steps
 
+- [Querying Kusto (KQL)](kusto-kql.md) — connect to Azure Data Explorer and run KQL queries
 - [Rich Output](rich-output.md) — display HTML, images, charts, and diagrams
 - [Variable Sharing](variable-sharing.md) — pass data between C#, JavaScript, and other kernels
 - [Troubleshooting](troubleshooting.md) — fix common execution problems
