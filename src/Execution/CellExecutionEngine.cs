@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Microsoft.VisualStudio.Shell;
 using PolyglotNotebooks.Diagnostics;
 using PolyglotNotebooks.Models;
+using PolyglotNotebooks.Options;
 using PolyglotNotebooks.Protocol;
 
 namespace PolyglotNotebooks.Execution
@@ -47,6 +48,10 @@ namespace PolyglotNotebooks.Execution
             // Link the caller's token so either side can cancel.
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             _currentCts = linkedCts;
+
+            var timeoutSeconds = PolyglotNotebooksOptions.Instance.CellExecutionTimeoutSeconds;
+            if (timeoutSeconds > 0)
+                linkedCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
 
             // Acquire gate on background thread; throws OperationCanceledException if ct fires.
             await _executionGate.WaitAsync(ct).ConfigureAwait(false);
@@ -122,13 +127,28 @@ namespace PolyglotNotebooks.Execution
                 {
                     await TrySendCancelAsync().ConfigureAwait(false);
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                    cell.ExecutionStatus = CellExecutionStatus.Idle;
+
+                    bool timedOut = timeoutSeconds > 0 && linkedCts.IsCancellationRequested && !ct.IsCancellationRequested;
+                    if (timedOut)
+                    {
+                        cell.ExecutionStatus = CellExecutionStatus.Failed;
+                        cell.LastExecutionDuration = sw.Elapsed;
+                        cell.Outputs.Add(new CellOutput(
+                            CellOutputKind.Error,
+                            new List<FormattedOutput> { new FormattedOutput("text/plain",
+                                $"Cell execution timed out after {timeoutSeconds} seconds.") }));
+                    }
+                    else
+                    {
+                        cell.ExecutionStatus = CellExecutionStatus.Idle;
+                    }
+
                     return;
                 }
 
                 sw.Stop();
 
-                // ── 6. Update final cell state on the UI thread ───────────────
+                // ── 6. Update final cell state on the UI thread
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
                 cell.LastExecutionDuration = sw.Elapsed;
 
@@ -193,6 +213,17 @@ namespace PolyglotNotebooks.Execution
                 if (ReferenceEquals(_currentCts, linkedCts))
                     _currentCts = null;
                 _executionGate.Release();
+
+                // Safety net: if the cell is still Running when the method exits (due to any
+                // unexpected code path), force it back to Idle so the UI never gets stuck
+                // with a spinning timer and a visible Stop button.
+                try
+                {
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    if (cell.ExecutionStatus == CellExecutionStatus.Running)
+                        cell.ExecutionStatus = CellExecutionStatus.Idle;
+                }
+                catch { /* best-effort UI cleanup */ }
             }
         }
 
@@ -208,6 +239,10 @@ namespace PolyglotNotebooks.Execution
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             _currentCts = linkedCts;
 
+            var timeoutSeconds = PolyglotNotebooksOptions.Instance.CellExecutionTimeoutSeconds;
+            if (timeoutSeconds > 0)
+                linkedCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+
             await _executionGate.WaitAsync(ct).ConfigureAwait(false);
             try
             {
@@ -215,7 +250,7 @@ namespace PolyglotNotebooks.Execution
 
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(effectiveCt);
                 cell.ExecutionStatus = CellExecutionStatus.Running;
-                // NOTE: outputs are NOT cleared — selection results append to existing outputs
+                // NOTE: outputs are NOT cleared
 
                 var kernelName = MapKernelName(cell.KernelName);
                 var envelope = KernelCommandEnvelope.Create(CommandTypes.SubmitCode, new SubmitCode
@@ -254,7 +289,22 @@ namespace PolyglotNotebooks.Execution
                 {
                     await TrySendCancelAsync().ConfigureAwait(false);
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                    cell.ExecutionStatus = CellExecutionStatus.Idle;
+
+                    bool timedOut = timeoutSeconds > 0 && linkedCts.IsCancellationRequested && !ct.IsCancellationRequested;
+                    if (timedOut)
+                    {
+                        cell.ExecutionStatus = CellExecutionStatus.Failed;
+                        cell.LastExecutionDuration = sw.Elapsed;
+                        cell.Outputs.Add(new CellOutput(
+                            CellOutputKind.Error,
+                            new List<FormattedOutput> { new FormattedOutput("text/plain",
+                                $"Cell execution timed out after {timeoutSeconds} seconds.") }));
+                    }
+                    else
+                    {
+                        cell.ExecutionStatus = CellExecutionStatus.Idle;
+                    }
+
                     return;
                 }
 
@@ -307,6 +357,14 @@ namespace PolyglotNotebooks.Execution
                 if (ReferenceEquals(_currentCts, linkedCts))
                     _currentCts = null;
                 _executionGate.Release();
+
+                try
+                {
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    if (cell.ExecutionStatus == CellExecutionStatus.Running)
+                        cell.ExecutionStatus = CellExecutionStatus.Idle;
+                }
+                catch { /* best-effort UI cleanup */ }
             }
         }
 

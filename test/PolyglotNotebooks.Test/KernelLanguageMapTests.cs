@@ -35,6 +35,23 @@ namespace PolyglotNotebooks.Test
         public void GetContentTypeName_UnknownKernel_ReturnsNull()
             => Assert.IsNull(KernelLanguageMap.GetContentTypeName("ruby"));
 
+        [TestMethod]
+        [DataRow("kql-Ddtelvsraw", "plaintext")]
+        [DataRow("sql-myServer", "SQL Server Tools")]
+        [DataRow("csharp-something", "CSharp")]
+        public void GetContentTypeName_CompositeKernel_ResolvesBaseLanguage(string kernel, string expected)
+            => Assert.AreEqual(expected, KernelLanguageMap.GetContentTypeName(kernel));
+
+        [TestMethod]
+        public void GetContentTypeName_CompositeUnknownBase_ReturnsNull()
+            => Assert.IsNull(KernelLanguageMap.GetContentTypeName("unknown-connection"));
+
+        [TestMethod]
+        [DataRow("kql-Ddtelvsraw", ".kql")]
+        [DataRow("sql-myServer", ".sql")]
+        public void GetFileExtension_CompositeKernel_ResolvesBaseLanguage(string kernel, string expected)
+            => Assert.AreEqual(expected, KernelLanguageMap.GetFileExtension(kernel));
+
         // ── File Extension Mapping ────────────────────────────────────
 
         [TestMethod]

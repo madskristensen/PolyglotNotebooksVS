@@ -49,7 +49,15 @@ namespace PolyglotNotebooks.Editor
         /// </summary>
         internal static string? GetContentTypeName(string kernelName)
         {
-            return _contentTypeMap.TryGetValue(kernelName, out var ct) ? ct : null;
+            if (_contentTypeMap.TryGetValue(kernelName, out var ct))
+                return ct;
+
+            // Handle composite kernel names like "kql-Ddtelvsraw" or "sql-myServer"
+            int dashIndex = kernelName.IndexOf('-');
+            if (dashIndex > 0 && _contentTypeMap.TryGetValue(kernelName.Substring(0, dashIndex), out ct))
+                return ct;
+
+            return null;
         }
 
         /// <summary>
@@ -58,8 +66,16 @@ namespace PolyglotNotebooks.Editor
         /// </summary>
         internal static string GetFileExtension(string? kernelName)
         {
-            if (kernelName != null && _extensionMap.TryGetValue(kernelName, out var ext))
-                return ext;
+            if (kernelName != null)
+            {
+                if (_extensionMap.TryGetValue(kernelName, out var ext))
+                    return ext;
+
+                // Handle composite kernel names like "kql-Ddtelvsraw" or "sql-myServer"
+                int dashIndex = kernelName.IndexOf('-');
+                if (dashIndex > 0 && _extensionMap.TryGetValue(kernelName.Substring(0, dashIndex), out ext))
+                    return ext;
+            }
             return ".txt";
         }
 

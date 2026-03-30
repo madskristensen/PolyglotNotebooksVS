@@ -71,6 +71,12 @@ namespace PolyglotNotebooks.Options
         [Description("Scale down images wider than this value")]
         [DefaultValue(800)]
         public int MaxImageWidth { get; set; } = 800;
+
+        [Category("Execution")]
+        [DisplayName("Cell execution timeout (seconds)")]
+        [Description("Automatically cancel a cell if it runs longer than this many seconds. Set to 0 to disable.")]
+        [DefaultValue(0)]
+        public int CellExecutionTimeoutSeconds { get; set; } = 0;
     }
 
     public enum DefaultKernel

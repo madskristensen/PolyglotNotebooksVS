@@ -71,6 +71,9 @@ namespace PolyglotNotebooks.Editor
         /// <summary>Raised when the user chooses "Run Selection"; carries the selected text.</summary>
         public event EventHandler<RunSelectionEventArgs>? RunSelectionRequested;
 
+        /// <summary>Raised when the user clicks the Stop button to cancel execution.</summary>
+        public event EventHandler? StopRequested;
+
         public CellControl(NotebookDocument document, NotebookCell cell)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
@@ -96,6 +99,7 @@ namespace PolyglotNotebooks.Editor
             toolbar.RunRequested += (s, e) => RunRequested?.Invoke(this, e);
             toolbar.RunAboveRequested += (s, e) => RunAboveRequested?.Invoke(this, e);
             toolbar.RunBelowRequested += (s, e) => RunBelowRequested?.Invoke(this, e);
+            toolbar.StopRequested += (s, e) => StopRequested?.Invoke(this, e);
             Grid.SetRow(toolbar, 0);
             grid.Children.Add(toolbar);
 
@@ -660,7 +664,16 @@ namespace PolyglotNotebooks.Editor
         /// </summary>
         private static Guid GetLanguageServiceGuid(string kernelName)
         {
-            switch (kernelName?.ToLowerInvariant())
+            // Handle composite kernel names like "kql-Ddtelvsraw" or "sql-myServer"
+            var baseName = kernelName;
+            if (baseName != null)
+            {
+                int dashIndex = baseName.IndexOf('-');
+                if (dashIndex > 0)
+                    baseName = baseName.Substring(0, dashIndex);
+            }
+
+            switch (baseName?.ToLowerInvariant())
             {
                 case "csharp": return new Guid("a6c744a8-0e4a-4fc6-886a-064283054674"); // Roslyn C#
                 case "fsharp": return new Guid("BC6DD5A5-D4D6-4dab-A00D-A51242DBAF1B"); // F#

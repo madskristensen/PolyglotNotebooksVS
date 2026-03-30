@@ -87,7 +87,17 @@ namespace PolyglotNotebooks.Execution
                 {
                     await ExecuteCellRoutedAsync(cell, cts.Token).ConfigureAwait(false);
                 }
-                catch (OperationCanceledException) { }
+                catch (OperationCanceledException)
+                {
+                    // Safety net: ensure the cell leaves Running/Queued state even if the
+                    // inner handler didn't manage to switch to the UI thread in time.
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    if (cell.ExecutionStatus == CellExecutionStatus.Running ||
+                        cell.ExecutionStatus == CellExecutionStatus.Queued)
+                    {
+                        cell.ExecutionStatus = CellExecutionStatus.Idle;
+                    }
+                }
                 catch (Exception ex)
                 {
                     ExtensionLogger.LogException(nameof(ExecutionCoordinator),
@@ -110,7 +120,8 @@ namespace PolyglotNotebooks.Execution
             foreach (var cell in document.Cells)
                 if (cell.Kind == CellKind.Code)
                     cell.ExecutionStatus = CellExecutionStatus.Queued;
-            FireAndForget(ct => RunAllCellsAsync(document, ct), "Run All");
+            FireAndForget(ct => RunAllCellsAsync(document, ct), "Run All",
+                () => ResetCellStatuses(document.Cells));
         }
 
         /// <summary>Fire-and-forget entry point for "Run Cells Above" (excludes current cell).</summary>
@@ -120,7 +131,8 @@ namespace PolyglotNotebooks.Execution
             foreach (var cell in SelectCellsAbove(document.Cells, currentCell))
                 if (cell.Kind == CellKind.Code)
                     cell.ExecutionStatus = CellExecutionStatus.Queued;
-            FireAndForget(ct => RunCellsAboveAsync(document, currentCell, ct), "Run Cells Above");
+            FireAndForget(ct => RunCellsAboveAsync(document, currentCell, ct), "Run Cells Above",
+                () => ResetCellStatuses(document.Cells));
         }
 
         /// <summary>Fire-and-forget entry point for "Run Cell and Below" (includes current cell).</summary>
@@ -130,7 +142,8 @@ namespace PolyglotNotebooks.Execution
             foreach (var cell in SelectCellsBelow(document.Cells, currentCell))
                 if (cell.Kind == CellKind.Code)
                     cell.ExecutionStatus = CellExecutionStatus.Queued;
-            FireAndForget(ct => RunCellsBelowAsync(document, currentCell, ct), "Run Cells Below");
+            FireAndForget(ct => RunCellsBelowAsync(document, currentCell, ct), "Run Cells Below",
+                () => ResetCellStatuses(document.Cells));
         }
 
         /// <summary>Fire-and-forget entry point for "Run Selection".</summary>
@@ -147,7 +160,8 @@ namespace PolyglotNotebooks.Execution
             foreach (var cell in document.Cells)
                 if (cell.Kind == CellKind.Code)
                     cell.ExecutionStatus = CellExecutionStatus.Queued;
-            FireAndForget(ct => RestartAndRunAllAsync(document, ct), "Restart and Run All");
+            FireAndForget(ct => RestartAndRunAllAsync(document, ct), "Restart and Run All",
+                () => ResetCellStatuses(document.Cells));
         }
 
         /// <summary>
@@ -189,9 +203,11 @@ namespace PolyglotNotebooks.Execution
         /// <summary>Cancels any currently running or pending cell execution.</summary>
         public void CancelCurrentExecution()
         {
+            // Cancel but do NOT dispose: the background task's finally block owns disposal.
+            // Disposing here races with the linked CancellationTokenSource inside
+            // ExecuteCellAsync, which can silently prevent cancellation propagation.
             var cts = Interlocked.Exchange(ref _currentCts, null);
             cts?.Cancel();
-            cts?.Dispose();
         }
 
         // ── Awaitable execution methods ───────────────────────────────────────
@@ -305,6 +321,24 @@ namespace PolyglotNotebooks.Execution
             => IsJavaScriptCell(cell.KernelName);
 
         /// <summary>
+        /// Resets any Running or Queued code cells back to Idle.
+        /// Called on cancellation to ensure the UI reflects that execution stopped.
+        /// Must be called on the UI thread.
+        /// </summary>
+        private static void ResetCellStatuses(IList<NotebookCell> cells)
+        {
+            foreach (var cell in cells)
+            {
+                if (cell.Kind == CellKind.Code &&
+                    (cell.ExecutionStatus == CellExecutionStatus.Running ||
+                     cell.ExecutionStatus == CellExecutionStatus.Queued))
+                {
+                    cell.ExecutionStatus = CellExecutionStatus.Idle;
+                }
+            }
+        }
+
+        /// <summary>
         /// Returns all cells that appear before <paramref name="current"/> in the list
         /// (exclusive of <paramref name="current"/> itself).
         /// </summary>
@@ -359,7 +393,7 @@ namespace PolyglotNotebooks.Execution
         /// Common fire-and-forget wrapper: cancels any pending execution, creates a new CTS,
         /// then runs the given async operation.
         /// </summary>
-        private void FireAndForget(Func<CancellationToken, Task> operation, string operationName)
+        private void FireAndForget(Func<CancellationToken, Task> operation, string operationName, Action? onCancelled = null)
         {
             var previous = Interlocked.Exchange(ref _currentCts, null);
             previous?.Cancel();
@@ -375,7 +409,16 @@ namespace PolyglotNotebooks.Execution
                 {
                     await operation(cts.Token).ConfigureAwait(false);
                 }
-                catch (OperationCanceledException) { }
+                catch (OperationCanceledException)
+                {
+                    // Reset any Running/Queued cells so the UI reflects the cancellation.
+                    try
+                    {
+                        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                        onCancelled?.Invoke();
+                    }
+                    catch { /* best-effort UI cleanup */ }
+                }
                 catch (Exception ex)
                 {
                     ExtensionLogger.LogException(nameof(ExecutionCoordinator),

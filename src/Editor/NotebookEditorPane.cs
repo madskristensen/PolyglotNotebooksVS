@@ -138,6 +138,7 @@ namespace PolyglotNotebooks.Editor
                 _control.RunCellAboveRequested += OnRunCellAboveRequested;
                 _control.RunCellBelowRequested += OnRunCellBelowRequested;
                 _control.RunSelectionRequested += OnRunSelectionRequested;
+                _control.CellStopRequested += OnInterruptRequested;
             }
             _kernelProcessManager.StatusChanged += OnKernelStatusChanged;
 
@@ -666,7 +667,24 @@ namespace PolyglotNotebooks.Editor
         }
 
         private void OnInterruptRequested(object sender, EventArgs e)
-            => _coordinator?.CancelCurrentExecution();
+        {
+            // Immediately reset any Running/Queued cells on the UI thread so the timer
+            // stops and the Stop button hides without waiting for the async cancellation
+            // chain to propagate back through the engine and coordinator.
+            if (_document != null)
+            {
+                foreach (var cell in _document.Cells)
+                {
+                    if (cell.ExecutionStatus == Models.CellExecutionStatus.Running ||
+                        cell.ExecutionStatus == Models.CellExecutionStatus.Queued)
+                    {
+                        cell.ExecutionStatus = Models.CellExecutionStatus.Idle;
+                    }
+                }
+            }
+
+            _coordinator?.CancelCurrentExecution();
+        }
 
         private void OnRunCellAboveRequested(object sender, CellRunEventArgs e)
         {

@@ -207,7 +207,16 @@ namespace PolyglotNotebooks.Editor.SyntaxHighlighting
         public static LanguagePattern? Get(string kernelName)
         {
             if (string.IsNullOrEmpty(kernelName)) return null;
-            _registry.TryGetValue(kernelName, out var lang);
+            if (_registry.TryGetValue(kernelName, out var lang))
+                return lang;
+
+            // Handle composite kernel names like "kql-Ddtelvsraw" or "sql-myServer"
+            int dashIndex = kernelName.IndexOf('-');
+            if (dashIndex > 0)
+            {
+                var baseKernel = kernelName.Substring(0, dashIndex);
+                _registry.TryGetValue(baseKernel, out lang);
+            }
             return lang;
         }
 

@@ -161,7 +161,13 @@ namespace PolyglotNotebooks.Protocol
                     _terminalTcs.Task,
                     System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(300), ct)).ConfigureAwait(false);
                 if (completed != _terminalTcs.Task)
+                {
+                    // Distinguish user/caller cancellation from a genuine 5-minute timeout.
+                    // Task.Delay(300, ct) and _terminalTcs.TrySetCanceled() race when ct fires;
+                    // if Delay wins WhenAny we must still propagate as OperationCanceledException.
+                    ct.ThrowIfCancellationRequested();
                     throw new TimeoutException("Kernel did not respond within 5 minutes.");
+                }
                 return await _terminalTcs.Task.ConfigureAwait(false);
             }
             finally { registration.Dispose(); }

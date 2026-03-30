@@ -157,6 +157,9 @@ namespace PolyglotNotebooks.Editor
         /// <summary>Raised when the user chooses "Run Selection" for a cell.</summary>
         public event EventHandler<CellRunSelectionEventArgs>? RunSelectionRequested;
 
+        /// <summary>Raised when the user clicks the Stop button on a running cell.</summary>
+        public event EventHandler? CellStopRequested;
+
         /// <summary>Raised by the toolbar Run All button or Ctrl+Shift+Enter.</summary>
         public event EventHandler? RunAllRequested;
 
@@ -483,6 +486,7 @@ namespace PolyglotNotebooks.Editor
             cellControl.RunBelowRequested += (s, e) => RunCellBelowRequested?.Invoke(this, new CellRunEventArgs(cell));
             cellControl.RunSelectionRequested += (s, e) =>
                 RunSelectionRequested?.Invoke(this, new CellRunSelectionEventArgs(cell, e.SelectedText));
+            cellControl.StopRequested += (s, e) => CellStopRequested?.Invoke(this, EventArgs.Empty);
 
             cellControl.GotFocus  += (s, e) => { _focusedCell = cellControl; ActiveInstance = this; FocusedCellChanged?.Invoke(this, cell); };
             cellControl.LostFocus += (s, e) => { if (ReferenceEquals(_focusedCell, cellControl)) _focusedCell = null; };

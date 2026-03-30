@@ -135,6 +135,26 @@ namespace PolyglotNotebooks.Test
         }
 
         [TestMethod]
+        public void Get_CompositeKqlKernel_ReturnsKqlPattern()
+        {
+            var pattern = LanguagePattern.Get("kql-Ddtelvsraw");
+            Assert.IsNotNull(pattern, "kql-Ddtelvsraw should resolve to the KQL pattern");
+        }
+
+        [TestMethod]
+        public void Get_CompositeSqlKernel_ReturnsSqlPattern()
+        {
+            var pattern = LanguagePattern.Get("sql-myServer");
+            Assert.IsNotNull(pattern, "sql-myServer should resolve to the SQL pattern");
+        }
+
+        [TestMethod]
+        public void Get_CompositeUnknownBase_ReturnsNull()
+        {
+            Assert.IsNull(LanguagePattern.Get("unknown-connection"));
+        }
+
+        [TestMethod]
         public void Get_IsCaseInsensitive()
         {
             var lower = LanguagePattern.Get("csharp");

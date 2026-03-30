@@ -29,6 +29,7 @@ namespace PolyglotNotebooks.Editor
         private readonly TextBlock _timingLabel;
         private readonly StackPanel _timingContainer;
         private Border? _splitRunButton;
+        private Button? _stopButton;
         private DispatcherTimer? _liveTimer;
         private DateTime _executionStartUtc;
 
@@ -46,6 +47,9 @@ namespace PolyglotNotebooks.Editor
 
         /// <summary>Raised when the user chooses "Run Selection".</summary>
         public event EventHandler? RunSelectionRequested;
+
+        /// <summary>Raised when the user clicks the Stop button to cancel execution.</summary>
+        public event EventHandler? StopRequested;
 
         public CellToolbar(NotebookDocument document, NotebookCell cell)
         {
@@ -186,6 +190,23 @@ namespace PolyglotNotebooks.Editor
                 var splitButton = BuildSplitRunButton();
                 DockPanel.SetDock(splitButton, Dock.Right);
                 Children.Add(splitButton);
+
+                // Stop button — shown in place of the Run button while executing
+                _stopButton = new Button
+                {
+                    Content = MakeCrispImage(KnownMonikers.Stop),
+                    Padding = new Thickness(4, 3, 4, 3),
+                    BorderThickness = new Thickness(1),
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Margin = new Thickness(0, 0, 4, 0),
+                    ToolTip = "Stop execution",
+                    Visibility = Visibility.Collapsed
+                };
+                _stopButton.SetResourceReference(Button.ForegroundProperty, VsBrushes.ToolWindowTextKey);
+                _stopButton.SetResourceReference(Button.BorderBrushProperty, VsBrushes.ToolWindowBorderKey);
+                _stopButton.Click += (s, e) => StopRequested?.Invoke(this, EventArgs.Empty);
+                DockPanel.SetDock(_stopButton, Dock.Right);
+                Children.Add(_stopButton);
 
                 // Execution counter [N] — Dock.Right (4th from right)
                 UpdateExecutionCounter();
@@ -506,7 +527,8 @@ namespace PolyglotNotebooks.Editor
             {
                 case CellExecutionStatus.Running:
                     _statusIndicator.Visibility = Visibility.Collapsed;
-                    if (_splitRunButton != null) _splitRunButton.IsEnabled = false;
+                    if (_splitRunButton != null) _splitRunButton.Visibility = Visibility.Collapsed;
+                    if (_stopButton != null) _stopButton.Visibility = Visibility.Visible;
 
                     // Show live counting timer
                     _executionStartUtc = DateTime.UtcNow;
@@ -526,28 +548,32 @@ namespace PolyglotNotebooks.Editor
                     break;
                 case CellExecutionStatus.Succeeded:
                     _statusIndicator.Visibility = Visibility.Collapsed;
-                    if (_splitRunButton != null) _splitRunButton.IsEnabled = true;
+                    if (_splitRunButton != null) { _splitRunButton.Visibility = Visibility.Visible; _splitRunButton.IsEnabled = true; }
+                    if (_stopButton != null) _stopButton.Visibility = Visibility.Collapsed;
                     _timingIcon.Moniker = KnownMonikers.TestCoveredPassing;
                     break;
                 case CellExecutionStatus.Failed:
                     _statusIndicator.Text = "Error";
                     _statusIndicator.SetResourceReference(TextBlock.ForegroundProperty, VsBrushes.ToolWindowTextKey);
                     _statusIndicator.Visibility = Visibility.Visible;
-                    if (_splitRunButton != null) _splitRunButton.IsEnabled = true;
+                    if (_splitRunButton != null) { _splitRunButton.Visibility = Visibility.Visible; _splitRunButton.IsEnabled = true; }
+                    if (_stopButton != null) _stopButton.Visibility = Visibility.Collapsed;
                     _timingIcon.Moniker = KnownMonikers.StatusError;
                     break;
                 case CellExecutionStatus.Queued:
                     _statusIndicator.Text = "Queued";
                     _statusIndicator.SetResourceReference(TextBlock.ForegroundProperty, VsBrushes.GrayTextKey);
                     _statusIndicator.Visibility = Visibility.Visible;
-                    if (_splitRunButton != null) _splitRunButton.IsEnabled = false;
+                    if (_splitRunButton != null) { _splitRunButton.Visibility = Visibility.Visible; _splitRunButton.IsEnabled = false; }
+                    if (_stopButton != null) _stopButton.Visibility = Visibility.Collapsed;
                     _timingContainer.BeginAnimation(UIElement.OpacityProperty, null);
                     _timingContainer.Visibility = Visibility.Collapsed;
                     break;
                 default: // Idle
                     _statusIndicator.Text = string.Empty;
                     _statusIndicator.Visibility = Visibility.Collapsed;
-                    if (_splitRunButton != null) _splitRunButton.IsEnabled = true;
+                    if (_splitRunButton != null) { _splitRunButton.Visibility = Visibility.Visible; _splitRunButton.IsEnabled = true; }
+                    if (_stopButton != null) _stopButton.Visibility = Visibility.Collapsed;
                     break;
             }
         }
