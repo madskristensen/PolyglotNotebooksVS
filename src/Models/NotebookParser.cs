@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using Microsoft.DotNet.Interactive.Documents;
 using Microsoft.DotNet.Interactive.Documents.Jupyter;
 
@@ -46,6 +47,44 @@ namespace PolyglotNotebooks.Models
             return kernels;
         }
 
+        // Matches lines like "#!kql-Ddtelvsraw" or "#!sql-myServer" at the start of a line.
+        private static readonly Regex MagicCommandPattern =
+            new Regex(@"^#!([a-zA-Z][\w\-]*)", RegexOptions.Multiline | RegexOptions.Compiled);
+
+        /// <summary>
+        /// Builds a kernel collection that includes the default kernels plus any
+        /// dynamically-connected kernel names found in the .dib content. This ensures
+        /// that <c>#!kql-Ddtelvsraw</c> style directives are treated as cell boundaries
+        /// by <see cref="CodeSubmission.Parse"/>.
+        /// </summary>
+        private static KernelInfoCollection BuildKernelsForContent(string content)
+        {
+            var knownNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var ki in DefaultKernels)
+                knownNames.Add(ki.Name);
+
+            var extras = new List<string>();
+            foreach (Match match in MagicCommandPattern.Matches(content))
+            {
+                var name = match.Groups[1].Value;
+                if (!knownNames.Contains(name))
+                {
+                    knownNames.Add(name);
+                    extras.Add(name);
+                }
+            }
+
+            if (extras.Count == 0)
+                return DefaultKernels;
+
+            // Clone the defaults and add discovered dynamic kernels.
+            var kernels = BuildDefaultKernels();
+            foreach (var name in extras)
+                kernels.Add(new KernelInfo(name));
+
+            return kernels;
+        }
+
         public static NotebookDocument Load(string filePath)
         {
             if (!File.Exists(filePath))
@@ -70,7 +109,8 @@ namespace PolyglotNotebooks.Models
 
         public static NotebookDocument ParseDib(string content, string filePath)
         {
-            var interactive = CodeSubmission.Parse(content, DefaultKernels);
+            var kernels = BuildKernelsForContent(content);
+            var interactive = CodeSubmission.Parse(content, kernels);
             return MapToDocument(interactive, filePath, NotebookFormat.Dib);
         }
 

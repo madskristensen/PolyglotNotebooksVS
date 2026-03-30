@@ -425,6 +425,12 @@ namespace PolyglotNotebooks.Editor
                         }), System.Windows.Threading.DispatcherPriority.Render);
 #pragma warning restore VSTHRD110, VSTHRD001
                     }
+
+                    // Re-collapse the bottom margin on every layout pass; some content types
+                    // or language services lazily restore it after the initial collapse.
+                    var bm = textViewHost.GetTextViewMargin("bottom") as IWpfTextViewMargin;
+                    if (bm?.VisualElement != null && bm.VisualElement.Visibility != Visibility.Collapsed)
+                        bm.VisualElement.Visibility = Visibility.Collapsed;
                 };
 
                 // Use actual VS editor line height if available, fall back to WPF estimate

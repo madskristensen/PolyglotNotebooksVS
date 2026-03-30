@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.Shell;
@@ -87,7 +88,15 @@ namespace PolyglotNotebooks.Execution
                 using var intermediateSub = _kernelClient.Events.Subscribe(
                     new ActionObserver<KernelEventEnvelope>(e =>
                     {
-                        if (e.Command?.Token != envelope.Token) return;
+                        // Match events from this command and its child sub-commands.
+                        // The dotnet-interactive kernel uses hierarchical tokens: child
+                        // commands get tokens prefixed with the parent token (e.g.
+                        // "parentToken.childGuid"). Using StartsWith covers both the
+                        // exact parent token and any child tokens spawned by magic
+                        // commands like #!connect or kernel-switching directives.
+                        var eventToken = e.Command?.Token;
+                        if (eventToken == null || !eventToken.StartsWith(envelope.Token)) return;
+
                         if (IsTerminalEvent(e.EventType)) return;
 
 #pragma warning disable VSTHRD110, VSSDK007 // intentional fire-and-forget; exceptions caught inside
@@ -221,7 +230,8 @@ namespace PolyglotNotebooks.Execution
                 using var intermediateSub = _kernelClient.Events.Subscribe(
                     new ActionObserver<KernelEventEnvelope>(e =>
                     {
-                        if (e.Command?.Token != envelope.Token) return;
+                        var eventToken = e.Command?.Token;
+                        if (eventToken == null || !eventToken.StartsWith(envelope.Token)) return;
                         if (IsTerminalEvent(e.EventType)) return;
 
                         _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
@@ -409,6 +419,38 @@ namespace PolyglotNotebooks.Execution
                             cell.Outputs.Add(new CellOutput(
                                 CellOutputKind.Error,
                                 new List<FormattedOutput> { new FormattedOutput("text/plain", message) }));
+                        }
+                    }
+                    break;
+                }
+                case KernelEventTypes.InputRequested:
+                {
+                    var e = envelope.Event.Deserialize<InputRequested>(
+                        ProtocolSerializerOptions.Default);
+                    if (e != null && !string.IsNullOrEmpty(e.Prompt))
+                    {
+                        // Display the prompt text as cell output so the user can see the device code.
+                        cell.Outputs.Add(new CellOutput(
+                            CellOutputKind.StandardOutput,
+                            new List<FormattedOutput> { new FormattedOutput("text/plain", e.Prompt) }));
+
+                        // Auto-open the browser if the prompt contains a URL (e.g. device code auth).
+                        var urlMatch = Regex.Match(e.Prompt, @"https?://\S+");
+                        if (urlMatch.Success)
+                        {
+                            try
+                            {
+                                Process.Start(new ProcessStartInfo
+                                {
+                                    FileName = urlMatch.Value.TrimEnd('.', ',', ';'),
+                                    UseShellExecute = true
+                                });
+                            }
+                            catch (Exception ex)
+                            {
+                                ExtensionLogger.LogWarning(nameof(CellExecutionEngine),
+                                    $"Failed to open browser for device code auth: {ex.Message}");
+                            }
                         }
                     }
                     break;

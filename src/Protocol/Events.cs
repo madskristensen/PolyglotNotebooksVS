@@ -222,6 +222,18 @@ namespace PolyglotNotebooks.Protocol
         public FormattedValue? FormattedValue { get; set; }
     }
 
+    public class InputRequested
+    {
+        [JsonPropertyName("prompt")]
+        public string Prompt { get; set; } = string.Empty;
+
+        [JsonPropertyName("isPassword")]
+        public bool IsPassword { get; set; }
+
+        [JsonPropertyName("valueName")]
+        public string? ValueName { get; set; }
+    }
+
     /// <summary>
     /// String constants for all dotnet-interactive event type names.
     /// </summary>
@@ -244,5 +256,6 @@ namespace PolyglotNotebooks.Protocol
         public const string ErrorProduced = "ErrorProduced";
         public const string ValueInfosProduced = "ValueInfosProduced";
         public const string ValueProduced = "ValueProduced";
+        public const string InputRequested = "InputRequested";
     }
 }
