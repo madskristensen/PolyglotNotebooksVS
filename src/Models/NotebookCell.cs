@@ -22,7 +22,6 @@ namespace PolyglotNotebooks.Models
             _kernelName = kernelName;
             _contents = contents;
             Outputs = new ObservableCollection<CellOutput>();
-            Outputs.CollectionChanged += (s, e) => MarkDirty();
             Metadata = new Dictionary<string, object>();
         }
 
@@ -33,7 +32,6 @@ namespace PolyglotNotebooks.Models
             _kernelName = kernelName;
             _contents = contents;
             Outputs = new ObservableCollection<CellOutput>();
-            Outputs.CollectionChanged += (s, e) => MarkDirty();
             Metadata = new Dictionary<string, object>();
         }
 

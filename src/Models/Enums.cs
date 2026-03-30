@@ -7,4 +7,6 @@ namespace PolyglotNotebooks.Models
     public enum CellOutputKind { ReturnValue, StandardOutput, StandardError, Display, Error }
 
     public enum CellExecutionStatus { Idle, Running, Succeeded, Failed, Queued }
+
+    public enum ExportFormat { Html, Pdf, Markdown, CSharpScript, FSharpScript }
 }

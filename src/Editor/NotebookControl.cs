@@ -71,6 +71,7 @@ namespace PolyglotNotebooks.Editor
             _toolbar.InterruptRequested           += (s, e) => InterruptRequested?.Invoke(this, EventArgs.Empty);
             _toolbar.RestartKernelRequested       += (s, e) => RestartKernelRequested?.Invoke(this, EventArgs.Empty);
             _toolbar.ClearAllOutputsRequested     += (s, e) => ClearAllOutputsRequested?.Invoke(this, EventArgs.Empty);
+            _toolbar.ExportRequested              += (s, format) => ExportRequested?.Invoke(this, format);
             Grid.SetRow(_toolbar, 1);
             rootGrid.Children.Add(_toolbar);
 
@@ -170,6 +171,9 @@ namespace PolyglotNotebooks.Editor
 
         /// <summary>Raised by the toolbar Clear All Outputs button.</summary>
         public event EventHandler? ClearAllOutputsRequested;
+
+        /// <summary>Raised when the user selects an export format from the toolbar.</summary>
+        public event EventHandler<ExportFormat>? ExportRequested;
 
         /// <summary>
         /// Raised when the focused cell changes. Used by Document Outline for sync.

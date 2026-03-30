@@ -2,6 +2,7 @@ using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.OLE.Interop;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
+using Microsoft.Web.WebView2.Core;
 
 using PolyglotNotebooks.Diagnostics;
 using PolyglotNotebooks.Execution;
@@ -9,6 +10,7 @@ using PolyglotNotebooks.IntelliSense;
 using PolyglotNotebooks.Kernel;
 using PolyglotNotebooks.Models;
 
+using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows.Forms.Integration;
@@ -132,6 +134,7 @@ namespace PolyglotNotebooks.Editor
                 _control.InterruptRequested += OnInterruptRequested;
                 _control.RestartKernelRequested += OnRestartKernelRequested;
                 _control.ClearAllOutputsRequested += OnClearAllOutputsRequested;
+                _control.ExportRequested += OnExportRequested;
                 _control.RunCellAboveRequested += OnRunCellAboveRequested;
                 _control.RunCellBelowRequested += OnRunCellBelowRequested;
                 _control.RunSelectionRequested += OnRunSelectionRequested;
@@ -206,6 +209,7 @@ namespace PolyglotNotebooks.Editor
                     _control.InterruptRequested -= OnInterruptRequested;
                     _control.RestartKernelRequested -= OnRestartKernelRequested;
                     _control.ClearAllOutputsRequested -= OnClearAllOutputsRequested;
+                    _control.ExportRequested -= OnExportRequested;
                     _control.RunCellAboveRequested -= OnRunCellAboveRequested;
                     _control.RunCellBelowRequested -= OnRunCellBelowRequested;
                     _control.RunSelectionRequested -= OnRunSelectionRequested;
@@ -622,6 +626,7 @@ namespace PolyglotNotebooks.Editor
                     _control.InterruptRequested -= OnInterruptRequested;
                     _control.RestartKernelRequested -= OnRestartKernelRequested;
                     _control.ClearAllOutputsRequested -= OnClearAllOutputsRequested;
+                    _control.ExportRequested -= OnExportRequested;
                     _control.RunCellAboveRequested -= OnRunCellAboveRequested;
                     _control.RunCellBelowRequested -= OnRunCellBelowRequested;
                     _control.RunSelectionRequested -= OnRunSelectionRequested;
@@ -692,6 +697,129 @@ namespace PolyglotNotebooks.Editor
             if (_document == null) return;
             foreach (var cell in _document.Cells)
                 cell.Outputs.Clear();
+        }
+
+        private void OnExportRequested(object sender, ExportFormat format)
+        {
+            if (_document == null) return;
+
+            try
+            {
+                string filter = NotebookExporter.GetFileFilter(format);
+                string ext = NotebookExporter.GetFileExtension(format);
+                string defaultName = Path.GetFileNameWithoutExtension(_document.FilePath) + ext;
+
+                var dialog = new System.Windows.Forms.SaveFileDialog
+                {
+                    Filter = filter,
+                    FileName = defaultName,
+                    Title = "Export Notebook"
+                };
+
+                if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK)
+                    return;
+
+                string savedPath = dialog.FileName;
+
+                if (format == ExportFormat.Pdf)
+                {
+                    string htmlForPdf = NotebookExporter.ExportToHtml(_document);
+#pragma warning disable VSTHRD110
+                    _ = ExportToPdfAsync(htmlForPdf, savedPath);
+#pragma warning restore VSTHRD110
+                    return;
+                }
+
+                string content = NotebookExporter.Export(_document, format);
+                File.WriteAllText(savedPath, content, System.Text.Encoding.UTF8);
+
+                OpenExportedFile(format, savedPath);
+            }
+            catch (Exception ex)
+            {
+                ExtensionLogger.LogException(nameof(NotebookEditorPane), "Export failed", ex);
+            }
+        }
+
+        private static void OpenExportedFile(ExportFormat format, string filePath)
+        {
+            try
+            {
+                if (format == ExportFormat.Html)
+                {
+                    Process.Start(new ProcessStartInfo(filePath) { UseShellExecute = true });
+                }
+                else
+                {
+#pragma warning disable VSTHRD110
+                    _ = VS.Documents.OpenAsync(filePath);
+#pragma warning restore VSTHRD110
+                }
+            }
+            catch (Exception ex)
+            {
+                ExtensionLogger.LogException(nameof(NotebookEditorPane), "Failed to open exported file", ex);
+            }
+        }
+
+        /// <summary>
+        /// Renders <paramref name="htmlContent"/> in a temporary offscreen WebView2
+        /// and prints it to PDF at <paramref name="pdfPath"/>.
+        /// Uses a hidden WinForms window to provide the HWND that WebView2 requires.
+        /// </summary>
+        private async Task ExportToPdfAsync(string htmlContent, string pdfPath)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+            System.Windows.Forms.Form hiddenForm = null;
+            CoreWebView2Controller controller = null;
+            try
+            {
+                hiddenForm = new System.Windows.Forms.Form
+                {
+                    Width = 1024,
+                    Height = 768,
+                    ShowInTaskbar = false,
+                    WindowState = System.Windows.Forms.FormWindowState.Minimized,
+                    FormBorderStyle = System.Windows.Forms.FormBorderStyle.None,
+                    Opacity = 0
+                };
+                hiddenForm.Show();
+
+                string userDataFolder = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "PolyglotNotebooksVS", "WebView2PdfCache");
+
+                var env = await CoreWebView2Environment.CreateAsync(null, userDataFolder);
+                controller = await env.CreateCoreWebView2ControllerAsync(hiddenForm.Handle);
+
+                CoreWebView2 coreWebView = controller.CoreWebView2;
+
+                var navTcs = new TaskCompletionSource<bool>();
+                coreWebView.NavigationCompleted += (s, e) => navTcs.TrySetResult(e.IsSuccess);
+                coreWebView.NavigateToString(htmlContent);
+
+                bool success = await navTcs.Task;
+                if (!success)
+                {
+                    ExtensionLogger.LogWarning(nameof(NotebookEditorPane), "PDF export: navigation failed");
+                    return;
+                }
+
+                await coreWebView.PrintToPdfAsync(pdfPath);
+
+                Process.Start(new ProcessStartInfo(pdfPath) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                ExtensionLogger.LogException(nameof(NotebookEditorPane), "PDF export failed", ex);
+            }
+            finally
+            {
+                controller?.Close();
+                hiddenForm?.Close();
+                hiddenForm?.Dispose();
+            }
         }
 
         private void OnKernelStatusChanged(object sender, KernelStatusChangedEventArgs e)

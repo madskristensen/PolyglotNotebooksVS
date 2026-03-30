@@ -119,8 +119,10 @@
     <Compile Include="Models\Enums.cs" />
     <Compile Include="Models\NotebookCell.cs" />
     <Compile Include="Models\NotebookConverter.cs" />
+    <Compile Include="Models\NotebookExporter.cs" />
     <Compile Include="Models\NotebookDocument.cs" />
     <Compile Include="Models\NotebookDocumentManager.cs" />
+    <Compile Include="Models\NotebookExporter.cs" />
     <Compile Include="Models\NotebookParser.cs" />
     <Compile Include="Options\PolyglotNotebooksOptions.cs" />
     <Compile Include="PolyglotNotebooksPackage.cs" />

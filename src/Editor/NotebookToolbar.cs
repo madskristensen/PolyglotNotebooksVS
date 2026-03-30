@@ -2,9 +2,11 @@ using Microsoft.VisualStudio.Imaging;
 using Microsoft.VisualStudio.Imaging.Interop;
 
 using PolyglotNotebooks.Kernel;
+using PolyglotNotebooks.Models;
 
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 
 namespace PolyglotNotebooks.Editor
 {
@@ -34,6 +36,9 @@ namespace PolyglotNotebooks.Editor
 
         /// <summary>Raised when the user clicks Clear All Outputs.</summary>
         public event EventHandler? ClearAllOutputsRequested;
+
+        /// <summary>Raised when the user selects an export format from the Export dropdown.</summary>
+        public event EventHandler<ExportFormat>? ExportRequested;
 
         public NotebookToolbar()
         {
@@ -117,6 +122,12 @@ namespace PolyglotNotebooks.Editor
             DockPanel.SetDock(clearBtn, Dock.Left);
             layout.Children.Add(clearBtn);
 
+            // ── Export dropdown ──────────────────────────────────────────
+            var exportBtn = MakeButton(KnownMonikers.Export, "Export Notebook");
+            exportBtn.Click += OnExportButtonClick;
+            DockPanel.SetDock(exportBtn, Dock.Left);
+            layout.Children.Add(exportBtn);
+
             Child = layout;
 
             // Show initial grey / not-started state
@@ -174,6 +185,31 @@ namespace PolyglotNotebooks.Editor
 
             _kernelLabel.Text = labelText;
             _statusDot.SetResourceReference(TextBlock.ForegroundProperty, dotBrushKey);
+        }
+
+        private void OnExportButtonClick(object sender, RoutedEventArgs e)
+        {
+            if (sender is not Button btn)
+                return;
+
+            var menu = new ContextMenu();
+            menu.Items.Add(MakeExportMenuItem("HTML (.html)", ExportFormat.Html));
+            menu.Items.Add(MakeExportMenuItem("PDF (.pdf)", ExportFormat.Pdf));
+            menu.Items.Add(MakeExportMenuItem("Markdown (.md)", ExportFormat.Markdown));
+            menu.Items.Add(MakeExportMenuItem("C# Script (.csx)", ExportFormat.CSharpScript));
+            menu.Items.Add(MakeExportMenuItem("F# Script (.fsx)", ExportFormat.FSharpScript));
+
+            ThemedContextMenuHelper.ApplyVsTheme(menu);
+            menu.PlacementTarget = btn;
+            menu.Placement = PlacementMode.Bottom;
+            menu.IsOpen = true;
+        }
+
+        private MenuItem MakeExportMenuItem(string header, ExportFormat format)
+        {
+            var item = new MenuItem { Header = header };
+            item.Click += (s, e) => ExportRequested?.Invoke(this, format);
+            return item;
         }
 
         private static Button MakeButton(ImageMoniker moniker, string tooltip)
