@@ -118,6 +118,91 @@ The package is downloaded and loaded at runtime. Subsequent cells in the same ke
 - **First load is slower** — the package must be downloaded. Subsequent runs use the cached version.
 - **Works in C# and F# cells** — other kernels have their own package mechanisms.
 
+## Workspace References
+
+When a notebook file is part of a project in the loaded solution, the extension automatically injects `#r` references for the solution's project assemblies and NuGet packages into the kernel when it starts. This means you can use your own types and packages in notebook cells without any `#r` ceremony.
+
+### How It Works
+
+1. When the kernel starts for a notebook, the extension checks whether the notebook file belongs to a project in Solution Explorer.
+2. If it does, the extension enumerates all projects in the solution and collects:
+   - **Project output assemblies** (e.g., `bin/Debug/net8.0/MyProject.dll`)
+   - **Resolved NuGet package assemblies** that the projects reference
+3. These are submitted as `#r` directives to the C# kernel before your first cell runs.
+4. IntelliSense reflects the imported types automatically.
+
+### When It Activates
+
+Workspace references are injected **only** when the notebook file is included in a project in Solution Explorer. This happens automatically — there's no setting to enable or disable.
+
+| Scenario | References Injected? |
+|----------|:-------------------:|
+| Notebook added to a project in Solution Explorer | ✅ Yes |
+| Notebook opened via **File > Open > File** (not in a project) | ❌ No |
+| Notebook in a Solution Folder (not a project) | ❌ No |
+
+### Example
+
+Given a solution with a `MyLib` project containing:
+
+```csharp
+// MyLib/Calculator.cs
+namespace MyLib;
+
+public class Calculator
+{
+    public static int Add(int a, int b) => a + b;
+}
+```
+
+A notebook file added to the same solution can use `Calculator` directly:
+
+```csharp
+using MyLib;
+
+var result = Calculator.Add(17, 25);
+Console.WriteLine($"17 + 25 = {result}");
+```
+
+NuGet packages referenced by solution projects are also available. If `MyLib` references `Newtonsoft.Json`, your notebook can use it without a `#r "nuget:..."` directive:
+
+```csharp
+using Newtonsoft.Json;
+
+var json = JsonConvert.SerializeObject(new { Name = "Test", Value = 42 });
+Console.WriteLine(json);
+```
+
+### Rebuilding Your Project
+
+The kernel loads assemblies into memory when it starts. If you rebuild a project, the kernel still has the **old** version loaded. To pick up changes:
+
+- Click **Restart Kernel** (🔁) in the notebook toolbar, then re-run your cells
+- Or click **Restart + Run All** (🔄) to restart and re-execute everything
+
+> **Tip:** Workspace references are resolved from disk when the kernel starts. Make sure your projects are **built** before running notebook cells — the extension can only inject assemblies that exist on disk.
+
+### Supported Target Frameworks
+
+The `dotnet-interactive` kernel runs on modern .NET. Not all project target frameworks are compatible:
+
+| Project TFM | Works? | Notes |
+|-------------|:------:|-------|
+| `net8.0`, `net9.0`, `net10.0`+ | ✅ | Fully supported |
+| `net6.0`, `net7.0` | ✅ | Fully supported |
+| `netstandard2.0`, `netstandard2.1` | ✅ | Fully supported — designed for cross-runtime compatibility |
+| `net48`, `net472`, `net462` (.NET Framework) | ⚠️ | **Not reliably supported.** Assemblies may load, but types that depend on Framework-only APIs (`System.Web`, WCF, `System.Drawing` without the compat pack, etc.) will fail at runtime. Simple data model classes may work; anything else is unpredictable. |
+
+For multi-TFM projects (e.g., `<TargetFrameworks>net8.0;netstandard2.0</TargetFrameworks>`), the extension uses the output assembly that Visual Studio has currently selected as the active build configuration.
+
+> **Recommendation:** If your solution contains .NET Framework projects and you want to use their types in notebooks, consider adding a `netstandard2.0` target to the projects you need. .NET Standard assemblies load cleanly in both .NET Framework and the `dotnet-interactive` kernel.
+
+### Limitations
+
+- Only **C# kernel** cells benefit from the injected `#r` directives. Other kernels (JavaScript, SQL, PowerShell) are not affected.
+- Projects that haven't been built yet (no output DLL on disk) are skipped silently.
+- .NET runtime and framework assemblies are excluded — the kernel already has these.
+
 ## Multi-Language Execution
 
 Each language kernel runs independently. You can mix languages freely:

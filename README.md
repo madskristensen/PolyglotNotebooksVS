@@ -35,6 +35,8 @@ Write and run C#, JavaScript, SQL, and more — right inside Visual Studio. Poly
 
 **Zero setup** - The extension detects and installs `dotnet-interactive` automatically when needed. Open a notebook file and start coding.
 
+**Workspace-aware references** - Notebooks that belong to a project in your solution automatically get access to the project's types and NuGet packages — no `#r` directives needed. IntelliSense works for your own code too.
+
 **Item template** - Create new `.dib` notebooks directly from the **Add New Item** dialog. No need to leave the IDE or copy files manually.
 
 ## Getting Started
@@ -75,6 +77,22 @@ The toolbar at the top of the editor gives you quick access to common actions:
 - **Interrupt** - Stop a long-running cell
 - **Restart Kernel** - Reset kernel state without running cells
 - **Clear All Outputs** - Remove all cell outputs at once
+
+### Use Your Project's Types in Notebooks
+
+When a notebook file (`.dib` or `.ipynb`) is part of a project in your solution, the extension automatically makes the solution's assemblies and NuGet packages available in the kernel. You can use your own types and packages in notebook cells without writing any `#r` directives:
+
+```csharp
+// No #r needed — MyProject.dll and its NuGet packages are already loaded
+using MyProject.Models;
+
+var customer = new Customer("Contoso", "contoso@example.com");
+display(customer);
+```
+
+This only activates when the notebook is included in a project via Solution Explorer. Standalone notebooks opened from **File > Open** are not affected. Projects must target **modern .NET** (`net6.0`+) or **.NET Standard** (`netstandard2.0`/`2.1`). .NET Framework projects (`net48`) are not reliably supported because the kernel runs on modern .NET — see [Running Code](docs/running-code.md#supported-target-frameworks) for details.
+
+> **After rebuilding** your project, use **Restart Kernel** to pick up the new assemblies — the kernel can't hot-reload already-loaded DLLs.
 
 ### Organize Cells
 

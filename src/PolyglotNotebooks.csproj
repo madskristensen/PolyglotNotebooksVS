@@ -78,6 +78,12 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.VisualStudio.SDK.Analyzers" Version="17.7.105" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="4.14.0" ExcludeAssets="Runtime">
+      <IncludeAssets>compile; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.VisualStudio.LanguageServices" Version="4.14.0" ExcludeAssets="Runtime">
+      <IncludeAssets>compile; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
     <PackageReference Include="Microsoft.DotNet.Interactive.Documents" Version="1.0.0-beta.25177.1" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3856.49" />
     <PackageReference Include="System.Text.Json" Version="9.0.0" ExcludeAssets="runtime" />
@@ -102,6 +108,7 @@
     <Compile Include="Execution\CellExecutionEngine.cs" />
     <Compile Include="Execution\ExecutionCoordinator.cs" />
     <Compile Include="Execution\NodeJsExecutor.cs" />
+    <Compile Include="Execution\WorkspaceReferenceCollector.cs" />
     <Compile Include="IntelliSense\CompletionProvider.cs" />
     <Compile Include="IntelliSense\DiagnosticsProvider.cs" />
     <Compile Include="IntelliSense\HoverProvider.cs" />

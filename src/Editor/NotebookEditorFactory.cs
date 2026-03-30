@@ -3,7 +3,6 @@ using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
 using PolyglotNotebooks.Models;
 using System;
-using System.IO;
 using System.Runtime.InteropServices;
 
 namespace PolyglotNotebooks.Editor
@@ -70,7 +69,6 @@ namespace PolyglotNotebooks.Editor
 
             ppunkDocView = Marshal.GetIUnknownForObject(pane);
             ppunkDocData = Marshal.GetIUnknownForObject(pane);
-            pbstrEditorCaption = Path.GetFileName(pszMkDocument);
 
             return VSConstants.S_OK;
         }

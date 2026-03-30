@@ -26,6 +26,7 @@ namespace PolyglotNotebooks.Execution
         private readonly SemaphoreSlim _startupLock = new SemaphoreSlim(1, 1);
         private readonly CancellationTokenSource _lifetimeCts = new CancellationTokenSource();
         private readonly NodeJsExecutor _nodeJsExecutor = new NodeJsExecutor();
+        private readonly string? _notebookFilePath;
 
         private volatile IKernelClient? _kernelClient;
         private volatile CellExecutionEngine? _executionEngine;
@@ -40,11 +41,12 @@ namespace PolyglotNotebooks.Execution
 
         public KernelClient? KernelClient => _kernelClient as KernelClient;
 
-        public ExecutionCoordinator(KernelProcessManager kernelProcessManager)
+        public ExecutionCoordinator(KernelProcessManager kernelProcessManager, string? notebookFilePath = null)
         {
             _kernelProcessManager = kernelProcessManager
                 ?? throw new ArgumentNullException(nameof(kernelProcessManager));
             _installationDetector = new KernelInstallationDetector();
+            _notebookFilePath = notebookFilePath;
         }
 
         /// <summary>
@@ -53,12 +55,14 @@ namespace PolyglotNotebooks.Execution
         internal ExecutionCoordinator(
             IKernelProcessManager kernelProcessManager,
             Func<System.Diagnostics.Process, IKernelClient>? kernelClientFactory = null,
-            KernelInstallationDetector? installationDetector = null)
+            KernelInstallationDetector? installationDetector = null,
+            string? notebookFilePath = null)
         {
             _kernelProcessManager = kernelProcessManager
                 ?? throw new ArgumentNullException(nameof(kernelProcessManager));
             _kernelClientFactory = kernelClientFactory;
             _installationDetector = installationDetector ?? new KernelInstallationDetector();
+            _notebookFilePath = notebookFilePath;
         }
 
         // ── Fire-and-forget handlers (called from UI thread) ──────────────────
@@ -435,6 +439,34 @@ namespace PolyglotNotebooks.Execution
         }
 
         /// <summary>
+        /// Submits <c>#r</c> directives for the current solution's project assemblies and
+        /// NuGet packages so notebook cells can reference workspace types without manual
+        /// <c>#r</c> ceremony.  Runs once per kernel session.  Failures are logged but do
+        /// not block cell execution.
+        /// </summary>
+        private async Task InjectWorkspaceReferencesAsync(CancellationToken ct)
+        {
+            try
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(ct);
+                var preamble = WorkspaceReferenceCollector.CollectPreamble(_notebookFilePath!);
+
+                if (string.IsNullOrEmpty(preamble))
+                    return;
+
+                await _kernelClient!.SubmitCodeAsync(preamble, "csharp", ct).ConfigureAwait(false);
+
+                ExtensionLogger.LogInfo(nameof(ExecutionCoordinator),
+                    "Workspace references injected into kernel.");
+            }
+            catch (Exception ex)
+            {
+                ExtensionLogger.LogException(nameof(ExecutionCoordinator),
+                    "Failed to inject workspace references; cells will run without them.", ex);
+            }
+        }
+
+        /// <summary>
         /// Lazily starts the dotnet-interactive process and wires up the KernelClient.
         /// Captures the KernelReady payload to populate <see cref="KernelInfoCache"/>.
         /// Idempotent: fast-path when already running.
@@ -532,6 +564,12 @@ namespace PolyglotNotebooks.Execution
 
                 _executionEngine = new CellExecutionEngine(_kernelClient);
                 _kernelStarted = true;
+
+                // Inject workspace references if this notebook belongs to a solution project.
+                if (!string.IsNullOrEmpty(_notebookFilePath))
+                {
+                    await InjectWorkspaceReferencesAsync(ct).ConfigureAwait(false);
+                }
 
                 if (_kernelClient is KernelClient concreteClient)
                     KernelClientAvailable?.Invoke(concreteClient);

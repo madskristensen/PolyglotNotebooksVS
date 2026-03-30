@@ -125,7 +125,7 @@ namespace PolyglotNotebooks.Editor
             // Wire up the Run button → execution engine pipeline.
             var workingDirectory = Path.GetDirectoryName(_filePath) ?? string.Empty;
             _kernelProcessManager = new KernelProcessManager(workingDirectory);
-            _coordinator = new ExecutionCoordinator(_kernelProcessManager);
+            _coordinator = new ExecutionCoordinator(_kernelProcessManager, _filePath);
             if (_control != null)
             {
                 _control.CellRunRequested += _coordinator.HandleCellRunRequested;
