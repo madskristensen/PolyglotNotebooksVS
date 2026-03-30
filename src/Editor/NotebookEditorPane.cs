@@ -20,7 +20,7 @@ namespace PolyglotNotebooks.Editor
     /// Serves as both the view (IVsWindowPane via WindowPane) and the document data (IVsPersistDocData).
     /// </summary>
     [ComVisible(true)]
-    public sealed class NotebookEditorPane : WindowPane, IVsPersistDocData, IOleCommandTarget, IVsDocOutlineProvider
+    public sealed class NotebookEditorPane : WindowPane, IVsPersistDocData2, IPersistFileFormat, IOleCommandTarget, IVsDocOutlineProvider
     {
 
         // GUID of NotebookEditorFactory — returned by GetGuidEditorType.
@@ -177,54 +177,15 @@ namespace PolyglotNotebooks.Editor
             if (_document == null)
                 return VSConstants.E_UNEXPECTED;
 
-            try
-            {
-                switch (grfSave)
-                {
-                    case VSSAVEFLAGS.VSSAVE_Save:
-                    case VSSAVEFLAGS.VSSAVE_SilentSave:
-                        _document.Save();
-                        break;
-
-                    case VSSAVEFLAGS.VSSAVE_SaveAs:
-                        {
-                            string? newPath = ShowSaveDialog();
-                            if (newPath == null)
-                            {
-                                pfSaveCanceled = 1;
-                                return VSConstants.S_OK;
-                            }
-                            _document.SaveAs(newPath);
-                            _filePath = newPath;
-                            pbstrMkDocumentNew = newPath;
-                            break;
-                        }
-
-                    case VSSAVEFLAGS.VSSAVE_SaveCopyAs:
-                        {
-                            string? newPath = ShowSaveDialog();
-                            if (newPath == null)
-                            {
-                                pfSaveCanceled = 1;
-                                return VSConstants.S_OK;
-                            }
-                            // Save a copy without changing the document's tracked path or dirty state.
-                            string content = _document.Format == NotebookFormat.Ipynb
-                                ? NotebookParser.SerializeIpynb(_document)
-                                : NotebookParser.SerializeDib(_document);
-                            File.WriteAllText(newPath, content);
-                            break;
-                        }
-                }
-            }
-            catch (Exception ex)
-            {
-                ActivityLog.LogError(nameof(NotebookEditorPane),
-                    $"Failed to save notebook: {ex.Message}");
+            // Delegate to IVsUIShell.SaveDocDataToFile which manages the Save As
+            // dialog, QueryEditQuerySave checks, and calls back through our
+            // IPersistFileFormat.Save implementation.
+            IVsUIShell uiShell = (IVsUIShell)GetService(typeof(SVsUIShell));
+            if (uiShell == null)
                 return VSConstants.E_FAIL;
-            }
 
-            return VSConstants.S_OK;
+            return uiShell.SaveDocDataToFile(grfSave, this, _filePath,
+                out pbstrMkDocumentNew, out pfSaveCanceled);
         }
 
         public int Close()
@@ -335,11 +296,133 @@ namespace PolyglotNotebooks.Editor
             return VSConstants.S_OK;
         }
 
-        // ── IOleCommandTarget ─────────────────────────────────────────────────────
+        // ── IVsPersistDocData2 additional members ────────────────────────────
+
+        public int SetDocDataDirty(int fDirty)
+        {
+            if (_document != null)
+                _document.IsDirty = fDirty != 0;
+
+            return VSConstants.S_OK;
+        }
+
+        public int IsDocDataReadOnly(out int pfReadOnly)
+        {
+            pfReadOnly = 0;
+            return VSConstants.S_OK;
+        }
+
+        public int SetDocDataReadOnly(int fReadOnly)
+        {
+            return VSConstants.S_OK;
+        }
+
+        // ── IPersistFileFormat ───────────────────────────────────────────────
+
+        int Microsoft.VisualStudio.OLE.Interop.IPersist.GetClassID(out Guid pClassID)
+        {
+            pClassID = EditorFactoryGuid;
+            return VSConstants.S_OK;
+        }
+
+        int IPersistFileFormat.GetClassID(out Guid pClassID)
+        {
+            pClassID = EditorFactoryGuid;
+            return VSConstants.S_OK;
+        }
+
+        public int GetFormatList(out string ppszFormatList)
+        {
+            ppszFormatList = "Polyglot Notebook (*.dib)\n*.dib\nJupyter Notebook (*.ipynb)\n*.ipynb\n";
+            return VSConstants.S_OK;
+        }
+
+        int IPersistFileFormat.GetCurFile(out string ppszFilename, out uint pnFormatIndex)
+        {
+            ppszFilename = _filePath;
+            // 0 = .dib, 1 = .ipynb
+            pnFormatIndex = (_document != null && _document.Format == NotebookFormat.Ipynb) ? 1u : 0u;
+            return VSConstants.S_OK;
+        }
+
+        int IPersistFileFormat.InitNew(uint nFormatIndex)
+        {
+            return VSConstants.S_OK;
+        }
+
+        int IPersistFileFormat.IsDirty(out int pfIsDirty)
+        {
+            pfIsDirty = (_document != null && _document.IsDirty) ? 1 : 0;
+            return VSConstants.S_OK;
+        }
+
+        int IPersistFileFormat.Load(string pszFilename, uint grfMode, int fReadOnly)
+        {
+            return LoadDocData(pszFilename);
+        }
+
+        int IPersistFileFormat.Save(string pszFilename, int fRemember, uint nFormatIndex)
+        {
+            if (_document == null)
+                return VSConstants.E_UNEXPECTED;
+
+            try
+            {
+                if (string.IsNullOrEmpty(pszFilename))
+                {
+                    // Save to current file.
+                    _document.Save();
+                }
+                else if (fRemember != 0)
+                {
+                    // Save As: save to new path and adopt it.
+                    _document.SaveAs(pszFilename);
+                    _filePath = pszFilename;
+                }
+                else
+                {
+                    // Save Copy As: write to the specified path without changing state.
+                    string content = _document.Format == NotebookFormat.Ipynb
+                        ? NotebookParser.SerializeIpynb(_document)
+                        : NotebookParser.SerializeDib(_document);
+                    File.WriteAllText(pszFilename, content);
+                }
+            }
+            catch (Exception ex)
+            {
+                ActivityLog.LogError(nameof(NotebookEditorPane),
+                    $"Failed to save notebook: {ex.Message}");
+                return VSConstants.E_FAIL;
+            }
+
+            return VSConstants.S_OK;
+        }
+
+        int IPersistFileFormat.SaveCompleted(string pszFilename)
+        {
+            return VSConstants.S_OK;
+        }
+
+        // ── IOleCommandTarget
 
         int IOleCommandTarget.Exec(ref Guid pguidCmdGroup, uint nCmdID, uint nCmdexecopt, IntPtr pvaIn, IntPtr pvaOut)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
+
+            // Don't forward Save/SaveAs to the embedded text view — it would save
+            // the cell buffer to its fake .cs/.js path instead of the notebook file.
+            // Returning NOTSUPPORTED lets VS fall through to IVsPersistDocData.SaveDocData().
+            if (pguidCmdGroup == VSConstants.GUID_VSStandardCommandSet97)
+            {
+                switch ((VSConstants.VSStd97CmdID)nCmdID)
+                {
+                    case VSConstants.VSStd97CmdID.Save:
+                    case VSConstants.VSStd97CmdID.SaveAs:
+                    case VSConstants.VSStd97CmdID.SaveProjectItem:
+                        return (int)Microsoft.VisualStudio.OLE.Interop.Constants.OLECMDERR_E_NOTSUPPORTED;
+                }
+            }
+
             if (_control != null)
             {
                 // Use HasFocusedTextView (checks IWpfTextView.HasAggregateFocus)
@@ -354,6 +437,23 @@ namespace PolyglotNotebooks.Editor
         int IOleCommandTarget.QueryStatus(ref Guid pguidCmdGroup, uint cCmds, OLECMD[] prgCmds, IntPtr pCmdText)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
+
+            // Don't forward Save/SaveAs status to the embedded text view — VS handles
+            // these through IVsPersistDocData and the Running Document Table.
+            if (pguidCmdGroup == VSConstants.GUID_VSStandardCommandSet97 && prgCmds != null)
+            {
+                for (int i = 0; i < prgCmds.Length; i++)
+                {
+                    switch ((VSConstants.VSStd97CmdID)prgCmds[i].cmdID)
+                    {
+                        case VSConstants.VSStd97CmdID.Save:
+                        case VSConstants.VSStd97CmdID.SaveAs:
+                        case VSConstants.VSStd97CmdID.SaveProjectItem:
+                            return (int)Microsoft.VisualStudio.OLE.Interop.Constants.OLECMDERR_E_NOTSUPPORTED;
+                    }
+                }
+            }
+
             if (_control != null)
             {
                 var cmdTarget = _control.GetFocusedCommandTarget();

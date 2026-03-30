@@ -56,7 +56,7 @@ namespace PolyglotNotebooks.Models
         public bool IsDirty
         {
             get => _isDirty;
-            private set
+            internal set
             {
                 if (_isDirty != value)
                 {

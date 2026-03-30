@@ -173,8 +173,21 @@ namespace PolyglotNotebooks.Variables
 
         private void UpdateEmptyState()
         {
-            var source = _grid.ItemsSource as System.Collections.ICollection;
-            bool empty = source == null || source.Count == 0;
+            bool empty;
+            if (_service == null)
+            {
+                empty = true;
+            }
+            else if (!string.IsNullOrWhiteSpace(_filterText))
+            {
+                var source = _grid.ItemsSource as System.Collections.ICollection;
+                empty = source == null || source.Count == 0;
+            }
+            else
+            {
+                empty = _service.Variables.Count == 0;
+            }
+
             _emptyState.Visibility = empty ? Visibility.Visible : Visibility.Collapsed;
         }
 
