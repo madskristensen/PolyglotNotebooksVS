@@ -51,6 +51,9 @@ namespace PolyglotNotebooks.Editor
         /// <summary>Raised when the user clicks the Stop button to cancel execution.</summary>
         public event EventHandler? StopRequested;
 
+        /// <summary>Raised when the user chooses "Debug Cell" to run the cell with the debugger attached.</summary>
+        public event EventHandler? DebugCellRequested;
+
         public CellToolbar(NotebookDocument document, NotebookCell cell)
         {
             _document = document;
@@ -226,6 +229,16 @@ namespace PolyglotNotebooks.Editor
 
             _cell.PropertyChanged += OnCellPropertyChanged;
             Unloaded += (s, e) => _cell.PropertyChanged -= OnCellPropertyChanged;
+            Loaded += (s, e) =>
+            {
+                // Re-subscribe after the control is placed back in the visual tree
+                // (e.g., after the VS debugger UI hid the notebook editor).
+                _cell.PropertyChanged -= OnCellPropertyChanged;
+                _cell.PropertyChanged += OnCellPropertyChanged;
+                UpdateStatusIndicator();
+                UpdateTimingDisplay();
+                UpdateExecutionCounter();
+            };
         }
 
         /// <summary>
@@ -280,6 +293,8 @@ namespace PolyglotNotebooks.Editor
             menu.Items.Add(MakeMenuItem("Run Cell and Below", () => RunBelowRequested?.Invoke(this, EventArgs.Empty), KnownMonikers.MoveDown));
             menu.Items.Add(new Separator());
             menu.Items.Add(MakeMenuItem("Run Selection", () => RunSelectionRequested?.Invoke(this, EventArgs.Empty), KnownMonikers.RunOutline));
+            menu.Items.Add(new Separator());
+            menu.Items.Add(MakeMenuItem("Debug Cell", () => DebugCellRequested?.Invoke(this, EventArgs.Empty), KnownMonikers.DebugTemplate));
 
             // Wire mouse handlers
             runArea.MouseLeftButtonDown += (s, e) =>
@@ -342,6 +357,7 @@ namespace PolyglotNotebooks.Editor
             var menu = new ContextMenu();
             ThemedContextMenuHelper.ApplyVsTheme(menu);
             menu.Items.Add(MakeMenuItem("Run Cell", () => RunRequested?.Invoke(this, EventArgs.Empty), KnownMonikers.Run));
+            menu.Items.Add(MakeMenuItem("Debug Cell", () => DebugCellRequested?.Invoke(this, EventArgs.Empty), KnownMonikers.DebugTemplate));
             menu.Items.Add(new Separator());
             menu.Items.Add(MakeMenuItem("Insert Code Cell Above", () => InsertCellAt(0, CellKind.Code), KnownMonikers.InsertClause));
             menu.Items.Add(MakeMenuItem("Insert Code Cell Below", () => InsertCellAt(1, CellKind.Code), KnownMonikers.InsertClause));

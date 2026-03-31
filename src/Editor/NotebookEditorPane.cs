@@ -139,6 +139,7 @@ namespace PolyglotNotebooks.Editor
                 _control.RunCellBelowRequested += OnRunCellBelowRequested;
                 _control.RunSelectionRequested += OnRunSelectionRequested;
                 _control.CellStopRequested += OnInterruptRequested;
+                _control.CellDebugRequested += _coordinator.HandleDebugCellRequested;
             }
             _kernelProcessManager.StatusChanged += OnKernelStatusChanged;
 
@@ -201,6 +202,9 @@ namespace PolyglotNotebooks.Editor
 
                 if (_control != null && _coordinator != null)
                     _control.CellRunRequested -= _coordinator.HandleCellRunRequested;
+
+                if (_control != null && _coordinator != null)
+                    _control.CellDebugRequested -= _coordinator.HandleDebugCellRequested;
 
                 if (_control != null)
                 {
@@ -618,6 +622,9 @@ namespace PolyglotNotebooks.Editor
 
                 if (_control != null && _coordinator != null)
                     _control.CellRunRequested -= _coordinator.HandleCellRunRequested;
+
+                if (_control != null && _coordinator != null)
+                    _control.CellDebugRequested -= _coordinator.HandleDebugCellRequested;
 
                 if (_control != null)
                 {

@@ -117,6 +117,124 @@ namespace PolyglotNotebooks.Execution
 #pragma warning restore VSTHRD110, VSSDK007
         }
 
+        /// <summary>
+        /// Called when <see cref="NotebookControl.CellDebugRequested"/> fires.
+        /// Attaches the VS debugger to the kernel process and executes the cell with Debugger.Break() prepended.
+        /// </summary>
+        public void HandleDebugCellRequested(object sender, CellRunEventArgs e)
+        {
+            if (e?.Cell == null) return;
+            var cell = e.Cell;
+
+            System.Diagnostics.Debug.WriteLine("[DBG-TRACE] HandleDebugCellRequested: ENTER");
+
+            // Immediate UI feedback before kernel startup and debugger attach.
+            cell.ExecutionStatus = CellExecutionStatus.Running;
+
+            var previous = Interlocked.Exchange(ref _currentCts, null);
+            previous?.Cancel();
+
+            var cts = new CancellationTokenSource();
+            _currentCts = cts;
+
+#pragma warning disable VSTHRD110, VSSDK007
+            _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            {
+                try
+                {
+                    System.Diagnostics.Debug.WriteLine("[DBG-TRACE] HandleDebug: EnsureKernelStarted...");
+                    await EnsureKernelStartedAsync(cts.Token).ConfigureAwait(false);
+                    System.Diagnostics.Debug.WriteLine("[DBG-TRACE] HandleDebug: kernel started OK");
+
+                    if (_kernelProcessManager.Process != null)
+                    {
+                        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(cts.Token);
+                        Debugging.DebuggerAttacher.DisableJustMyCode();
+
+                        int hostPid = _kernelProcessManager.Process.Id;
+                        int kernelPid = Debugging.DebuggerAttacher.ResolveKernelProcessId(hostPid);
+
+                        var attached = await Debugging.DebuggerAttacher.AttachAsync(kernelPid)
+                            .ConfigureAwait(false);
+
+                        System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] HandleDebug: attach result={attached}");
+
+                        if (!attached)
+                        {
+                            ExtensionLogger.LogWarning(nameof(ExecutionCoordinator),
+                                "Failed to attach debugger to kernel process. Cell will execute without debugging.");
+                        }
+                    }
+                    else
+                    {
+                        ExtensionLogger.LogWarning(nameof(ExecutionCoordinator),
+                            "Kernel process is null. Cannot attach debugger.");
+                    }
+
+                    // Execute the cell with a VS-side Break All timed after code submission.
+                    try
+                    {
+                        System.Diagnostics.Debug.WriteLine("[DBG-TRACE] HandleDebug: calling ExecuteDebugCellAsync...");
+                        await ExecuteDebugCellAsync(cell, cts.Token).ConfigureAwait(false);
+                        System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] HandleDebug: ExecuteDebugCellAsync returned. status={cell.ExecutionStatus}");
+                    }
+                    finally
+                    {
+                        System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] HandleDebug: inner finally (cleanup). status={cell.ExecutionStatus}");
+                        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                        Debugging.DebuggerAttacher.RestoreJustMyCode();
+                        await Debugging.DebuggerAttacher.DetachAllAsync().ConfigureAwait(false);
+                        System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] HandleDebug: inner finally done. status={cell.ExecutionStatus}");
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] HandleDebug: caught OperationCanceledException. status={cell.ExecutionStatus}");
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    if (cell.ExecutionStatus == CellExecutionStatus.Running ||
+                        cell.ExecutionStatus == CellExecutionStatus.Queued)
+                    {
+                        cell.ExecutionStatus = CellExecutionStatus.Idle;
+                    }
+                    System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] HandleDebug: after OCE handler. status={cell.ExecutionStatus}");
+                }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] HandleDebug: caught Exception: {ex.GetType().Name}: {ex.Message}");
+                    ExtensionLogger.LogException(nameof(ExecutionCoordinator),
+                        "Unhandled error during debug cell execution.", ex);
+                    try
+                    {
+                        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                        if (cell.ExecutionStatus == CellExecutionStatus.Running)
+                            cell.ExecutionStatus = CellExecutionStatus.Failed;
+                    }
+                    catch { /* best-effort UI cleanup */ }
+                    System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] HandleDebug: after Exception handler. status={cell.ExecutionStatus}");
+                }
+                finally
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] HandleDebug: outer finally ENTER. status={cell.ExecutionStatus}");
+                    try
+                    {
+                        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                        if (cell.ExecutionStatus == CellExecutionStatus.Running)
+                        {
+                            System.Diagnostics.Debug.WriteLine("[DBG-TRACE] HandleDebug: outer finally FORCING Idle (was still Running!)");
+                            cell.ExecutionStatus = CellExecutionStatus.Idle;
+                        }
+                    }
+                    catch { /* best-effort */ }
+
+                    Interlocked.CompareExchange(ref _currentCts, null, cts);
+                    cts.Dispose();
+                    ExecutionCompleted?.Invoke(this, EventArgs.Empty);
+                    System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] HandleDebug: outer finally EXIT. status={cell.ExecutionStatus}");
+                }
+            });
+#pragma warning restore VSTHRD110, VSSDK007
+        }
+
         /// <summary>Fire-and-forget entry point for the toolbar "Run All" button.</summary>
         public void HandleRunAllRequested(NotebookDocument document)
         {
@@ -390,6 +508,61 @@ namespace PolyglotNotebooks.Execution
             {
                 await EnsureKernelStartedAsync(ct).ConfigureAwait(false);
                 await _executionEngine!.ExecuteCellAsync(cell, ct).ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>
+        /// Executes a single cell in debug mode. After the code is submitted to the kernel,
+        /// issues a DTE Break All to pause the kernel while executing the user's code.
+        /// JavaScript cells are not supported for debugging (falls back to normal execution).
+        /// </summary>
+        private async Task ExecuteDebugCellAsync(NotebookCell cell, CancellationToken ct)
+        {
+            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(ct);
+            cell.ExecutionStatus = CellExecutionStatus.Running;
+
+            if (IsJavaScriptCell(cell))
+            {
+                // JavaScript cells don't support managed debugging — fall back to normal execution
+                ExtensionLogger.LogWarning(nameof(ExecutionCoordinator),
+                    "Debug mode not supported for JavaScript cells. Running normally.");
+                await _nodeJsExecutor.ExecuteAsync(cell, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                using var debugCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                var capturedCell = cell;
+                var capturedSw = System.Diagnostics.Stopwatch.StartNew();
+
+                System.Diagnostics.Debug.WriteLine("[DBG-TRACE] ExecDebugCell: calling engine.ExecuteDebugCellAsync...");
+                await _executionEngine!.ExecuteDebugCellAsync(cell,
+                    onCodeSubmitted: async breakCt =>
+                    {
+                        System.Diagnostics.Debug.WriteLine("[DBG-TRACE] CALLBACK: onCodeSubmitted ENTER");
+                        await Debugging.DebuggerAttacher.WaitForUserContinueAndDetachAsync(breakCt)
+                            .ConfigureAwait(false);
+                        System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] CALLBACK: WaitForUserContinueAndDetach returned. status={capturedCell.ExecutionStatus}");
+
+                        capturedSw.Stop();
+                        await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                        System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] CALLBACK: on UI thread. status={capturedCell.ExecutionStatus}");
+                        if (capturedCell.ExecutionStatus == CellExecutionStatus.Running)
+                        {
+                            capturedCell.LastExecutionDuration = capturedSw.Elapsed;
+                            capturedCell.ExecutionStatus = CellExecutionStatus.Succeeded;
+                            System.Diagnostics.Debug.WriteLine("[DBG-TRACE] CALLBACK: set Succeeded");
+                        }
+                        else
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] CALLBACK: NOT setting Succeeded, already={capturedCell.ExecutionStatus}");
+                        }
+
+                        System.Diagnostics.Debug.WriteLine("[DBG-TRACE] CALLBACK: calling debugCts.Cancel()");
+                        debugCts.Cancel();
+                        System.Diagnostics.Debug.WriteLine("[DBG-TRACE] CALLBACK: EXIT");
+                    },
+                    ct: debugCts.Token).ConfigureAwait(false);
+                System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] ExecDebugCell: engine.ExecuteDebugCellAsync returned. status={cell.ExecutionStatus}");
             }
         }
 

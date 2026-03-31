@@ -74,6 +74,9 @@ namespace PolyglotNotebooks.Editor
         /// <summary>Raised when the user clicks the Stop button to cancel execution.</summary>
         public event EventHandler? StopRequested;
 
+        /// <summary>Raised when the user chooses "Debug Cell" to run the cell with the debugger attached.</summary>
+        public event EventHandler? DebugCellRequested;
+
         public CellControl(NotebookDocument document, NotebookCell cell)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
@@ -100,6 +103,7 @@ namespace PolyglotNotebooks.Editor
             toolbar.RunAboveRequested += (s, e) => RunAboveRequested?.Invoke(this, e);
             toolbar.RunBelowRequested += (s, e) => RunBelowRequested?.Invoke(this, e);
             toolbar.StopRequested += (s, e) => StopRequested?.Invoke(this, e);
+            toolbar.DebugCellRequested += (s, e) => DebugCellRequested?.Invoke(this, e);
             Grid.SetRow(toolbar, 0);
             grid.Children.Add(toolbar);
 

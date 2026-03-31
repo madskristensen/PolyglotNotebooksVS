@@ -228,6 +228,222 @@ namespace PolyglotNotebooks.Execution
         }
 
         /// <summary>
+        /// Executes the given cell in debug mode. The caller provides a
+        /// <paramref name="onCodeSubmitted"/> callback that is invoked right after the code
+        /// is sent to the kernel — this is used to trigger a VS-side Break All so the
+        /// debugger pauses while the kernel is executing the cell code.
+        /// The caller must ensure "Just My Code" is disabled before calling this method.
+        /// </summary>
+        public async Task ExecuteDebugCellAsync(
+            NotebookCell cell,
+            Func<CancellationToken, Task> onCodeSubmitted = null,
+            CancellationToken ct = default)
+        {
+            if (cell == null) throw new ArgumentNullException(nameof(cell));
+
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            _currentCts = linkedCts;
+
+            var timeoutSeconds = PolyglotNotebooksOptions.Instance.CellExecutionTimeoutSeconds;
+            if (timeoutSeconds > 0)
+                linkedCts.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
+
+            await _executionGate.WaitAsync(ct).ConfigureAwait(false);
+            Task onSubmittedTask = null;
+            try
+            {
+                var effectiveCt = linkedCts.Token;
+
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync(effectiveCt);
+                if (cell.ExecutionStatus != CellExecutionStatus.Running)
+                    cell.ExecutionStatus = CellExecutionStatus.Running;
+                cell.Outputs.Clear();
+                cell.LastExecutionDuration = null;
+
+                var kernelName = MapKernelName(cell.KernelName);
+                var code = cell.Contents?.TrimStart('\uFEFF') ?? string.Empty;
+
+                // Prepend a Debugger.Break() call so the kernel breaks deterministically
+                // inside the Submission# frame. The guard ensures we only break when a
+                // debugger is attached (which it always is in this path). After the user
+                // presses F5/Continue or Step Over, execution flows into their actual code.
+                const string debugPreamble =
+                    "if (System.Diagnostics.Debugger.IsAttached) { System.Diagnostics.Debugger.Break(); }\n";
+                code = debugPreamble + code;
+
+                var envelope = KernelCommandEnvelope.Create(CommandTypes.SubmitCode, new SubmitCode
+                {
+                    Code = code,
+                    TargetKernelName = kernelName
+                });
+
+                ExtensionLogger.LogInfo(nameof(CellExecutionEngine),
+                    $"SubmitCode [DEBUG] token={envelope.Token} kernel={kernelName}");
+
+                using var observer = new EventObserver(_kernelClient.Events, envelope.Token);
+                using var intermediateSub = _kernelClient.Events.Subscribe(
+                    new ActionObserver<KernelEventEnvelope>(e =>
+                    {
+                        var eventToken = e.Command?.Token;
+                        if (eventToken == null || !eventToken.StartsWith(envelope.Token)) return;
+                        if (IsTerminalEvent(e.EventType)) return;
+
+#pragma warning disable VSTHRD110, VSSDK007
+                        _ = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+                        {
+                            await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                            ApplyOutputEvent(cell, e);
+                        });
+#pragma warning restore VSTHRD110, VSSDK007
+                    }));
+
+                var sw = Stopwatch.StartNew();
+                System.Diagnostics.Debug.WriteLine("[DBG-TRACE] Engine: sending command to kernel...");
+                await _kernelClient.SendCommandAsync(envelope, effectiveCt).ConfigureAwait(false);
+                System.Diagnostics.Debug.WriteLine("[DBG-TRACE] Engine: command sent OK");
+
+                if (onCodeSubmitted != null)
+                {
+                    onSubmittedTask = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            System.Diagnostics.Debug.WriteLine("[DBG-TRACE] Engine.Task.Run: invoking onCodeSubmitted...");
+                            await onCodeSubmitted(effectiveCt).ConfigureAwait(false);
+                            System.Diagnostics.Debug.WriteLine("[DBG-TRACE] Engine.Task.Run: onCodeSubmitted completed OK");
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            System.Diagnostics.Debug.WriteLine("[DBG-TRACE] Engine.Task.Run: onCodeSubmitted threw OperationCanceledException");
+                        }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine.Task.Run: onCodeSubmitted threw {ex.GetType().Name}: {ex.Message}");
+                            ExtensionLogger.LogException(nameof(CellExecutionEngine),
+                                "onCodeSubmitted callback failed.", ex);
+                        }
+                    });
+                }
+
+                KernelEventEnvelope terminal;
+                try
+                {
+                    System.Diagnostics.Debug.WriteLine("[DBG-TRACE] Engine: waiting for terminal event...");
+                    terminal = await observer.WaitForTerminalEventAsync(effectiveCt).ConfigureAwait(false);
+                    System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine: terminal event received: {terminal.EventType}");
+                }
+                catch (OperationCanceledException)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine: WaitForTerminal threw OCE. status={cell.ExecutionStatus}");
+                    await TrySendCancelAsync().ConfigureAwait(false);
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+                    bool timedOut = timeoutSeconds > 0 && linkedCts.IsCancellationRequested && !ct.IsCancellationRequested;
+                    System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine: timedOut={timedOut}, status={cell.ExecutionStatus}");
+                    if (timedOut)
+                    {
+                        cell.ExecutionStatus = CellExecutionStatus.Failed;
+                        cell.LastExecutionDuration = sw.Elapsed;
+                        cell.Outputs.Add(new CellOutput(
+                            CellOutputKind.Error,
+                            new List<FormattedOutput> { new FormattedOutput("text/plain",
+                                $"Cell execution timed out after {timeoutSeconds} seconds.") }));
+                    }
+                    else if (cell.ExecutionStatus == CellExecutionStatus.Running)
+                    {
+                        System.Diagnostics.Debug.WriteLine("[DBG-TRACE] Engine: OCE path setting Idle (was Running)");
+                        cell.ExecutionStatus = CellExecutionStatus.Idle;
+                    }
+                    System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine: OCE path returning. status={cell.ExecutionStatus}");
+                    return;
+                }
+
+                sw.Stop();
+
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                cell.LastExecutionDuration = sw.Elapsed;
+
+                if (terminal.EventType == KernelEventTypes.CommandSucceeded)
+                {
+                    var succeeded = terminal.Event.Deserialize<CommandSucceeded>(ProtocolSerializerOptions.Default);
+                    cell.ExecutionStatus = CellExecutionStatus.Succeeded;
+                    cell.ExecutionOrder = succeeded?.ExecutionOrder ?? (cell.ExecutionOrder ?? 0) + 1;
+                    System.Diagnostics.Debug.WriteLine("[DBG-TRACE] Engine: terminal=Succeeded");
+                }
+                else
+                {
+                    var failed = terminal.Event.Deserialize<CommandFailed>(ProtocolSerializerOptions.Default);
+                    cell.ExecutionStatus = CellExecutionStatus.Failed;
+                    if (!string.IsNullOrEmpty(failed?.Message))
+                    {
+                        cell.Outputs.Add(new CellOutput(
+                            CellOutputKind.Error,
+                            new List<FormattedOutput> { new FormattedOutput("text/plain", failed!.Message) }));
+                    }
+                    System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine: terminal=Failed: {failed?.Message}");
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine: OUTER OCE caught. status={cell.ExecutionStatus}");
+                try
+                {
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    cell.ExecutionStatus = CellExecutionStatus.Idle;
+                }
+                catch { }
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine: OUTER Exception caught: {ex.GetType().Name}: {ex.Message}");
+                ExtensionLogger.LogException(nameof(CellExecutionEngine), "Error during debug cell execution.", ex);
+                try
+                {
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    cell.ExecutionStatus = CellExecutionStatus.Failed;
+                    cell.Outputs.Add(new CellOutput(
+                        CellOutputKind.Error,
+                        new List<FormattedOutput> { new FormattedOutput("text/plain", ex.Message) }));
+                }
+                catch { }
+            }
+            finally
+            {
+                System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine: FINALLY enter. onSubmittedTask null={onSubmittedTask == null}, status={cell.ExecutionStatus}");
+                if (onSubmittedTask != null)
+                {
+                    System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine: awaiting onSubmittedTask (IsCompleted={onSubmittedTask.IsCompleted})...");
+                    try { await onSubmittedTask.ConfigureAwait(false); }
+                    catch { /* errors already logged inside the task */ }
+                    System.Diagnostics.Debug.WriteLine("[DBG-TRACE] Engine: onSubmittedTask awaited.");
+                }
+
+                if (ReferenceEquals(_currentCts, linkedCts))
+                    _currentCts = null;
+                _executionGate.Release();
+
+                try
+                {
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine: FINALLY safety check. status={cell.ExecutionStatus}");
+                    if (cell.ExecutionStatus == CellExecutionStatus.Running)
+                    {
+                        System.Diagnostics.Debug.WriteLine("[DBG-TRACE] Engine: FINALLY FORCING Idle (was still Running!)");
+                        cell.ExecutionStatus = CellExecutionStatus.Idle;
+                    }
+                }
+                catch { }
+                System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine: FINALLY exit. status={cell.ExecutionStatus}");
+            }
+        }
+
+        private static bool IsDebuggableKernel(string? kernelName)
+        {
+            var name = kernelName?.ToLowerInvariant();
+            return name == "csharp" || name == "fsharp" || name == "pwsh" || name == "powershell";
+        }
+
+        /// <summary>
         /// Executes only a snippet of selected text against the kernel, appending output to
         /// <paramref name="cell"/> without clearing its existing outputs. Useful for "Run Selection".
         /// </summary>
