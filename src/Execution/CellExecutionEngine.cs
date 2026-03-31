@@ -298,27 +298,25 @@ namespace PolyglotNotebooks.Execution
                     }));
 
                 var sw = Stopwatch.StartNew();
-                System.Diagnostics.Debug.WriteLine("[DBG-TRACE] Engine: sending command to kernel...");
                 await _kernelClient.SendCommandAsync(envelope, effectiveCt).ConfigureAwait(false);
-                System.Diagnostics.Debug.WriteLine("[DBG-TRACE] Engine: command sent OK");
 
+                // Fire the post-submission callback as a background task so it runs
+                // concurrently with WaitForTerminalEventAsync. For debug cells this
+                // callback waits for the user to finish stepping, then detaches the
+                // debugger. It must NOT block the terminal-event wait — the kernel
+                // sends the completion event through stdio after user code finishes,
+                // and we need to be listening for it.
                 if (onCodeSubmitted != null)
                 {
                     onSubmittedTask = Task.Run(async () =>
                     {
                         try
                         {
-                            System.Diagnostics.Debug.WriteLine("[DBG-TRACE] Engine.Task.Run: invoking onCodeSubmitted...");
                             await onCodeSubmitted(effectiveCt).ConfigureAwait(false);
-                            System.Diagnostics.Debug.WriteLine("[DBG-TRACE] Engine.Task.Run: onCodeSubmitted completed OK");
                         }
-                        catch (OperationCanceledException)
-                        {
-                            System.Diagnostics.Debug.WriteLine("[DBG-TRACE] Engine.Task.Run: onCodeSubmitted threw OperationCanceledException");
-                        }
+                        catch (OperationCanceledException) { /* ok */ }
                         catch (Exception ex)
                         {
-                            System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine.Task.Run: onCodeSubmitted threw {ex.GetType().Name}: {ex.Message}");
                             ExtensionLogger.LogException(nameof(CellExecutionEngine),
                                 "onCodeSubmitted callback failed.", ex);
                         }
@@ -328,18 +326,14 @@ namespace PolyglotNotebooks.Execution
                 KernelEventEnvelope terminal;
                 try
                 {
-                    System.Diagnostics.Debug.WriteLine("[DBG-TRACE] Engine: waiting for terminal event...");
                     terminal = await observer.WaitForTerminalEventAsync(effectiveCt).ConfigureAwait(false);
-                    System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine: terminal event received: {terminal.EventType}");
                 }
                 catch (OperationCanceledException)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine: WaitForTerminal threw OCE. status={cell.ExecutionStatus}");
                     await TrySendCancelAsync().ConfigureAwait(false);
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
                     bool timedOut = timeoutSeconds > 0 && linkedCts.IsCancellationRequested && !ct.IsCancellationRequested;
-                    System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine: timedOut={timedOut}, status={cell.ExecutionStatus}");
                     if (timedOut)
                     {
                         cell.ExecutionStatus = CellExecutionStatus.Failed;
@@ -351,10 +345,11 @@ namespace PolyglotNotebooks.Execution
                     }
                     else if (cell.ExecutionStatus == CellExecutionStatus.Running)
                     {
-                        System.Diagnostics.Debug.WriteLine("[DBG-TRACE] Engine: OCE path setting Idle (was Running)");
+                        // Only reset to Idle if the cell is still Running.
+                        // Debug cells may have already been set to Succeeded by the
+                        // debugger-detach callback before cancelling the terminal wait.
                         cell.ExecutionStatus = CellExecutionStatus.Idle;
                     }
-                    System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine: OCE path returning. status={cell.ExecutionStatus}");
                     return;
                 }
 
@@ -368,7 +363,6 @@ namespace PolyglotNotebooks.Execution
                     var succeeded = terminal.Event.Deserialize<CommandSucceeded>(ProtocolSerializerOptions.Default);
                     cell.ExecutionStatus = CellExecutionStatus.Succeeded;
                     cell.ExecutionOrder = succeeded?.ExecutionOrder ?? (cell.ExecutionOrder ?? 0) + 1;
-                    System.Diagnostics.Debug.WriteLine("[DBG-TRACE] Engine: terminal=Succeeded");
                 }
                 else
                 {
@@ -380,12 +374,10 @@ namespace PolyglotNotebooks.Execution
                             CellOutputKind.Error,
                             new List<FormattedOutput> { new FormattedOutput("text/plain", failed!.Message) }));
                     }
-                    System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine: terminal=Failed: {failed?.Message}");
                 }
             }
             catch (OperationCanceledException)
             {
-                System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine: OUTER OCE caught. status={cell.ExecutionStatus}");
                 try
                 {
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
@@ -395,7 +387,6 @@ namespace PolyglotNotebooks.Execution
             }
             catch (Exception ex)
             {
-                System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine: OUTER Exception caught: {ex.GetType().Name}: {ex.Message}");
                 ExtensionLogger.LogException(nameof(CellExecutionEngine), "Error during debug cell execution.", ex);
                 try
                 {
@@ -409,31 +400,27 @@ namespace PolyglotNotebooks.Execution
             }
             finally
             {
-                System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine: FINALLY enter. onSubmittedTask null={onSubmittedTask == null}, status={cell.ExecutionStatus}");
+                // Wait for the background detach task to complete before releasing the gate.
                 if (onSubmittedTask != null)
                 {
-                    System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine: awaiting onSubmittedTask (IsCompleted={onSubmittedTask.IsCompleted})...");
                     try { await onSubmittedTask.ConfigureAwait(false); }
                     catch { /* errors already logged inside the task */ }
-                    System.Diagnostics.Debug.WriteLine("[DBG-TRACE] Engine: onSubmittedTask awaited.");
                 }
 
                 if (ReferenceEquals(_currentCts, linkedCts))
                     _currentCts = null;
                 _executionGate.Release();
 
+                // Safety net: if the cell is still Running when the method exits (due to any
+                // unexpected code path), force it back to Idle so the UI never gets stuck
+                // with a spinning timer and a visible Stop button.
                 try
                 {
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                    System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine: FINALLY safety check. status={cell.ExecutionStatus}");
                     if (cell.ExecutionStatus == CellExecutionStatus.Running)
-                    {
-                        System.Diagnostics.Debug.WriteLine("[DBG-TRACE] Engine: FINALLY FORCING Idle (was still Running!)");
                         cell.ExecutionStatus = CellExecutionStatus.Idle;
-                    }
                 }
                 catch { }
-                System.Diagnostics.Debug.WriteLine($"[DBG-TRACE] Engine: FINALLY exit. status={cell.ExecutionStatus}");
             }
         }
 

@@ -27,9 +27,11 @@ Write and run C#, JavaScript, SQL, and more — right inside Visual Studio. Poly
 
 **IntelliSense everywhere** - Get completions, signature help, and diagnostics in every code cell — the same editing experience you expect from Visual Studio.
 
+**Cell-level debugging** - Debug C# and F# cells with the full Visual Studio debugger. Step through your cell code line by line, inspect variables, and hit breakpoints — right from the notebook editor.
+
 **Cross-language variable sharing** - Define a variable in C# and use it in JavaScript. The kernel handles the data transfer automatically.
 
-**Variable Explorer** - Inspect all live variables across kernels in a dedicated tool window. See names, types, values, and which kernel owns each variable.
+**Variable Explorer**
 
 **Document Outline** - See the structure of your notebook at a glance in the standard Document Outline window. Markdown headings group related code cells into a navigable tree.
 
@@ -51,7 +53,7 @@ Double-click any `.dib` or `.ipynb` file in Solution Explorer, or use **File > O
 
 ### Write and Run Code
 
-Type code in any cell and press **Shift+Enter** to execute. Output appears directly below the cell. Use the **▶** button or the run dropdown for more options like **Run Cells Above** and **Run Cell and Below**.
+Type code in any cell and press **Shift+Enter** to execute. Output appears directly below the cell. Use the **▶** button or the run dropdown for more options like **Run Cells Above**, **Run Cell and Below**, and **Debug Cell**.
 
 <!-- TODO: capture screenshot showing cell execution with output -->
 ![Cell execution](art/cell-execution.png)

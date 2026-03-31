@@ -162,6 +162,38 @@ Switching between `.dib` and `.ipynb` preserves cell content and outputs. Howeve
 
 **Solution:** Prefer simple types (strings, numbers, arrays, plain objects) for sharing. If you need to share complex data, serialize it to JSON explicitly and deserialize on the other side.
 
+## Debugging Issues
+
+### Debug Cell does nothing or falls back to normal execution
+
+**Symptoms:** You select **Debug Cell** but the cell runs without the debugger attaching.
+
+**Solutions:**
+
+1. **Check the cell language.** Debug Cell only works for **C#** and **F#** cells. Other languages (JavaScript, SQL, PowerShell, KQL, HTML, Mermaid) fall back to normal execution.
+
+2. **Make sure the kernel is running.** The debugger attaches to the kernel process. If the kernel hasn't started yet, run any cell first to start it, then try Debug Cell again.
+
+3. **Restart the kernel and retry.** Click **Restart Kernel** (🔁) and try Debug Cell again.
+
+### The debugger attaches but doesn't break
+
+**Symptoms:** The debugger attaches (you see a brief VS debugger UI flash) but no source file opens and you can't step through code.
+
+**Solutions:**
+
+1. **Check that Just My Code isn't blocking.** The extension temporarily disables Just My Code during Debug Cell sessions. If it can't toggle the setting (e.g., due to policy restrictions), the debugger may not break into dynamically compiled code.
+
+2. **Look for the Submission source file.** The debugger opens a file named `Submission_1.cs` (or similar). It may open in a background tab — check your open document tabs.
+
+3. **Restart Visual Studio** if the debugger is in an unusual state.
+
+### Breakpoints don't persist between debug sessions
+
+**Cause:** Each time you run Debug Cell, the kernel compiles a new assembly. Breakpoints set in the `Submission` source file are tied to the previous assembly and won't match.
+
+**Solution:** This is expected behavior. Set breakpoints after the debugger breaks at the first line each time you use Debug Cell.
+
 ## Extension Issues
 
 ### The extension doesn't load

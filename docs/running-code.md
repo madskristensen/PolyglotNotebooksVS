@@ -29,6 +29,7 @@ The **▶** button has a split dropdown with additional run modes:
 | **Run Cells Above** | Execute all cells above this one (not including this cell) |
 | **Run Cell and Below** | Execute this cell and all cells below it |
 | **Run Selection** | Execute only the selected/highlighted text within the cell |
+| **Debug Cell** | Attach the Visual Studio debugger and step through this cell's code |
 
 ## Running All Cells
 
@@ -97,6 +98,55 @@ You can set an automatic timeout so cells are cancelled after a fixed duration:
 3. Set to `0` (the default) to disable automatic timeout
 
 When a cell times out, it shows an error message and its status changes to **Failed**. This is useful as a safety net against runaway computations, but note that some workloads (like [KQL queries against large datasets](kusto-kql.md#handling-long-running-queries)) can legitimately take several minutes. Leave the timeout at `0` or set a generous value for those scenarios.
+
+## Debugging Cells
+
+You can debug C# and F# cells with the full Visual Studio debugger. This lets you step through your cell code line by line, inspect variables, and examine the call stack — the same debugging experience you use for regular projects.
+
+### How to Debug a Cell
+
+1. Click the **▶** split dropdown on the cell toolbar
+2. Select **Debug Cell**
+3. The extension attaches the VS debugger to the kernel process
+4. The cell code begins executing and immediately breaks at the first line
+5. Use **F10** (Step Over), **F11** (Step Into), or **F5** (Continue) to step through your code
+6. When execution finishes, the debugger detaches automatically and the cell shows its result
+
+### What Happens Under the Hood
+
+When you choose **Debug Cell**, the extension:
+
+1. Attaches the Visual Studio managed debugger to the `dotnet-interactive` kernel process
+2. Temporarily disables **Just My Code** (so the debugger can see dynamic Roslyn-compiled code)
+3. Prepends a `Debugger.Break()` call to your cell code so the debugger stops at a known point
+4. After you finish stepping, the debugger detaches and restores your Just My Code setting
+
+The kernel process stays alive — you can continue running or debugging other cells without restarting.
+
+### Supported Languages
+
+| Kernel | Debug Support |
+|--------|:-------------:|
+| C# (`csharp`) | ✅ |
+| F# (`fsharp`) | ✅ |
+| PowerShell (`pwsh`) | ❌ |
+| JavaScript (`javascript`) | ❌ |
+| SQL, KQL, HTML, etc. | ❌ |
+
+Debug Cell falls back to normal execution for unsupported languages.
+
+### Tips
+
+- **The debugger opens a temporary source file** called `Submission_1.cs` (or similar). This contains your cell code — it's the same code, just shown in the debugger's source view.
+- **Variables from previous cells are available.** The kernel retains state across cells, so variables defined in earlier cells are visible in the debugger's Locals and Watch windows.
+- **You can set breakpoints** in the `Submission` source file once it opens. They work for the current debug session.
+- **Press F5 to skip ahead.** If you don't need to step through every line, press F5 (Continue) to let the cell finish executing.
+
+### Limitations
+
+- Debugging is not available for JavaScript, SQL, KQL, PowerShell, HTML, or Mermaid cells.
+- Breakpoints set in the `Submission` file do not persist across debug sessions because the kernel compiles a new assembly each time.
+- The debugger cannot break inside code from NuGet packages or workspace references unless those assemblies have PDBs available.
 
 ## Using NuGet Packages
 

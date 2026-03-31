@@ -11,6 +11,7 @@ A complete reference of keyboard shortcuts available in the Polyglot Notebooks e
 | Run cell and advance to next | **Shift+Enter** |
 | Run all cells | **Ctrl+Shift+Enter** |
 | Interrupt execution | **Ctrl+.** (Ctrl+Period) |
+| Debug cell | **▶ dropdown → Debug Cell** |
 
 ## Cell Management
 

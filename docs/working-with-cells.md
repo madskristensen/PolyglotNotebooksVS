@@ -157,6 +157,7 @@ IntelliSense works across all supported languages — C#, F#, JavaScript, PowerS
 - **Cell order matters for execution.** Variables defined in one cell are available in later cells of the same kernel, but only after the defining cell has been executed.
 - **Each kernel maintains its own state.** A C# cell and a JavaScript cell have separate scopes. Use [variable sharing](variable-sharing.md) to pass data between them.
 - **Use Markdown cells liberally.** They make your notebook easier to read and understand. Document what each code section does and why.
+- **Debug C# and F# cells** by choosing **Debug Cell** from the ▶ run dropdown. The full Visual Studio debugger attaches and lets you step through your cell code. See [Debugging Cells](running-code.md#debugging-cells) for details.
 
 ## Next Steps
 
