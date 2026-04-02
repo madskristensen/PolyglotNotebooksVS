@@ -9,7 +9,7 @@ namespace PolyglotNotebooks
     internal sealed partial class Vsix
     {
         public const string Id = "PolyglotNotebooks.52d750bb-4c45-43d1-bc22-a9d5fe2cdf91";
-        public const string Name = "Polyglot Notebooks";
+        public const string Name = "Interactive Notebooks";
         public const string Description = @"Interactive notebook experience for Visual Studio. Execute C#, JavaScript, and SQL code in cells with rich output, IntelliSense, and cross-language variable sharing. Powered by .NET Interactive.";
         public const string Language = "en-US";
         public const string Version = "1.0.902";
